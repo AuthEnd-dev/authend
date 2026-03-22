@@ -547,6 +547,31 @@ export const apiPreviewSchema = z.object({
 
 export type ApiPreview = z.infer<typeof apiPreviewSchema>;
 
+export const sdkSchemaResourceSchema = z.object({
+  key: z.string().min(1),
+  table: z.string().min(1),
+  displayName: z.string(),
+  routeSegment: z.string().min(1),
+  primaryKey: z.string().min(1),
+  authMode: apiAuthModeSchema,
+  operations: tableApiOperationsSchema,
+  fields: z.array(fieldBlueprintSchema).default([]),
+  createFields: z.array(fieldBlueprintSchema).default([]),
+  updateFields: z.array(fieldBlueprintSchema).default([]),
+  filterFields: z.array(z.string().min(1)).default([]),
+  sortFields: z.array(z.string().min(1)).default([]),
+  includeFields: z.array(z.string().min(1)).default([]),
+});
+
+export type SdkSchemaResource = z.infer<typeof sdkSchemaResourceSchema>;
+
+export const sdkSchemaManifestSchema = z.object({
+  generatedAt: z.string(),
+  resources: z.array(sdkSchemaResourceSchema).default([]),
+});
+
+export type SdkSchemaManifest = z.infer<typeof sdkSchemaManifestSchema>;
+
 export const settingsSectionIdSchema = z.enum([
   "general",
   "authentication",
@@ -803,6 +828,24 @@ export const storageSettingsResponseSchema = z.object({
 });
 
 export type StorageSettingsResponse = z.infer<typeof storageSettingsResponseSchema>;
+
+export const environmentVariableSchema = z.object({
+  name: z.string().min(1),
+  value: z.string(),
+});
+
+export type EnvironmentVariable = z.infer<typeof environmentVariableSchema>;
+
+export const environmentEditorStateSchema = z.object({
+  filePath: z.string(),
+  raw: z.string(),
+  variables: z.array(environmentVariableSchema).default([]),
+  requiredKeys: z.array(z.string()).default([]),
+  missingKeys: z.array(z.string()).default([]),
+  restartRequired: z.boolean().default(true),
+});
+
+export type EnvironmentEditorState = z.infer<typeof environmentEditorStateSchema>;
 
 export const backupSettingsResponseSchema = z.object({
   section: z.literal("backups"),

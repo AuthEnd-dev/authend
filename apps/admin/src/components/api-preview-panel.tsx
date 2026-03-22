@@ -8,6 +8,7 @@ import { useFeedback, getErrorMessage } from "./ui/feedback";
 import { Input } from "./ui/input";
 import { SidePanel } from "./ui/side-panel";
 import { Textarea } from "./ui/textarea";
+import { CodeBlock } from "./ui/code-block";
 
 function normaliseFieldList(value: string) {
   return value
@@ -500,9 +501,7 @@ export function ApiPreviewPanel({
                 Client SDK Snippet
               </div>
               <div className="text-xs text-muted-foreground">Snippets refresh from the saved contract.</div>
-              <pre className="overflow-x-auto rounded-xl border border-border/60 bg-muted/30 p-4 text-xs text-muted-foreground">
-                <code>{data.snippets.sdk}</code>
-              </pre>
+              <CodeBlock code={data.snippets.sdk} language="ts" />
             </section>
 
             <section className="grid gap-4 rounded-2xl border border-border/60 bg-background p-5">
@@ -510,9 +509,7 @@ export function ApiPreviewPanel({
                 <Braces className="h-4 w-4 text-muted-foreground" />
                 Fetch Snippet
               </div>
-              <pre className="overflow-x-auto rounded-xl border border-border/60 bg-muted/30 p-4 text-xs text-muted-foreground">
-                <code>{data.snippets.fetch}</code>
-              </pre>
+              <CodeBlock code={data.snippets.fetch} language="js" />
             </section>
           </>
         )}

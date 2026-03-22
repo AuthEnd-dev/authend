@@ -9,14 +9,9 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "baseUrl": ".",
     "paths": {
-      "@authend/shared": [
-        "packages/shared/src/index.ts"
-      ],
-      "@authend/sdk": [
-        "packages/sdk/src/index.ts"
-      ]
+      "@authend/shared": ["./packages/shared/src/index.ts"],
+      "@authend/sdk": ["./packages/sdk/src/index.ts"]
     }
   }
 }

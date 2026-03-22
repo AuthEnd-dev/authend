@@ -9,6 +9,9 @@ function staticPaths() {
     "/api/setup/status": {
       get: { summary: "Get bootstrap and migration status" },
     },
+    "/api/system/sdk-schema": {
+      get: { summary: "Get the typed SDK generation schema manifest" },
+    },
     "/api/admin/plugins": {
       get: { summary: "List plugin catalog" },
     },

@@ -96,6 +96,7 @@ v1 intentionally blocks destructive operations:
 - `GET /health`
 - `GET /ready`
 - `GET /api/openapi.json`
+- `GET /api/system/sdk-schema`
 - `ALL /api/auth/*`
 - `GET /api/setup/status`
 - `GET|POST /api/admin/plugins/*`
@@ -106,6 +107,57 @@ v1 intentionally blocks destructive operations:
 - `GET|POST|PATCH|DELETE /api/data/:table`
 
 Admin and data routes require a Better Auth session and a seeded superadmin record.
+
+## SDK generation
+
+Authend now exposes a dedicated SDK schema manifest at `/api/system/sdk-schema`.
+
+In the client app:
+
+```bash
+npm install @authend/sdk
+```
+
+In another app, create `authend.config.json`:
+
+```json
+{
+  "apiUrl": "https://api.example.com",
+  "output": "./src/generated/authend.ts"
+}
+```
+
+Then generate local types:
+
+```bash
+npx authend-gen generate
+```
+
+Or via `package.json`:
+
+```json
+{
+  "scripts": {
+    "authend:generate": "authend-gen generate"
+  }
+}
+```
+
+Use the generated schema with the runtime client:
+
+```ts
+import { createAuthendClient } from "@authend/sdk";
+import { authendSchema, type AuthendSchema } from "./generated/authend";
+
+const client = createAuthendClient<AuthendSchema>({
+  baseURL: "https://api.example.com",
+  schema: authendSchema,
+});
+
+await client.data.post.list();
+```
+
+Keep Better Auth as the auth client in your app and use the Authend SDK for typed `data` access.
 
 ## Production notes
 
@@ -132,5 +184,5 @@ bun test
 - Multi-tenancy is out of scope for v1.
 - File upload/browser workflows are not yet exposed beyond storage configuration and diagnostics.
 - The API preview layer now defines stable contract metadata, but runtime auth modes other than superadmin are still preview-only until a client-facing router is added.
-- OpenAPI is exported as a project spec endpoint, but the SDK is still only partially abstracted rather than fully code-generated from the spec on every change.
+- The SDK generator now uses the dedicated `/api/system/sdk-schema` manifest rather than full OpenAPI codegen. OpenAPI remains available for broader ecosystem tooling.
 - The plugin migration coverage is best-effort for the curated set and should be validated against the exact Better Auth version you pin in production.

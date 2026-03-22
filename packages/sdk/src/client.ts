@@ -1,50 +1,146 @@
-import { apiKeyClient } from "@better-auth/api-key/client";
-import { adminClient, jwtClient, magicLinkClient, organizationClient, twoFactorClient, usernameClient } from "better-auth/client/plugins";
-import { createAuthClient } from "better-auth/react";
-import type {
-  ApiPreview,
-  ApiResource,
-  AuditLog,
-  BackupRun,
-  BackupSettingsResponse,
-  CronJob,
-  CronJobInput,
-  CronRun,
-  CronSettingsResponse,
-  DataRecord,
-  MigrationRecord,
-  PluginCatalogItem,
-  PluginConfigUpdate,
-  PluginId,
-  PluginManifest,
-  SchemaDraft,
-  SettingsSectionConfigMap,
-  SettingsSectionId,
-  SettingsSectionState,
-  SetupStatus,
-  StorageSettingsResponse,
-  TableApiConfig,
-  TableDescriptor,
-} from "@authend/shared";
+import { apiKeyClient } from '@better-auth/api-key/client';
+import {
+  adminClient,
+  jwtClient,
+  magicLinkClient,
+  organizationClient,
+  twoFactorClient,
+  usernameClient,
+} from 'better-auth/client/plugins';
+import { createAuthClient } from 'better-auth/react';
+import type { DataRecord, PluginId, PluginManifest, TableApiOperations, TableDescriptor } from './types';
 
-export type AuthendClientOptions = {
-  baseURL: string;
-  fetch?: typeof fetch;
-  /**
-   * When set, only registers matching Better Auth client plugins (aligned with server-enabled plugins).
-   * When omitted, all curated client plugins are registered (backward compatible).
-   */
-  enabledPlugins?: PluginId[];
-};
+export type AuthendAuthClient = ReturnType<typeof createAuthClient>;
 
 export type ResourceListParams = {
   page?: number;
   pageSize?: number;
   sort?: string;
-  order?: "asc" | "desc";
+  order?: 'asc' | 'desc';
   filterField?: string;
   filterValue?: string;
   include?: string | string[];
+};
+
+export type ListResponse<TRecord> = {
+  items: TRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type AuthendSchemaResource<
+  TRecord extends DataRecord = DataRecord,
+  TCreate = Record<string, unknown>,
+  TUpdate = Partial<TCreate>,
+  TListParams extends ResourceListParams = ResourceListParams,
+  TOperations extends TableApiOperations = TableApiOperations,
+> = {
+  routeSegment: string;
+  operations: TOperations;
+  __record?: TRecord;
+  __create?: TCreate;
+  __update?: TUpdate;
+  __listParams?: TListParams;
+};
+
+export type AuthendSchemaShape = {
+  resources: Record<string, AuthendSchemaResource<DataRecord, unknown, unknown, ResourceListParams, TableApiOperations>>;
+};
+
+export type AuthendSchemaRuntime<TSchema extends AuthendSchemaShape> = {
+  resources: {
+    [K in keyof TSchema['resources']]: Pick<TSchema['resources'][K], 'routeSegment' | 'operations'>;
+  };
+};
+
+/** Loose bound so indexed schema resources (e.g. `TSchema['resources'][K]`) still satisfy the constraint. */
+type AnyAuthendSchemaResource = AuthendSchemaResource<any, any, any, any, any>;
+
+type InferRecord<TResource extends AnyAuthendSchemaResource> = TResource extends { __record?: infer TRecord }
+  ? TRecord
+  : DataRecord;
+type InferCreate<TResource extends AnyAuthendSchemaResource> = TResource extends { __create?: infer TCreate }
+  ? TCreate
+  : Record<string, unknown>;
+type InferUpdate<TResource extends AnyAuthendSchemaResource> = TResource extends { __update?: infer TUpdate }
+  ? TUpdate
+  : Partial<Record<string, unknown>>;
+type InferListParams<TResource extends AnyAuthendSchemaResource> = TResource extends { __listParams?: infer TParams }
+  ? TParams
+  : ResourceListParams;
+/** `operations` is always `TableApiOperations`-shaped; indexing with API method keys is valid. */
+type InferOperations<TResource extends AnyAuthendSchemaResource> = TResource['operations'];
+type EnabledMethod<TEnabled, TMethod> = TEnabled extends false ? never : TMethod;
+
+export type ResourceClient<
+  TRecord = DataRecord,
+  TCreate = Record<string, unknown>,
+  TUpdate = Partial<TCreate>,
+  TListParams = ResourceListParams,
+> = {
+  list: (params?: TListParams) => Promise<ListResponse<TRecord>>;
+  get: (id: string) => Promise<TRecord>;
+  create: (payload: TCreate) => Promise<TRecord>;
+  update: (id: string, payload: TUpdate) => Promise<TRecord>;
+  remove: (id: string) => Promise<void>;
+};
+
+export type ResourceClientFromDefinition<TResource extends AnyAuthendSchemaResource = AuthendSchemaResource> = {
+  list: EnabledMethod<
+    InferOperations<TResource>['list'],
+    (params?: InferListParams<TResource>) => Promise<ListResponse<InferRecord<TResource>>>
+  >;
+  get: EnabledMethod<InferOperations<TResource>['get'], (id: string) => Promise<InferRecord<TResource>>>;
+  create: EnabledMethod<
+    InferOperations<TResource>['create'],
+    (payload: InferCreate<TResource>) => Promise<InferRecord<TResource>>
+  >;
+  update: EnabledMethod<
+    InferOperations<TResource>['update'],
+    (id: string, payload: InferUpdate<TResource>) => Promise<InferRecord<TResource>>
+  >;
+  remove: EnabledMethod<InferOperations<TResource>['delete'], (id: string) => Promise<void>>;
+};
+
+type DynamicResourceClient = ResourceClient<
+  DataRecord,
+  Record<string, unknown>,
+  Partial<Record<string, unknown>>,
+  ResourceListParams
+>;
+
+type BaseDataClient = {
+  resource: <
+    TRecord = DataRecord,
+    TCreate = Record<string, unknown>,
+    TUpdate = Partial<TCreate>,
+    TListParams = ResourceListParams,
+  >(
+    table: string,
+  ) => ResourceClient<TRecord, TCreate, TUpdate, TListParams>;
+  tables: () => Promise<{ tables: string[] }>;
+  meta: (table: string) => Promise<TableDescriptor>;
+  list: (table: string, searchParams?: URLSearchParams) => Promise<ListResponse<DataRecord>>;
+  get: (table: string, id: string) => Promise<DataRecord>;
+  create: (table: string, payload: Record<string, unknown>) => Promise<DataRecord>;
+  update: (table: string, id: string, payload: Record<string, unknown>) => Promise<DataRecord>;
+  remove: (table: string, id: string) => Promise<void>;
+};
+
+export type TypedDataClient<TSchema extends AuthendSchemaShape | undefined> = BaseDataClient &
+  (TSchema extends AuthendSchemaShape
+    ? {
+        [K in keyof TSchema['resources']]: ResourceClientFromDefinition<TSchema['resources'][K]>;
+      }
+    : {});
+
+export type AuthendClientOptions<TSchema extends AuthendSchemaShape | undefined = undefined> = {
+  baseURL: string;
+  fetch?: typeof fetch;
+  enabledPlugins?: PluginId[];
+  authClient?: AuthendAuthClient;
+  schema?: TSchema extends AuthendSchemaShape ? AuthendSchemaRuntime<TSchema> : undefined;
 };
 
 const defaultAuthClientPlugins = [
@@ -57,32 +153,28 @@ const defaultAuthClientPlugins = [
   adminClient(),
 ];
 
-/**
- * Better Auth client plugins matching the curated server plugin order.
- * Pass the list from `setupStatus.enabledPlugins` to align with the API.
- */
 export function createAuthendAuthClientPlugins(enabled: PluginId[]) {
   const enabledSet = new Set(enabled);
   const plugins = [];
-  if (enabledSet.has("username")) {
+  if (enabledSet.has('username')) {
     plugins.push(usernameClient());
   }
-  if (enabledSet.has("jwt")) {
+  if (enabledSet.has('jwt')) {
     plugins.push(jwtClient());
   }
-  if (enabledSet.has("organization")) {
+  if (enabledSet.has('organization')) {
     plugins.push(organizationClient());
   }
-  if (enabledSet.has("twoFactor")) {
+  if (enabledSet.has('twoFactor')) {
     plugins.push(twoFactorClient());
   }
-  if (enabledSet.has("apiKey")) {
+  if (enabledSet.has('apiKey')) {
     plugins.push(apiKeyClient());
   }
-  if (enabledSet.has("magicLink")) {
+  if (enabledSet.has('magicLink')) {
     plugins.push(magicLinkClient());
   }
-  if (enabledSet.has("admin")) {
+  if (enabledSet.has('admin')) {
     plugins.push(adminClient());
   }
   return plugins;
@@ -94,19 +186,23 @@ export function createAuthendAuthClientPluginsFromManifest(manifests: PluginMani
   );
 }
 
-export function createAuthendClient(options: AuthendClientOptions) {
-  const auth = createAuthClient({
-    baseURL: options.baseURL,
-    fetch: options.fetch,
-    plugins:
-      options.enabledPlugins === undefined ? defaultAuthClientPlugins : createAuthendAuthClientPlugins(options.enabledPlugins),
-  });
+export function createAuthendClient<TSchema extends AuthendSchemaShape | undefined = undefined>(
+  options: AuthendClientOptions<TSchema>,
+) {
+  const auth =
+    options.authClient ??
+    createAuthClient({
+      baseURL: options.baseURL,
+      fetch: options.fetch,
+      plugins:
+        options.enabledPlugins === undefined ? defaultAuthClientPlugins : createAuthendAuthClientPlugins(options.enabledPlugins),
+    });
 
   const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
     const response = await (options.fetch ?? fetch)(`${options.baseURL}${path}`, {
-      credentials: "include",
+      credentials: 'include',
       headers: {
-        "content-type": "application/json",
+        'content-type': 'application/json',
         ...(init?.headers ?? {}),
       },
       ...init,
@@ -124,156 +220,100 @@ export function createAuthendClient(options: AuthendClientOptions) {
     return (await response.json()) as T;
   };
 
-  const resource = (table: string) => ({
-    list: (params?: ResourceListParams) => {
+  const resource = <
+    TRecord = DataRecord,
+    TCreate = Record<string, unknown>,
+    TUpdate = Partial<TCreate>,
+    TListParams = ResourceListParams,
+  >(
+    table: string,
+  ): ResourceClient<TRecord, TCreate, TUpdate, TListParams> => ({
+    list: (params?: TListParams) => {
       const searchParams = new URLSearchParams();
-      if (params?.page) {
-        searchParams.set("page", String(params.page));
+      const typedParams = params as ResourceListParams | undefined;
+      if (typedParams?.page) {
+        searchParams.set('page', String(typedParams.page));
       }
-      if (params?.pageSize) {
-        searchParams.set("pageSize", String(params.pageSize));
+      if (typedParams?.pageSize) {
+        searchParams.set('pageSize', String(typedParams.pageSize));
       }
-      if (params?.sort) {
-        searchParams.set("sort", params.sort);
+      if (typedParams?.sort) {
+        searchParams.set('sort', typedParams.sort);
       }
-      if (params?.order) {
-        searchParams.set("order", params.order);
+      if (typedParams?.order) {
+        searchParams.set('order', typedParams.order);
       }
-      if (params?.filterField) {
-        searchParams.set("filterField", params.filterField);
+      if (typedParams?.filterField) {
+        searchParams.set('filterField', typedParams.filterField);
       }
-      if (params?.filterValue) {
-        searchParams.set("filterValue", params.filterValue);
+      if (typedParams?.filterValue) {
+        searchParams.set('filterValue', typedParams.filterValue);
       }
-      if (params?.include) {
-        searchParams.set("include", Array.isArray(params.include) ? params.include.join(",") : params.include);
+      if (typedParams?.include) {
+        searchParams.set('include', Array.isArray(typedParams.include) ? typedParams.include.join(',') : typedParams.include);
       }
-      return request<{ items: DataRecord[]; total: number; page: number; pageSize: number }>(
-        `/api/data/${table}${searchParams.size > 0 ? `?${searchParams.toString()}` : ""}`,
-      );
+      return request<ListResponse<TRecord>>(`/api/data/${table}${searchParams.size > 0 ? `?${searchParams.toString()}` : ''}`);
     },
-    get: (id: string) => request<DataRecord>(`/api/data/${table}/${id}`),
-    create: (payload: Record<string, unknown>) =>
-      request<DataRecord>(`/api/data/${table}`, {
-        method: "POST",
+    get: (id: string) => request<TRecord>(`/api/data/${table}/${id}`),
+    create: (payload: TCreate) =>
+      request<TRecord>(`/api/data/${table}`, {
+        method: 'POST',
         body: JSON.stringify(payload),
       }),
-    update: (id: string, payload: Record<string, unknown>) =>
-      request<DataRecord>(`/api/data/${table}/${id}`, {
-        method: "PATCH",
+    update: (id: string, payload: TUpdate) =>
+      request<TRecord>(`/api/data/${table}/${id}`, {
+        method: 'PATCH',
         body: JSON.stringify(payload),
       }),
     remove: (id: string) =>
       request<void>(`/api/data/${table}/${id}`, {
-        method: "DELETE",
+        method: 'DELETE',
       }),
+  });
+
+  const schemaResources = (options.schema?.resources ?? {}) as Record<string, { routeSegment: string }>;
+
+  const dataBase: BaseDataClient = {
+    resource,
+    tables: () => request<{ tables: string[] }>('/api/data'),
+    meta: (table: string) => request<TableDescriptor>(`/api/data/meta/${table}`),
+    list: (table: string, searchParams?: URLSearchParams) =>
+      resource(table).list(
+        searchParams
+          ? {
+              page: searchParams.get('page') ? Number(searchParams.get('page')) : undefined,
+              pageSize: searchParams.get('pageSize') ? Number(searchParams.get('pageSize')) : undefined,
+              sort: searchParams.get('sort') ?? undefined,
+              order: (searchParams.get('order') as 'asc' | 'desc' | null) ?? undefined,
+              filterField: searchParams.get('filterField') ?? undefined,
+              filterValue: searchParams.get('filterValue') ?? undefined,
+              include: searchParams.get('include') ?? undefined,
+            }
+          : undefined,
+      ),
+    get: (table: string, id: string) => resource(table).get(id),
+    create: (table: string, payload: Record<string, unknown>) => resource(table).create(payload),
+    update: (table: string, id: string, payload: Record<string, unknown>) => resource(table).update(id, payload),
+    remove: (table: string, id: string) => resource(table).remove(id),
+  };
+
+  const data = new Proxy(dataBase as TypedDataClient<TSchema>, {
+    get(target, prop, receiver) {
+      if (typeof prop !== 'string') {
+        return Reflect.get(target, prop, receiver);
+      }
+
+      if (prop in target) {
+        return Reflect.get(target, prop, receiver);
+      }
+
+      const routeSegment = schemaResources[prop]?.routeSegment ?? prop;
+      return resource(routeSegment);
+    },
   });
 
   return {
     auth,
-    system: {
-      setupStatus: () => request<SetupStatus>("/api/setup/status"),
-      auditLogs: () => request<AuditLog[]>("/api/admin/audit"),
-      migrations: () => request<MigrationRecord[]>("/api/admin/migrations"),
-      previewMigrations: () => request<MigrationRecord[]>("/api/admin/migrations/preview", { method: "POST" }),
-      applyMigrations: () => request<{ applied: string[] }>("/api/admin/migrations/apply", { method: "POST" }),
-      plugins: {
-        list: () => request<PluginCatalogItem[]>("/api/admin/plugins"),
-        manifests: () => request<PluginManifest[]>("/api/admin/plugins/manifests"),
-        manifest: (pluginId: string) => request<PluginManifest>(`/api/admin/plugins/${pluginId}/manifest`),
-        saveConfig: (pluginId: string, payload: PluginConfigUpdate) =>
-          request<PluginManifest>(`/api/admin/plugins/${pluginId}/config`, {
-            method: "POST",
-            body: JSON.stringify(payload),
-          }),
-        enable: (pluginId: string) =>
-          request<PluginManifest>(`/api/admin/plugins/${pluginId}/enable`, {
-            method: "POST",
-          }),
-        disable: (pluginId: string) =>
-          request<PluginManifest>(`/api/admin/plugins/${pluginId}/disable`, {
-            method: "POST",
-          }),
-      },
-      pluginManifest: () => request<PluginManifest[]>("/api/system/plugin-manifest"),
-      schema: {
-        get: () => request<SchemaDraft>("/api/admin/schema"),
-        preview: (draft: SchemaDraft) =>
-          request<{ sql: string[]; warnings: string[] }>("/api/admin/schema/preview", {
-            method: "POST",
-            body: JSON.stringify(draft),
-          }),
-        apply: (draft: SchemaDraft) =>
-          request<{ migrationId: string; sql: string[] }>("/api/admin/schema/apply", {
-            method: "POST",
-            body: JSON.stringify(draft),
-          }),
-      },
-      api: {
-        list: () => request<ApiResource[]>("/api/admin/api-preview"),
-        preview: (table: string) => request<ApiPreview>(`/api/admin/api-preview/${table}`),
-        saveConfig: (table: string, config: TableApiConfig) =>
-          request<ApiPreview>(`/api/admin/api-preview/${table}`, {
-            method: "POST",
-            body: JSON.stringify(config),
-          }),
-      },
-      settings: {
-        get: <TSection extends SettingsSectionId>(section: TSection) =>
-          request<SettingsSectionState | StorageSettingsResponse | BackupSettingsResponse | CronSettingsResponse>(
-            `/api/admin/settings/${section}`,
-          ),
-        save: <TSection extends SettingsSectionId>(section: TSection, config: SettingsSectionConfigMap[TSection]) =>
-          request<SettingsSectionState | StorageSettingsResponse | BackupSettingsResponse | CronSettingsResponse>(
-            `/api/admin/settings/${section}`,
-            {
-              method: "POST",
-              body: JSON.stringify(config),
-            },
-          ),
-        runBackup: () =>
-          request<BackupRun>("/api/admin/settings/backups/run", {
-            method: "POST",
-          }),
-        cronJobs: () => request<CronJob[]>("/api/admin/settings/crons/jobs"),
-        createCronJob: (payload: CronJobInput) =>
-          request<CronJob>("/api/admin/settings/crons/jobs", {
-            method: "POST",
-            body: JSON.stringify(payload),
-          }),
-        updateCronJob: (jobId: string, payload: Partial<CronJobInput>) =>
-          request<CronJob>(`/api/admin/settings/crons/jobs/${jobId}`, {
-            method: "PATCH",
-            body: JSON.stringify(payload),
-          }),
-        deleteCronJob: (jobId: string) =>
-          request<void>(`/api/admin/settings/crons/jobs/${jobId}`, {
-            method: "DELETE",
-          }),
-        cronRuns: () => request<CronRun[]>("/api/admin/settings/crons/runs"),
-        runCronJob: (jobId: string) =>
-          request<CronRun>(`/api/admin/settings/crons/${jobId}/run`, {
-            method: "POST",
-          }),
-      },
-    },
-    data: {
-      resource,
-      tables: () => request<{ tables: string[] }>("/api/data"),
-      meta: (table: string) => request<TableDescriptor>(`/api/data/meta/${table}`),
-      list: (table: string, searchParams?: URLSearchParams) => resource(table).list(searchParams ? {
-        page: searchParams.get("page") ? Number(searchParams.get("page")) : undefined,
-        pageSize: searchParams.get("pageSize") ? Number(searchParams.get("pageSize")) : undefined,
-        sort: searchParams.get("sort") ?? undefined,
-        order: (searchParams.get("order") as "asc" | "desc" | null) ?? undefined,
-        filterField: searchParams.get("filterField") ?? undefined,
-        filterValue: searchParams.get("filterValue") ?? undefined,
-        include: searchParams.get("include") ?? undefined,
-      } : undefined),
-      get: (table: string, id: string) => resource(table).get(id),
-      create: (table: string, payload: Record<string, unknown>) => resource(table).create(payload),
-      update: (table: string, id: string, payload: Record<string, unknown>) => resource(table).update(id, payload),
-      remove: (table: string, id: string) => resource(table).remove(id),
-    },
+    data,
   };
 }

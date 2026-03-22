@@ -12,6 +12,7 @@
     "dev:admin": "bun run --cwd apps/admin dev",
     "dev": "bun run dev:api & bun run dev:admin",
     "build": "bun run --cwd apps/admin build && bun run generate:sdk",
+    "build:sdk-package": "bun run --cwd packages/sdk build",
     "bootstrap": "bun run --cwd apps/api bootstrap",
     "start": "bun run --cwd apps/api start",
     "test": "bun test",

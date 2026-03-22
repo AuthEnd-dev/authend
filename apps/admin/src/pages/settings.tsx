@@ -6,12 +6,14 @@ import type {
   CronJob,
   CronJobInput,
   CronSettingsResponse,
+  EnvironmentEditorState,
   SettingsSectionConfigMap,
   SettingsSectionId,
   SettingsSectionState,
   StorageSettings,
   StorageSettingsResponse,
 } from "@authend/shared";
+import { Code2, Copy, Eye, EyeOff, Pencil, Plus, Trash2 } from "lucide-react";
 import { client } from "../lib/client";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -80,6 +82,23 @@ function renderValue(value: unknown) {
     return JSON.stringify(value);
   }
   return String(value);
+}
+
+function serializeEnvValue(value: string) {
+  if (value === "") {
+    return "";
+  }
+  if (/[\s#"'\n]/.test(value)) {
+    return JSON.stringify(value);
+  }
+  return value;
+}
+
+function buildEnvRaw(variables: EnvironmentEditorState["variables"]) {
+  return variables
+    .filter((entry) => entry.name.trim().length > 0)
+    .map((entry) => `${entry.name.trim()}=${serializeEnvValue(entry.value)}`)
+    .join("\n");
 }
 
 function PageHeader({
@@ -402,12 +421,6 @@ const adminAccessFields: SettingsField[] = [
   { key: "protectAdminPlugin", label: "Protect admin plugin", kind: "boolean" },
 ];
 
-const envFields: SettingsField[] = [
-  { key: "additionalRequiredEnvKeys", label: "Additional required env keys", kind: "list" },
-  { key: "sensitivePrefixes", label: "Sensitive prefixes", kind: "list" },
-  { key: "showMissingSecretsOnDashboard", label: "Show missing secrets on dashboard", kind: "boolean" },
-];
-
 const observabilityFields: SettingsField[] = [
   {
     key: "logLevel",
@@ -479,13 +492,6 @@ export const AdminAccessSettingsPage = createSettingsSectionPage(
   "Admin Access",
   "Default roles, admin role policy, impersonation policy, and admin plugin protection.",
   adminAccessFields,
-);
-
-export const EnvironmentsSecretsSettingsPage = createSettingsSectionPage(
-  "environmentsSecrets",
-  "Environments & Secrets",
-  "Required environment keys, secret prefix conventions, and missing secret diagnostics.",
-  envFields,
 );
 
 export const ObservabilitySettingsPage = createSettingsSectionPage(
@@ -618,6 +624,254 @@ export function StorageSettingsPage() {
       ) : null}
 
       <SettingsDiagnostics diagnostics={response?.diagnostics ?? {}} />
+    </div>
+  );
+}
+
+export function EnvironmentsSecretsSettingsPage() {
+  const queryClient = useQueryClient();
+  const { showNotice, confirm } = useFeedback();
+  const { data } = useQuery({
+    queryKey: ["settings", "environmentsSecrets", "env"],
+    queryFn: () => client.system.settings.env(),
+  });
+  const [variables, setVariables] = useState<EnvironmentEditorState["variables"]>([]);
+  const [rawDraft, setRawDraft] = useState("");
+  const [rawOpen, setRawOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
+  const [valueDraft, setValueDraft] = useState("");
+  const [revealedNames, setRevealedNames] = useState<Record<string, boolean>>({});
+  const envState = data;
+
+  useEffect(() => {
+    if (data) {
+      setVariables(data.variables);
+      setRawDraft(data.raw);
+    }
+  }, [data]);
+
+  const saveRawMutation = useMutation({
+    mutationFn: (raw: string) => client.system.settings.saveEnvRaw(raw),
+    onSuccess: (next) => {
+      void queryClient.invalidateQueries({ queryKey: ["settings", "environmentsSecrets", "env"] });
+      setVariables(next.variables);
+      setRawDraft(next.raw);
+      setRawOpen(false);
+      showNotice({
+        title: "Environment updated",
+        description: "The .env file was saved. Restart the API if a runtime dependency does not refresh automatically.",
+        variant: "success",
+        durationMs: 5000,
+      });
+    },
+    onError: (error) =>
+      showNotice({
+        title: "Failed to save environment",
+        description: getErrorMessage(error, "Could not save the .env file."),
+        variant: "destructive",
+        durationMs: 6000,
+      }),
+  });
+
+  const openCreateVariable = () => {
+    setEditingName(null);
+    setNameDraft("");
+    setValueDraft("");
+    setEditorOpen(true);
+  };
+
+  const openEditVariable = (entry: EnvironmentEditorState["variables"][number]) => {
+    setEditingName(entry.name);
+    setNameDraft(entry.name);
+    setValueDraft(entry.value);
+    setEditorOpen(true);
+  };
+
+  const saveVariable = () => {
+    const name = nameDraft.trim();
+    if (!name) {
+      showNotice({
+        title: "Variable name required",
+        description: "Enter an environment variable name before saving.",
+        variant: "destructive",
+        durationMs: 5000,
+      });
+      return;
+    }
+
+    const nextVariables = variables.filter((entry) => entry.name !== editingName && entry.name !== name);
+    nextVariables.push({ name, value: valueDraft });
+    nextVariables.sort((left, right) => left.name.localeCompare(right.name));
+    const nextRaw = buildEnvRaw(nextVariables);
+    saveRawMutation.mutate(nextRaw);
+    setEditorOpen(false);
+  };
+
+  const deleteVariable = async (name: string) => {
+    const confirmed = await confirm({
+      title: `Delete ${name}?`,
+      description: "This removes the variable from the .env file.",
+      confirmLabel: "Delete variable",
+      cancelLabel: "Keep variable",
+      variant: "destructive",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    const nextVariables = variables.filter((entry) => entry.name !== name);
+    saveRawMutation.mutate(buildEnvRaw(nextVariables));
+  };
+
+  const toggleReveal = (name: string) => {
+    setRevealedNames((previous) => ({
+      ...previous,
+      [name]: !previous[name],
+    }));
+  };
+
+  const copyValue = async (value: string) => {
+    await navigator.clipboard.writeText(value);
+    showNotice({
+      title: "Value copied",
+      description: "The environment variable value was copied to the clipboard.",
+      variant: "success",
+      durationMs: 3000,
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title="Environments & Secrets"
+        description="Project .env variables with raw edit mode, row editing, and required-key diagnostics."
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setRawOpen(true)}>
+              <Code2 className="mr-2 h-4 w-4" />
+              Raw editor
+            </Button>
+            <Button onClick={openCreateVariable}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add variable
+            </Button>
+          </>
+        }
+      />
+
+      <Panel>
+        <div className="divide-y divide-border/50">
+          <div className="grid gap-2 px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>File: {data?.filePath ?? ".env"}</span>
+              <Badge variant={(envState?.missingKeys.length ?? 0) > 0 ? "destructive" : "secondary"}>
+                {(envState?.missingKeys.length ?? 0) > 0 ? `${envState?.missingKeys.length} missing required` : "All required present"}
+              </Badge>
+              {envState?.restartRequired ? <Badge variant="secondary">Restart may be required</Badge> : null}
+            </div>
+            {(envState?.requiredKeys.length ?? 0) > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {envState?.requiredKeys.map((key) => (
+                  <span
+                    key={key}
+                    className={`inline-flex items-center rounded-md border px-2 py-1 text-[11px] ${
+                      envState?.missingKeys.includes(key)
+                        ? "border-destructive/40 bg-destructive/10 text-destructive"
+                        : "border-border/60 bg-muted/30 text-muted-foreground"
+                    }`}
+                  >
+                    {key}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          {(variables ?? []).length === 0 ? (
+            <div className="px-4 py-8 text-sm text-muted-foreground">No environment variables found in the project .env file.</div>
+          ) : (
+            variables.map((entry) => {
+              const revealed = revealedNames[entry.name] === true;
+              return (
+                <div key={entry.name} className="grid gap-3 px-4 py-3 md:grid-cols-[1.2fr_1fr_auto] md:items-center">
+                  <div className="font-mono text-sm text-foreground">{entry.name}</div>
+                  <div className="group flex items-center gap-2 overflow-hidden">
+                    <div className="min-w-0 flex-1 truncate rounded-md border border-border/60 bg-muted/20 px-3 py-2 font-mono text-sm text-muted-foreground">
+                      {revealed ? entry.value || " " : "•".repeat(Math.max(8, Math.min(24, entry.value.length || 8)))}
+                    </div>
+                    <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:transition-opacity md:group-hover:opacity-100">
+                      <Button variant="outline" size="sm" onClick={() => toggleReveal(entry.name)}>
+                        {revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => void copyValue(entry.value)}>
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => openEditVariable(entry)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => void deleteVariable(entry.name)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </Panel>
+
+      <SidePanel
+        isOpen={rawOpen}
+        onClose={() => setRawOpen(false)}
+        title="Raw .env Editor"
+        footer={
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setRawOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => saveRawMutation.mutate(rawDraft)} disabled={saveRawMutation.isPending}>
+              Save raw
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">Edit the entire project .env file directly. Invalid dotenv syntax will be rejected.</p>
+          <Textarea className="min-h-[420px] resize-y font-mono text-xs" value={rawDraft} onChange={(event) => setRawDraft(event.target.value)} />
+        </div>
+      </SidePanel>
+
+      <SidePanel
+        isOpen={editorOpen}
+        onClose={() => setEditorOpen(false)}
+        title={editingName ? `Edit ${editingName}` : "Add Variable"}
+        footer={
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setEditorOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={saveVariable} disabled={saveRawMutation.isPending}>
+              Save variable
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <Label className="text-sm font-medium">Name</Label>
+            <Input value={nameDraft} onChange={(event) => setNameDraft(event.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_"))} placeholder="MY_ENV_KEY" className="font-mono" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-sm font-medium">Value</Label>
+            <Textarea value={valueDraft} onChange={(event) => setValueDraft(event.target.value)} className="min-h-[180px] resize-y font-mono text-xs" />
+          </div>
+        </div>
+      </SidePanel>
     </div>
   );
 }

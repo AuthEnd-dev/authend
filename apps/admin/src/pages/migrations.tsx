@@ -43,7 +43,7 @@ export function MigrationsPage() {
           <Table>
             <TableHeader className="bg-muted/20">
               <TableRow className="hover:bg-transparent">
-                <TableHead className="h-11 w-[40%] font-semibold text-muted-foreground">Key</TableHead>
+                <TableHead className="h-11 w-[50%] font-semibold text-muted-foreground">Migration</TableHead>
                 <TableHead className="h-11 font-semibold text-muted-foreground">Status</TableHead>
                 <TableHead className="h-11 text-right font-semibold text-muted-foreground">Applied</TableHead>
               </TableRow>
@@ -51,7 +51,10 @@ export function MigrationsPage() {
             <TableBody>
               {data?.map((migration) => (
                 <TableRow key={migration.id} className="border-b border-border/50 last:border-b-0">
-                  <TableCell className="font-mono text-xs text-foreground">{migration.key}</TableCell>
+                  <TableCell>
+                    <div className="text-sm font-medium text-foreground">{migration.title}</div>
+                    <div className="mt-1 font-mono text-[11px] text-muted-foreground">{migration.key}</div>
+                  </TableCell>
                   <TableCell>
                     <Badge variant={migration.status === "applied" ? "default" : migration.status === "rolled_back" ? "destructive" : "secondary"}>
                       {migration.status}

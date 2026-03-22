@@ -1,9 +1,11 @@
 import { mkdir, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
+import { parse as parseDotenv } from "dotenv";
 import type {
   BackupSettingsResponse,
   CronJobInput,
   CronSettingsResponse,
+  EnvironmentEditorState,
   SettingsSectionConfigMap,
   SettingsSectionId,
   SettingsSectionState,
@@ -16,8 +18,10 @@ import { createCronJob, deleteCronJob, listCronDiagnostics, listCronJobs, listCr
 import { listPluginCapabilityManifests, readPluginCapabilityManifest } from "./plugin-service";
 import { invalidateAuth } from "./auth-service";
 import { readSettingsSection, writeSettingsSection } from "./settings-store";
+import { writeAuditLog } from "./audit-service";
 
 const CORE_ENV_KEYS = ["APP_URL", "DATABASE_URL", "BETTER_AUTH_SECRET", "SUPERADMIN_EMAIL", "SUPERADMIN_PASSWORD"];
+const ENV_FILE_PATH = resolve(process.cwd(), ".env");
 
 function envValue(key: string) {
   const value = process.env[key];
@@ -116,6 +120,63 @@ async function cronDiagnostics() {
   } satisfies CronSettingsResponse;
 }
 
+async function computeRequiredEnvironmentKeys() {
+  const state = await readSettingsSection("environmentsSecrets");
+  const pluginManifests = await listPluginCapabilityManifests();
+  const pluginMissingKeys = pluginManifests.flatMap((manifest) => manifest.missingEnvKeys);
+  const requiredKeys = Array.from(new Set([...CORE_ENV_KEYS, ...state.config.additionalRequiredEnvKeys, ...pluginMissingKeys]));
+  const missingKeys = requiredKeys.filter((key) => !envValue(key));
+  return { requiredKeys, missingKeys };
+}
+
+export async function getEnvironmentEditorState(): Promise<EnvironmentEditorState> {
+  const file = Bun.file(ENV_FILE_PATH);
+  const raw = (await file.exists()) ? await file.text() : "";
+  const variables = Object.entries(parseDotenv(raw)).map(([name, value]) => ({
+    name,
+    value,
+  }));
+  const { requiredKeys, missingKeys } = await computeRequiredEnvironmentKeys();
+
+  return {
+    filePath: ENV_FILE_PATH,
+    raw,
+    variables,
+    requiredKeys,
+    missingKeys,
+    restartRequired: true,
+  };
+}
+
+export async function saveEnvironmentEditorState(raw: string, actorUserId?: string | null): Promise<EnvironmentEditorState> {
+  const previousFile = Bun.file(ENV_FILE_PATH);
+  const previousRaw = (await previousFile.exists()) ? await previousFile.text() : "";
+  const previousParsed = parseDotenv(previousRaw);
+  const nextRaw = raw.endsWith("\n") || raw.length === 0 ? raw : `${raw}\n`;
+  const nextParsed = parseDotenv(nextRaw);
+  await Bun.write(ENV_FILE_PATH, nextRaw);
+
+  for (const key of Object.keys(previousParsed)) {
+    if (!(key in nextParsed)) {
+      delete process.env[key];
+    }
+  }
+
+  for (const [key, value] of Object.entries(nextParsed)) {
+    process.env[key] = value;
+  }
+
+  await writeAuditLog({
+    action: "settings.env.updated",
+    actorUserId,
+    target: "environmentsSecrets",
+    payload: {
+      filePath: ENV_FILE_PATH,
+    },
+  });
+  return getEnvironmentEditorState();
+}
+
 async function genericDiagnostics(section: Exclude<SettingsSectionId, "storage" | "backups" | "crons">) {
   const state = await readSettingsSection(section);
 
@@ -165,10 +226,7 @@ async function genericDiagnostics(section: Exclude<SettingsSectionId, "storage" 
       };
     }
     case "environmentsSecrets": {
-      const pluginManifests = await listPluginCapabilityManifests();
-      const pluginMissingKeys = pluginManifests.flatMap((manifest) => manifest.missingEnvKeys);
-      const requiredKeys = Array.from(new Set([...CORE_ENV_KEYS, ...state.config.additionalRequiredEnvKeys, ...pluginMissingKeys]));
-      const missingKeys = requiredKeys.filter((key) => !envValue(key));
+      const { requiredKeys, missingKeys } = await computeRequiredEnvironmentKeys();
       return {
         requiredKeys,
         missingKeys,

@@ -1,9 +1,9 @@
-import type { Context, Next } from "hono";
-import { getAuth } from "../services/auth-service";
-import { db } from "../db/client";
-import { HttpError } from "../lib/http";
+import type { Context, Next } from 'hono';
+import { getAuth } from '../services/auth-service';
+import { db } from '../db/client';
+import { HttpError } from '../lib/http';
 
-type SessionContext = {
+export type SessionContext = {
   user: {
     id: string;
     email: string;
@@ -21,22 +21,22 @@ export async function requireSession(c: Context, next: Next) {
   });
 
   if (!session?.user || !session.session) {
-    throw new HttpError(401, "Unauthorized");
+    throw new HttpError(401, 'Unauthorized');
   }
 
-  c.set("auth", session as SessionContext);
+  c.set('auth', session as SessionContext);
   await next();
 }
 
 export async function requireSuperAdmin(c: Context, next: Next) {
   await requireSession(c, async () => {
-    const auth = c.get("auth") as SessionContext;
+    const auth = c.get('auth') as SessionContext;
     const admin = await db.query.systemAdmins.findFirst({
       where: (table, operators) => operators.eq(table.userId, auth.user.id),
     });
 
     if (!admin) {
-      throw new HttpError(403, "Superadmin access required");
+      throw new HttpError(403, 'Superadmin access required');
     }
 
     await next();

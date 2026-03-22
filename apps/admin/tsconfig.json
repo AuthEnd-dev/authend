@@ -5,10 +5,19 @@
     "composite": true,
     "types": [
       "vite/client"
-    ]
+    ],
+    "paths": {
+      "@authend/shared": ["../../packages/shared/src/index.ts"],
+      "@authend/sdk": ["../../packages/sdk/src/index.ts"]
+    }
   },
   "include": [
     "src",
-    "vite.config.ts"
+    "vite.config.ts",
+    "../../packages/sdk/src/**/*.ts",
+    "../../packages/shared/src/**/*.ts"
+  ],
+  "exclude": [
+    "../../packages/shared/src/**/*.test.ts"
   ]
 }

@@ -13,16 +13,6 @@ import { applyDraft, getSchemaDraft } from "./schema-service";
 import { HttpError } from "../lib/http";
 import { getTableDescriptor, listBrowsableTables } from "./crud-service";
 
-const builtinTableNames = new Set([
-  "user",
-  "session",
-  "account",
-  "verification",
-  "plugin_configs",
-  "migration_runs",
-  "audit_logs",
-]);
-
 const builtinOperations = {
   list: true,
   get: true,
@@ -329,56 +319,64 @@ const createResponse = await fetch(\`${"${baseURL}"}/api/data/${routeSegment}\`,
 });`;
 }
 
-async function tableFromBuiltin(table: string): Promise<TableBlueprint> {
-  const descriptor = await getTableDescriptor(table);
+async function tableFromDescriptor(input: string): Promise<{ table: TableBlueprint; editable: boolean; draft?: SchemaDraft | null }> {
+  const descriptor = await getTableDescriptor(input);
+  const editable = descriptor.source === "generated" && descriptor.mutableSchema;
+
+  if (editable) {
+    const draft = await getSchemaDraft();
+    const generatedTable = draft.tables.find(
+      (table) => table.name === descriptor.table || (table.api?.routeSegment ?? table.name) === input,
+    );
+
+    if (!generatedTable) {
+      throw new HttpError(404, `Unknown generated table ${input}`);
+    }
+
+    return {
+      table: generatedTable,
+      editable: true,
+      draft,
+    };
+  }
+
   return {
-    name: table,
-    displayName: startCase(table),
-    primaryKey: descriptor.primaryKey,
-    fields: descriptor.fields,
-    indexes: [],
-    api: {
-      authMode: "superadmin",
-      operations: builtinOperations,
-      pagination: {
-        enabled: true,
-        defaultPageSize: 20,
-        maxPageSize: 100,
-      },
-      filtering: {
-        enabled: true,
-        fields: [],
-      },
-      sorting: {
-        enabled: true,
-        fields: [],
-        defaultOrder: "desc",
-      },
-      includes: {
-        enabled: true,
-        fields: [],
+    table: {
+      name: descriptor.table,
+      displayName: startCase(descriptor.table),
+      primaryKey: descriptor.primaryKey,
+      fields: descriptor.fields,
+      indexes: [],
+      api: {
+        authMode: "superadmin",
+        operations: builtinOperations,
+        pagination: {
+          enabled: true,
+          defaultPageSize: 20,
+          maxPageSize: 100,
+        },
+        filtering: {
+          enabled: true,
+          fields: [],
+        },
+        sorting: {
+          enabled: true,
+          fields: [],
+          defaultOrder: "desc",
+        },
+        includes: {
+          enabled: true,
+          fields: [],
+        },
       },
     },
+    editable: false,
+    draft: null,
   };
 }
 
 export async function resolvePreviewTable(input: string) {
-  const draft = await getSchemaDraft();
-  const byName = draft.tables.find((table) => table.name === input);
-  if (byName) {
-    return { table: byName, editable: true, draft };
-  }
-
-  const byRouteSegment = draft.tables.find((table) => (table.api?.routeSegment ?? table.name) === input);
-  if (byRouteSegment) {
-    return { table: byRouteSegment, editable: true, draft };
-  }
-
-  if (!builtinTableNames.has(input)) {
-    throw new HttpError(404, `Unknown table ${input}`);
-  }
-
-  return { table: await tableFromBuiltin(input), editable: false, draft };
+  return tableFromDescriptor(input);
 }
 
 function buildResource(resolved: { table: TableBlueprint; editable: boolean; draft?: SchemaDraft | null }): ApiResource {

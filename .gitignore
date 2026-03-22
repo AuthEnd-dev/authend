@@ -16,3 +16,4 @@ apps/admin/dist
 apps/api/.tmp
 apps/admin/node_modules
 apps/api/node_modules
+tsconfig.tsbuildinfo
