@@ -1,0 +1,27 @@
+{
+  "name": "authend",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.2.5",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "bun run --cwd apps/api dev",
+    "dev:admin": "bun run --cwd apps/admin dev",
+    "dev": "bun run dev:api & bun run dev:admin",
+    "build": "bun run --cwd apps/admin build && bun run generate:sdk",
+    "bootstrap": "bun run --cwd apps/api bootstrap",
+    "start": "bun run --cwd apps/api start",
+    "test": "bun test",
+    "postinstall": "bun run scripts/repair-bun-links.mjs",
+    "repair:links": "bun run scripts/repair-bun-links.mjs",
+    "typecheck": "bunx tsc -b",
+    "generate:sdk": "bun run --cwd apps/api generate:sdk"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.11",
+    "typescript": "^5.9.3"
+  }
+}

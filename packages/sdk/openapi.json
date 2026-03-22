@@ -1,0 +1,76 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Authend API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/auth/*": {
+      "get": {
+        "summary": "Better Auth endpoints"
+      },
+      "post": {
+        "summary": "Better Auth endpoints"
+      }
+    },
+    "/api/setup/status": {
+      "get": {
+        "summary": "Get bootstrap and migration status"
+      }
+    },
+    "/api/admin/plugins": {
+      "get": {
+        "summary": "List plugin catalog"
+      }
+    },
+    "/api/admin/schema": {
+      "get": {
+        "summary": "Read current schema draft"
+      }
+    },
+    "/api/admin/schema/preview": {
+      "post": {
+        "summary": "Preview SQL for a schema draft"
+      }
+    },
+    "/api/admin/schema/apply": {
+      "post": {
+        "summary": "Apply schema draft"
+      }
+    },
+    "/api/admin/migrations": {
+      "get": {
+        "summary": "List migration history"
+      }
+    },
+    "/api/admin/migrations/preview": {
+      "post": {
+        "summary": "Preview pending migrations"
+      }
+    },
+    "/api/admin/migrations/apply": {
+      "post": {
+        "summary": "Apply pending migrations"
+      }
+    },
+    "/api/data/{table}": {
+      "get": {
+        "summary": "List records from a table"
+      },
+      "post": {
+        "summary": "Create a record in a table"
+      }
+    },
+    "/api/data/{table}/{id}": {
+      "get": {
+        "summary": "Get a record by id"
+      },
+      "patch": {
+        "summary": "Update a record"
+      },
+      "delete": {
+        "summary": "Delete a record"
+      }
+    }
+  }
+}

@@ -1,0 +1,541 @@
+import { z } from "zod";
+
+export const pluginIdSchema = z.enum([
+  "username",
+  "jwt",
+  "organization",
+  "twoFactor",
+  "apiKey",
+  "magicLink",
+  "admin",
+]);
+
+export type PluginId = z.infer<typeof pluginIdSchema>;
+
+export const fieldTypeSchema = z.enum([
+  "text",
+  "varchar",
+  "integer",
+  "bigint",
+  "boolean",
+  "timestamp",
+  "date",
+  "jsonb",
+  "uuid",
+  "numeric",
+  "enum",
+]);
+
+export type FieldType = z.infer<typeof fieldTypeSchema>;
+
+export const relationActionSchema = z.enum([
+  "no action",
+  "restrict",
+  "cascade",
+  "set null",
+]);
+
+export const relationJoinTypeSchema = z.enum([
+  "inner",
+  "left",
+  "right",
+  "full",
+]);
+
+export type RelationJoinType = z.infer<typeof relationJoinTypeSchema>;
+
+export const fieldBlueprintSchema = z.object({
+  name: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/),
+  type: fieldTypeSchema,
+  nullable: z.boolean().default(false),
+  default: z.string().nullish(),
+  unique: z.boolean().default(false),
+  indexed: z.boolean().default(false),
+  size: z.number().int().positive().max(65535).nullish(),
+  enumValues: z.array(z.string().min(1)).nullish(),
+  references: z
+    .object({
+      table: z.string().min(1),
+      column: z.string().min(1),
+      onDelete: relationActionSchema.default("no action"),
+      onUpdate: relationActionSchema.default("no action"),
+    })
+    .nullish(),
+});
+
+export type FieldBlueprint = z.infer<typeof fieldBlueprintSchema>;
+
+export const relationBlueprintSchema = z.object({
+  sourceTable: z.string().min(1),
+  sourceField: z.string().min(1),
+  targetTable: z.string().min(1),
+  targetField: z.string().min(1),
+  alias: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/).nullish(),
+  sourceAlias: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/).nullish(),
+  targetAlias: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/).nullish(),
+  joinType: relationJoinTypeSchema.default("left"),
+  onDelete: relationActionSchema.default("no action"),
+  onUpdate: relationActionSchema.default("no action"),
+  description: z.string().min(1).nullish(),
+});
+
+export type RelationBlueprint = z.infer<typeof relationBlueprintSchema>;
+
+export const tableApiOperationsSchema = z.object({
+  list: z.boolean().default(true),
+  get: z.boolean().default(true),
+  create: z.boolean().default(true),
+  update: z.boolean().default(true),
+  delete: z.boolean().default(true),
+});
+
+export type TableApiOperations = z.infer<typeof tableApiOperationsSchema>;
+
+export const apiAuthModeSchema = z.enum([
+  "superadmin",
+  "session",
+  "public",
+]);
+
+export type ApiAuthMode = z.infer<typeof apiAuthModeSchema>;
+
+export const apiPaginationSchema = z.object({
+  enabled: z.boolean().default(true),
+  defaultPageSize: z.number().int().positive().max(100).default(20),
+  maxPageSize: z.number().int().positive().max(250).default(100),
+});
+
+export type ApiPaginationConfig = z.infer<typeof apiPaginationSchema>;
+
+export const apiFieldAccessSchema = z.object({
+  enabled: z.boolean().default(true),
+  fields: z.array(z.string().min(1)).default([]),
+});
+
+export type ApiFieldAccess = z.infer<typeof apiFieldAccessSchema>;
+
+export const apiSortingSchema = z.object({
+  enabled: z.boolean().default(true),
+  fields: z.array(z.string().min(1)).default([]),
+  defaultField: z.string().min(1).nullish(),
+  defaultOrder: z.enum(["asc", "desc"]).default("desc"),
+});
+
+export type ApiSortingConfig = z.infer<typeof apiSortingSchema>;
+
+export const tableApiConfigSchema = z.object({
+  routeSegment: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/).nullish(),
+  tag: z.string().min(1).nullish(),
+  sdkName: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/).nullish(),
+  description: z.string().min(1).nullish(),
+  authMode: apiAuthModeSchema.default("superadmin"),
+  operations: tableApiOperationsSchema.default({
+    list: true,
+    get: true,
+    create: true,
+    update: true,
+    delete: true,
+  }),
+  pagination: apiPaginationSchema.default({
+    enabled: true,
+    defaultPageSize: 20,
+    maxPageSize: 100,
+  }),
+  filtering: apiFieldAccessSchema.default({
+    enabled: true,
+    fields: [],
+  }),
+  sorting: apiSortingSchema.default({
+    enabled: true,
+    fields: [],
+    defaultOrder: "desc",
+  }),
+  includes: apiFieldAccessSchema.default({
+    enabled: true,
+    fields: [],
+  }),
+});
+
+export type TableApiConfig = z.infer<typeof tableApiConfigSchema>;
+
+export const tableBlueprintSchema = z.object({
+  name: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/),
+  displayName: z.string().min(1),
+  primaryKey: z.string().min(1).default("id"),
+  fields: z.array(fieldBlueprintSchema).min(1),
+  indexes: z.array(z.array(z.string().min(1)).min(1)).default([]),
+  api: tableApiConfigSchema.default({
+    authMode: "superadmin",
+    operations: {
+      list: true,
+      get: true,
+      create: true,
+      update: true,
+      delete: true,
+    },
+    pagination: {
+      enabled: true,
+      defaultPageSize: 20,
+      maxPageSize: 100,
+    },
+    filtering: {
+      enabled: true,
+      fields: [],
+    },
+    sorting: {
+      enabled: true,
+      fields: [],
+      defaultOrder: "desc",
+    },
+    includes: {
+      enabled: true,
+      fields: [],
+    },
+  }),
+});
+
+export type TableBlueprint = z.infer<typeof tableBlueprintSchema>;
+
+export const schemaDraftSchema = z.object({
+  tables: z.array(tableBlueprintSchema),
+  relations: z.array(relationBlueprintSchema).default([]),
+});
+
+export type SchemaDraft = z.infer<typeof schemaDraftSchema>;
+
+const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(jsonValueSchema), z.record(z.string(), jsonValueSchema)]),
+);
+
+export const pluginConfigSchema = z.record(z.string(), jsonValueSchema);
+
+export type PluginConfig = z.infer<typeof pluginConfigSchema>;
+
+export const pluginCategorySchema = z.enum(["authentication", "api", "administration"]);
+
+export type PluginCategory = z.infer<typeof pluginCategorySchema>;
+
+export const pluginConfigFieldSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  type: z.enum(["string", "number", "boolean", "password", "url"]),
+  required: z.boolean().default(false),
+  placeholder: z.string().nullish(),
+  helpText: z.string().nullish(),
+  defaultValue: z.union([z.string(), z.number(), z.boolean(), z.null()]).nullish(),
+});
+
+export type PluginConfigField = z.infer<typeof pluginConfigFieldSchema>;
+
+export const pluginCapabilitySchema = z.object({
+  key: z.string().min(1),
+  label: z.string(),
+  description: z.string(),
+  enabledByDefault: z.boolean().default(false),
+  enabled: z.boolean().default(false),
+  requires: z.array(z.string()).default([]),
+  addsModels: z.array(z.string()).default([]),
+  addsClientFeatures: z.array(z.string()).default([]),
+  addsServerFeatures: z.array(z.string()).default([]),
+  addsAdminPanels: z.array(z.string()).default([]),
+  missingRequirements: z.array(z.string()).default([]),
+});
+
+export type PluginCapability = z.infer<typeof pluginCapabilitySchema>;
+
+export const pluginExtensionHandlerSchema = z.object({
+  id: z.string().min(1),
+  label: z.string(),
+  description: z.string(),
+});
+
+export type PluginExtensionHandler = z.infer<typeof pluginExtensionHandlerSchema>;
+
+export const pluginExtensionSlotSchema = z.object({
+  key: z.string().min(1),
+  label: z.string(),
+  description: z.string(),
+  kind: z.enum(["boolean", "policy", "hook", "notification", "access-control"]),
+  required: z.boolean().default(false),
+  enabled: z.boolean().default(false),
+  selectedHandlerId: z.string().nullish(),
+  defaultHandlerId: z.string().nullish(),
+  handlerIds: z.array(z.string()).default([]),
+  inputSchema: z.record(z.string(), z.unknown()).default({}),
+  exampleLanguage: z.enum(["ts", "tsx", "js", "json", "bash", "http"]).default("ts"),
+  exampleTitle: z.string().nullish(),
+  exampleDescription: z.string().nullish(),
+  exampleCode: z.string().nullish(),
+  availableHandlers: z.array(pluginExtensionHandlerSchema).default([]),
+});
+
+export type PluginExtensionSlot = z.infer<typeof pluginExtensionSlotSchema>;
+
+export const pluginModelSchema = z.object({
+  key: z.string().min(1),
+  tableName: z.string().min(1),
+  label: z.string(),
+  capabilityKeys: z.array(z.string()).default([]),
+  provisioned: z.boolean().default(false),
+  description: z.string().nullish(),
+});
+
+export type PluginModel = z.infer<typeof pluginModelSchema>;
+
+export const pluginAdminPanelSchema = z.object({
+  key: z.string().min(1),
+  label: z.string(),
+  description: z.string(),
+  capabilityKeys: z.array(z.string()).default([]),
+  enabled: z.boolean().default(false),
+});
+
+export type PluginAdminPanel = z.infer<typeof pluginAdminPanelSchema>;
+
+export const pluginExampleSchema = z.object({
+  key: z.string().min(1),
+  title: z.string(),
+  description: z.string(),
+  language: z.enum(["ts", "tsx", "js", "json", "bash", "http"]).default("ts"),
+  code: z.string(),
+  capabilityKeys: z.array(z.string()).default([]),
+  audience: z.enum(["client", "server", "api", "admin"]).default("client"),
+});
+
+export type PluginExample = z.infer<typeof pluginExampleSchema>;
+
+export const pluginHealthStatusSchema = z.enum(["healthy", "degraded", "error", "unknown"]);
+
+export type PluginHealthStatus = z.infer<typeof pluginHealthStatusSchema>;
+
+export const pluginHealthSchema = z.object({
+  status: pluginHealthStatusSchema.default("unknown"),
+  issues: z.array(z.string()).default([]),
+});
+
+export type PluginHealth = z.infer<typeof pluginHealthSchema>;
+
+export const pluginProvisioningStateSchema = z.object({
+  status: z.enum(["not-required", "pending", "provisioned", "rolled_back", "failed"]).default("not-required"),
+  appliedMigrationKeys: z.array(z.string()).default([]),
+  rollbackMigrationKeys: z.array(z.string()).default([]),
+  details: z.array(z.string()).default([]),
+});
+
+export type PluginProvisioningState = z.infer<typeof pluginProvisioningStateSchema>;
+
+export const pluginDependencyStateSchema = z.object({
+  pluginId: pluginIdSchema,
+  satisfied: z.boolean().default(true),
+  reason: z.string().nullish(),
+});
+
+export type PluginDependencyState = z.infer<typeof pluginDependencyStateSchema>;
+
+export const pluginCapabilityStateSchema = z.record(z.string(), z.boolean());
+
+export type PluginCapabilityState = z.infer<typeof pluginCapabilityStateSchema>;
+
+export const pluginExtensionBindingsSchema = z.record(z.string(), z.string());
+
+export type PluginExtensionBindings = z.infer<typeof pluginExtensionBindingsSchema>;
+
+export const pluginInstallStateSchema = z.object({
+  pluginId: pluginIdSchema,
+  enabled: z.boolean().default(false),
+  version: z.string().default("1.0.0"),
+  config: pluginConfigSchema.default({}),
+  capabilityState: pluginCapabilityStateSchema.default({}),
+  dependencyState: z.array(pluginDependencyStateSchema).default([]),
+  health: pluginHealthSchema.default({ status: "unknown", issues: [] }),
+  provisioningState: pluginProvisioningStateSchema.default({
+    status: "not-required",
+    appliedMigrationKeys: [],
+    rollbackMigrationKeys: [],
+    details: [],
+  }),
+  extensionBindings: pluginExtensionBindingsSchema.default({}),
+});
+
+export type PluginInstallState = z.infer<typeof pluginInstallStateSchema>;
+
+export const pluginConfigUpdateSchema = z.object({
+  config: pluginConfigSchema.default({}),
+  capabilityState: pluginCapabilityStateSchema.default({}),
+  extensionBindings: pluginExtensionBindingsSchema.default({}),
+});
+
+export type PluginConfigUpdate = z.infer<typeof pluginConfigUpdateSchema>;
+
+export const pluginManifestSchema = z.object({
+  id: pluginIdSchema,
+  version: z.string(),
+  label: z.string(),
+  description: z.string(),
+  category: pluginCategorySchema,
+  documentationUrl: z.string().url(),
+  dependencies: z.array(pluginIdSchema).default([]),
+  requiredEnv: z.array(z.string()).default([]),
+  missingEnvKeys: z.array(z.string()).default([]),
+  configSchema: z.array(pluginConfigFieldSchema).default([]),
+  capabilities: z.array(pluginCapabilitySchema).default([]),
+  extensionSlots: z.array(pluginExtensionSlotSchema).default([]),
+  models: z.array(pluginModelSchema).default([]),
+  adminPanels: z.array(pluginAdminPanelSchema).default([]),
+  examples: z.array(pluginExampleSchema).default([]),
+  clientNamespaces: z.array(z.string()).default([]),
+  serverOperations: z.array(z.string()).default([]),
+  installState: pluginInstallStateSchema,
+});
+
+export type PluginManifest = z.infer<typeof pluginManifestSchema>;
+
+export const pluginCatalogItemSchema = z.object({
+  id: pluginIdSchema,
+  label: z.string(),
+  description: z.string(),
+  category: pluginCategorySchema,
+  documentationUrl: z.string().url(),
+  status: z.enum(["enabled", "disabled", "requires-env"]),
+  /** Env var names from `requiredEnv` that are unset (server only). */
+  missingEnvKeys: z.array(z.string()).default([]),
+  config: pluginConfigSchema.default({}),
+  configSchema: z.array(pluginConfigFieldSchema).default([]),
+  requiredEnv: z.array(z.string()),
+  migrationStrategy: z.enum(["none", "sql", "manual"]),
+  version: z.string().default("1.0.0"),
+  dependencies: z.array(pluginIdSchema).default([]),
+  capabilities: z.array(pluginCapabilitySchema).default([]),
+  extensionSlots: z.array(pluginExtensionSlotSchema).default([]),
+  models: z.array(pluginModelSchema).default([]),
+  adminPanels: z.array(pluginAdminPanelSchema).default([]),
+  examples: z.array(pluginExampleSchema).default([]),
+  clientNamespaces: z.array(z.string()).default([]),
+  serverOperations: z.array(z.string()).default([]),
+  installState: pluginInstallStateSchema.nullish(),
+  health: pluginHealthSchema.default({ status: "unknown", issues: [] }),
+  provisioningState: pluginProvisioningStateSchema.default({
+    status: "not-required",
+    appliedMigrationKeys: [],
+    rollbackMigrationKeys: [],
+    details: [],
+  }),
+});
+
+export type PluginCatalogItem = z.infer<typeof pluginCatalogItemSchema>;
+
+export const auditLogSchema = z.object({
+  id: z.string(),
+  action: z.string(),
+  actorUserId: z.string().nullish(),
+  target: z.string(),
+  payload: z.record(z.string(), z.unknown()).default({}),
+  createdAt: z.string(),
+});
+
+export type AuditLog = z.infer<typeof auditLogSchema>;
+
+export const migrationRecordSchema = z.object({
+  id: z.string(),
+  key: z.string(),
+  title: z.string(),
+  status: z.enum(["pending", "applied", "rolled_back", "failed"]),
+  sql: z.string(),
+  appliedAt: z.string().nullish(),
+});
+
+export type MigrationRecord = z.infer<typeof migrationRecordSchema>;
+
+export const listResponseSchema = <T extends z.ZodTypeAny>(item: T) =>
+  z.object({
+    items: z.array(item),
+    total: z.number().int().nonnegative(),
+    page: z.number().int().positive(),
+    pageSize: z.number().int().positive(),
+  });
+
+export const setupStatusSchema = z.object({
+  healthy: z.boolean(),
+  migrationsPending: z.number().int().nonnegative(),
+  superAdminExists: z.boolean(),
+  enabledPlugins: z.array(pluginIdSchema),
+});
+
+export type SetupStatus = z.infer<typeof setupStatusSchema>;
+
+export const dataRecordSchema = z.record(z.string(), z.unknown());
+
+export type DataRecord = z.infer<typeof dataRecordSchema>;
+
+export const tableDescriptorSchema = z.object({
+  table: z.string(),
+  primaryKey: z.string(),
+  fields: z.array(fieldBlueprintSchema),
+  source: z.enum(["builtin", "generated", "plugin"]),
+  mutableSchema: z.boolean(),
+  ownerPluginId: pluginIdSchema.nullish(),
+});
+
+export type TableDescriptor = z.infer<typeof tableDescriptorSchema>;
+
+export const apiPreviewOperationSchema = z.object({
+  key: z.enum(["list", "get", "create", "update", "delete"]),
+  method: z.enum(["GET", "POST", "PATCH", "DELETE"]),
+  path: z.string(),
+  summary: z.string(),
+  enabled: z.boolean(),
+  operationId: z.string(),
+  queryParams: z.array(
+    z.object({
+      name: z.string(),
+      required: z.boolean().default(false),
+      description: z.string(),
+    }),
+  ).default([]),
+  requestExample: z.record(z.string(), z.unknown()).nullish(),
+  responseExample: z.unknown().nullish(),
+});
+
+export type ApiPreviewOperation = z.infer<typeof apiPreviewOperationSchema>;
+
+export const apiQueryCapabilitiesSchema = z.object({
+  pagination: apiPaginationSchema,
+  filtering: apiFieldAccessSchema,
+  sorting: apiSortingSchema,
+  includes: apiFieldAccessSchema,
+});
+
+export type ApiQueryCapabilities = z.infer<typeof apiQueryCapabilitiesSchema>;
+
+export const apiSecuritySchema = z.object({
+  authMode: apiAuthModeSchema,
+  description: z.string(),
+});
+
+export type ApiSecurity = z.infer<typeof apiSecuritySchema>;
+
+export const apiResourceSchema = z.object({
+  table: z.string(),
+  displayName: z.string(),
+  primaryKey: z.string(),
+  routeSegment: z.string(),
+  routeBase: z.string(),
+  config: tableApiConfigSchema,
+  editable: z.boolean(),
+  fields: z.array(fieldBlueprintSchema),
+  security: apiSecuritySchema,
+  query: apiQueryCapabilitiesSchema,
+  operations: z.array(apiPreviewOperationSchema),
+});
+
+export type ApiResource = z.infer<typeof apiResourceSchema>;
+
+export const apiPreviewSchema = z.object({
+  resource: apiResourceSchema,
+  snippets: z.object({
+    sdk: z.string(),
+    fetch: z.string(),
+  }),
+});
+
+export type ApiPreview = z.infer<typeof apiPreviewSchema>;
