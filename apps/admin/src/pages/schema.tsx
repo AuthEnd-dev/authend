@@ -1,35 +1,63 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import type { SchemaDraft } from "@authend/shared";
-import { client } from "../lib/client";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { Button } from "../components/ui/button";
-import { Textarea } from "../components/ui/textarea";
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import type { SchemaDraft } from '@authend/shared';
+import { client } from '../lib/client';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Textarea } from '../components/ui/textarea';
 
 const initialDraft: SchemaDraft = {
   tables: [
     {
-      name: "profiles",
-      displayName: "Profiles",
-      primaryKey: "id",
+      name: 'profiles',
+      displayName: 'Profiles',
+      primaryKey: 'id',
       fields: [
         {
-          name: "id",
-          type: "uuid",
+          name: 'id',
+          type: 'uuid',
           nullable: false,
           unique: true,
           indexed: true,
-          default: "gen_random_uuid()",
+          default: 'gen_random_uuid()',
         },
         {
-          name: "bio",
-          type: "text",
+          name: 'bio',
+          type: 'text',
           nullable: true,
           indexed: false,
           unique: false,
         },
       ],
       indexes: [],
+      api: {
+        authMode: 'superadmin',
+        operations: {
+          list: true,
+          get: true,
+          create: true,
+          update: true,
+          delete: true,
+        },
+        pagination: {
+          enabled: true,
+          defaultPageSize: 20,
+          maxPageSize: 100,
+        },
+        filtering: {
+          enabled: true,
+          fields: [],
+        },
+        sorting: {
+          enabled: true,
+          fields: [],
+          defaultOrder: 'desc',
+        },
+        includes: {
+          enabled: true,
+          fields: [],
+        },
+      },
     },
   ],
   relations: [],
@@ -39,7 +67,7 @@ export function SchemaPage() {
   const [draft, setDraft] = useState<SchemaDraft>(initialDraft);
 
   const { data: liveDraft } = useQuery({
-    queryKey: ["schema"],
+    queryKey: ['schema'],
     queryFn: () => client.system.schema.get(),
   });
 
@@ -87,12 +115,10 @@ export function SchemaPage() {
             <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Live Draft</CardTitle>
           </CardHeader>
           <CardContent className="p-0 max-h-[400px] overflow-auto">
-            <pre className="p-4 bg-transparent text-muted-foreground font-mono text-xs">
-              {JSON.stringify(liveDraft, null, 2)}
-            </pre>
+            <pre className="p-4 bg-transparent text-muted-foreground font-mono text-xs">{JSON.stringify(liveDraft, null, 2)}</pre>
           </CardContent>
         </Card>
-        
+
         <Card className="shadow-sm border-border shrink-0">
           <CardHeader className="py-2.5 px-4 bg-muted/20 border-b border-border">
             <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Preview Result</CardTitle>

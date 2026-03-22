@@ -8,7 +8,7 @@ const envSchema = z.object({
   APP_NAME: z.string().default("Authend"),
   APP_URL: z.string().url(),
   ADMIN_URL: z.string().url().optional(),
-  ADMIN_DEV_URL: z.string().url().default("http://localhost:5173"),
+  ADMIN_DEV_URL: z.string().url().default("http://localhost:7001"),
   DATABASE_URL: z.string().min(1),
   BETTER_AUTH_SECRET: z.string().min(24),
   SUPERADMIN_EMAIL: z.string().email(),

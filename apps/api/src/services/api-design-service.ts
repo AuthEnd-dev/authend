@@ -284,7 +284,7 @@ function buildSdkSnippet(table: TableBlueprint, config: TableApiConfig) {
   const requestBody = JSON.stringify(requestExample(table), null, 2);
   return `import { createAuthendClient } from "@authend/sdk";
 
-const client = createAuthendClient({ baseURL: "http://localhost:3000" });
+const client = createAuthendClient({ baseURL: "http://localhost:7002" });
 const ${config.sdkName} = client.data.resource("${routeSegment}");
 
 const records = await ${config.sdkName}.list({
@@ -300,7 +300,7 @@ await ${config.sdkName}.remove("record_id");`;
 function buildFetchSnippet(table: TableBlueprint, config: TableApiConfig) {
   const routeSegment = config.routeSegment ?? table.name;
   const requestBody = JSON.stringify(requestExample(table), null, 2);
-  return `const baseURL = "http://localhost:3000";
+  return `const baseURL = "http://localhost:7002";
 
 const listResponse = await fetch(
   \`${"${baseURL}"}/api/data/${routeSegment}?page=1&pageSize=${config.pagination.defaultPageSize}\`,

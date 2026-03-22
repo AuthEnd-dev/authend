@@ -54,6 +54,10 @@ export type AuthendSchemaRuntime<TSchema extends AuthendSchemaShape> = {
   };
 };
 
+export function defineAuthendSchema<TSchema extends AuthendSchemaShape>(schema: AuthendSchemaRuntime<TSchema>) {
+  return schema;
+}
+
 /** Loose bound so indexed schema resources (e.g. `TSchema['resources'][K]`) still satisfy the constraint. */
 type AnyAuthendSchemaResource = AuthendSchemaResource<any, any, any, any, any>;
 
@@ -135,12 +139,19 @@ export type TypedDataClient<TSchema extends AuthendSchemaShape | undefined> = Ba
       }
     : {});
 
-export type AuthendClientOptions<TSchema extends AuthendSchemaShape | undefined = undefined> = {
+type AuthendClientBaseOptions = {
   baseURL: string;
   fetch?: typeof fetch;
   enabledPlugins?: PluginId[];
   authClient?: AuthendAuthClient;
-  schema?: TSchema extends AuthendSchemaShape ? AuthendSchemaRuntime<TSchema> : undefined;
+};
+
+export type AuthendClientOptions<TSchema extends AuthendSchemaShape> = AuthendClientBaseOptions & {
+  schema: AuthendSchemaRuntime<TSchema>;
+};
+
+export type AuthendClientOptionsWithoutSchema = AuthendClientBaseOptions & {
+  schema?: undefined;
 };
 
 const defaultAuthClientPlugins = [
@@ -186,8 +197,22 @@ export function createAuthendAuthClientPluginsFromManifest(manifests: PluginMani
   );
 }
 
-export function createAuthendClient<TSchema extends AuthendSchemaShape | undefined = undefined>(
+export function createAuthendClient<TSchema extends AuthendSchemaShape>(
   options: AuthendClientOptions<TSchema>,
+): {
+  auth: AuthendAuthClient;
+  data: TypedDataClient<TSchema>;
+};
+
+export function createAuthendClient(
+  options: AuthendClientOptionsWithoutSchema,
+): {
+  auth: AuthendAuthClient;
+  data: TypedDataClient<undefined>;
+};
+
+export function createAuthendClient<TSchema extends AuthendSchemaShape>(
+  options: AuthendClientOptions<TSchema> | AuthendClientOptionsWithoutSchema,
 ) {
   const auth =
     options.authClient ??
@@ -271,7 +296,10 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape | undefin
       }),
   });
 
-  const schemaResources = (options.schema?.resources ?? {}) as Record<string, { routeSegment: string }>;
+  const schemaResources = ((options.schema as AuthendSchemaRuntime<TSchema> | undefined)?.resources ?? {}) as Record<
+    string,
+    { routeSegment: string }
+  >;
 
   const dataBase: BaseDataClient = {
     resource,

@@ -38,7 +38,8 @@ docker compose up -d
 
 ```env
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/authend
-APP_URL=http://localhost:3000
+APP_URL=http://localhost:7002
+ADMIN_URL=http://localhost:7001
 BETTER_AUTH_SECRET=replace-with-a-long-random-secret
 SUPERADMIN_EMAIL=admin@example.com
 SUPERADMIN_PASSWORD=ChangeMe123!
@@ -58,7 +59,7 @@ bun run dev:api
 bun run dev:admin
 ```
 
-Open [http://localhost:3000/admin](http://localhost:3000/admin). Sign in with the seeded superadmin credentials from `.env`.
+Open [http://localhost:7001](http://localhost:7001). Sign in with the seeded superadmin credentials from `.env`.
 
 ## Workspace layout
 
@@ -122,7 +123,7 @@ In another app, create `authend.config.json`:
 
 ```json
 {
-  "apiUrl": "https://api.example.com",
+  "apiUrl": "http://localhost:7002",
   "output": "./src/generated/authend.ts"
 }
 ```
@@ -150,7 +151,7 @@ import { createAuthendClient } from "@authend/sdk";
 import { authendSchema, type AuthendSchema } from "./generated/authend";
 
 const client = createAuthendClient<AuthendSchema>({
-  baseURL: "https://api.example.com",
+  baseURL: "http://localhost:7002",
   schema: authendSchema,
 });
 

@@ -36,7 +36,7 @@ Create `authend.config.json` in your app:
 
 ```json
 {
-  "apiUrl": "https://api.example.com",
+  "apiUrl": "http://localhost:7002",
   "output": "./src/generated/authend.ts"
 }
 ```
@@ -70,7 +70,7 @@ import { createAuthendClient } from "@authend/sdk";
 import { authendSchema, type AuthendSchema } from "./generated/authend";
 
 const client = createAuthendClient<AuthendSchema>({
-  baseURL: "https://api.example.com",
+  baseURL: "http://localhost:7002",
   schema: authendSchema,
 });
 
@@ -101,7 +101,7 @@ import { auth } from "./auth";
 import { authendSchema, type AuthendSchema } from "./generated/authend";
 
 const client = createAuthendClient<AuthendSchema>({
-  baseURL: "https://api.example.com",
+  baseURL: "http://localhost:7002",
   schema: authendSchema,
   authClient: auth,
 });

@@ -9,3 +9,5 @@ build
 coverage
 .turbo
 *.log
+generated
+var/storage/* !var/storage/.gitkeep

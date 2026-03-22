@@ -1,12 +1,12 @@
 {
   "name": "@authend/sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "authend-gen": "./bin/authend-gen.mjs"
+    "authend-gen": "bin/authend-gen.mjs"
   },
   "exports": {
     ".": {

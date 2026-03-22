@@ -8,7 +8,7 @@ export type PluginId =
   | 'socialAuth'
   | 'admin';
 
-export type DataRecord = Record<string, unknown>;
+export type DataRecord = object;
 
 export type TableApiOperations = {
   list: boolean;
