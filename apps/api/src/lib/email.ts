@@ -1,25 +1,60 @@
 import nodemailer from "nodemailer";
 import { env } from "../config/env";
 import { logger } from "./logger";
+import { readSettingsSection } from "../services/settings-store";
 
 let transporterPromise: Promise<nodemailer.Transporter | null> | null = null;
+let transporterKey: string | null = null;
+
+async function resolveEmailConfig() {
+  const { config } = await readSettingsSection("email");
+  const host = config.smtpHost || env.SMTP_HOST;
+  const user = config.smtpUsername || env.SMTP_USER;
+  const pass = config.smtpPassword || env.SMTP_PASS;
+  const port = config.smtpPort || env.SMTP_PORT;
+  const secure = config.smtpSecure || port === 465;
+
+  return {
+    host,
+    user,
+    pass,
+    port,
+    secure,
+    from: `${config.senderName} <${config.senderEmail}>`,
+    replyTo: config.replyToEmail ?? undefined,
+  };
+}
 
 async function getTransporter() {
-  if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS) {
+  const config = await resolveEmailConfig();
+  if (!config.host || !config.user || !config.pass) {
+    transporterKey = null;
+    transporterPromise = null;
     return null;
   }
 
-  transporterPromise ??= Promise.resolve(
-    nodemailer.createTransport({
-      host: env.SMTP_HOST,
-      port: env.SMTP_PORT,
-      secure: env.SMTP_PORT === 465,
-      auth: {
-        user: env.SMTP_USER,
-        pass: env.SMTP_PASS,
-      },
-    }),
-  );
+  const nextKey = JSON.stringify({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    user: config.user,
+    pass: config.pass,
+  });
+
+  if (!transporterPromise || transporterKey !== nextKey) {
+    transporterKey = nextKey;
+    transporterPromise = Promise.resolve(
+      nodemailer.createTransport({
+        host: config.host,
+        port: config.port,
+        secure: config.secure,
+        auth: {
+          user: config.user,
+          pass: config.pass,
+        },
+      }),
+    );
+  }
 
   return transporterPromise;
 }
@@ -30,6 +65,7 @@ export async function sendEmail(input: {
   html: string;
   text: string;
 }) {
+  const config = await resolveEmailConfig();
   const transporter = await getTransporter();
 
   if (!transporter) {
@@ -42,7 +78,8 @@ export async function sendEmail(input: {
   }
 
   await transporter.sendMail({
-    from: env.SMTP_FROM,
+    from: config.from,
+    replyTo: config.replyTo,
     to: input.to,
     subject: input.subject,
     html: input.html,

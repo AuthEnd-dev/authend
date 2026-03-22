@@ -95,3 +95,63 @@ export const auditLogs = pgTable("audit_logs", {
   payload: jsonb("payload").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const systemSettings = pgTable(
+  "system_settings",
+  {
+    key: text("key").primaryKey(),
+    value: jsonb("value").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    systemSettingsKeyIndex: uniqueIndex("system_settings_key_idx").on(table.key),
+  }),
+);
+
+export const backupRuns = pgTable("backup_runs", {
+  id: text("id").primaryKey(),
+  status: text("status").notNull(),
+  trigger: text("trigger").notNull(),
+  destination: text("destination").notNull(),
+  filePath: text("file_path"),
+  sizeBytes: text("size_bytes"),
+  details: jsonb("details").notNull().default({}),
+  error: text("error"),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+});
+
+export const cronJobs = pgTable(
+  "cron_jobs",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    description: text("description"),
+    handler: text("handler").notNull(),
+    schedule: text("schedule").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    timeoutSeconds: text("timeout_seconds").notNull().default("120"),
+    concurrencyPolicy: text("concurrency_policy").notNull().default("skip"),
+    config: jsonb("config").notNull().default({}),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    cronJobsNameIndex: uniqueIndex("cron_jobs_name_idx").on(table.name),
+  }),
+);
+
+export const cronRuns = pgTable("cron_runs", {
+  id: text("id").primaryKey(),
+  jobId: text("job_id").notNull().references(() => cronJobs.id, { onDelete: "cascade" }),
+  status: text("status").notNull(),
+  trigger: text("trigger").notNull(),
+  output: jsonb("output").notNull().default({}),
+  error: text("error"),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  durationMs: text("duration_ms"),
+});

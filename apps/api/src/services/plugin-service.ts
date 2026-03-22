@@ -208,6 +208,9 @@ export async function enablePlugin(pluginId: PluginId, actorUserId?: string | nu
 
 export async function disablePlugin(pluginId: PluginId, actorUserId?: string | null) {
   const current = await getPluginManifest(pluginId);
+  if (current.required) {
+    throw new HttpError(400, `Plugin ${pluginId} is required and cannot be disabled.`);
+  }
   if (!current.installState.enabled) {
     return current;
   }

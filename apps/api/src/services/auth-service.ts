@@ -5,31 +5,85 @@ import { db } from "../db/client";
 import * as schema from "../db/schema";
 import { sendEmail } from "../lib/email";
 import { createRuntimePluginContext, getEnabledRuntimePlugins } from "./plugin-orchestrator";
+import { readSettingsSection } from "./settings-store";
 
-async function runtimePlugins() {
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function mergeAuthOptions(base: Record<string, unknown>, update: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(update)) {
+    if (isPlainObject(base[key]) && isPlainObject(value)) {
+      base[key] = {
+        ...(base[key] as Record<string, unknown>),
+        ...value,
+      };
+      continue;
+    }
+
+    base[key] = value;
+  }
+
+  return base;
+}
+
+async function runtimeContributions() {
   const plugins = await getEnabledRuntimePlugins();
-  return plugins
-    .map(({ definition, state }) => definition.composeServer?.(createRuntimePluginContext(state)) ?? null)
-    .filter((plugin): plugin is NonNullable<typeof plugin> => plugin !== null);
+  return plugins.reduce(
+    (acc, { definition, state }) => {
+      const context = createRuntimePluginContext(state);
+      const plugin = definition.composeServer?.(context) ?? null;
+      if (plugin !== null) {
+        acc.plugins.push(plugin);
+      }
+
+      const authOptions = definition.composeAuthOptions?.(context) ?? null;
+      if (authOptions) {
+        mergeAuthOptions(acc.authOptions, authOptions);
+      }
+
+      return acc;
+    },
+    { plugins: [] as unknown[], authOptions: {} as Record<string, unknown> },
+  );
 }
 
 async function createAuth() {
+  const contributions = await runtimeContributions();
+  const [{ config: generalSettings }, { config: authSettings }, { config: emailSettings }, { config: domainSettings }] = await Promise.all([
+    readSettingsSection("general"),
+    readSettingsSection("authentication"),
+    readSettingsSection("email"),
+    readSettingsSection("domainsOrigins"),
+  ]);
+
+  const trustedOrigins = Array.from(
+    new Set(
+      [env.CORS_ORIGIN ?? env.ADMIN_DEV_URL, env.APP_URL, generalSettings.appUrl, generalSettings.adminUrl, ...domainSettings.trustedOrigins].filter(
+        (value): value is string => typeof value === "string" && value.length > 0,
+      ),
+    ),
+  );
+
   return betterAuth({
-    appName: env.APP_NAME,
-    baseURL: env.APP_URL,
+    appName: generalSettings.appName || env.APP_NAME,
+    baseURL: generalSettings.appUrl || env.APP_URL,
     secret: env.BETTER_AUTH_SECRET,
-    trustedOrigins: [env.CORS_ORIGIN ?? env.ADMIN_DEV_URL, env.APP_URL],
+    trustedOrigins,
     database: drizzleAdapter(db, {
       provider: "pg",
       schema,
     }),
     emailAndPassword: {
       enabled: true,
-      requireEmailVerification: false,
+      disableSignUp: !authSettings.allowSignUp,
+      requireEmailVerification: authSettings.requireEmailVerification,
+      minPasswordLength: authSettings.minPasswordLength,
+      maxPasswordLength: authSettings.maxPasswordLength,
       sendResetPassword: async ({ user, url }) => {
         await sendEmail({
           to: user.email,
-          subject: `${env.APP_NAME} password reset`,
+          subject: emailSettings.passwordResetSubject || `${generalSettings.appName} password reset`,
           text: `Reset your password with this link: ${url}`,
           html: `<p>Reset your password with this link:</p><p><a href="${url}">${url}</a></p>`,
         });
@@ -39,13 +93,14 @@ async function createAuth() {
       sendVerificationEmail: async ({ user, url }) => {
         await sendEmail({
           to: user.email,
-          subject: `${env.APP_NAME} verify your email`,
+          subject: emailSettings.verificationSubject || `${generalSettings.appName} verify your email`,
           text: `Verify your email with this link: ${url}`,
           html: `<p>Verify your email with this link:</p><p><a href="${url}">${url}</a></p>`,
         });
       },
     },
-    plugins: await runtimePlugins(),
+    ...contributions.authOptions,
+    plugins: contributions.plugins,
   });
 }
 

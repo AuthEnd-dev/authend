@@ -22,6 +22,7 @@ Full product and architecture documentation lives in [docs/ARCHITECTURE.md](./do
 - Typed SDK in [`packages/sdk`](./packages/sdk)
 - Migration history and audit logging
 - API contract preview with OpenAPI and SDK-aligned resource metadata
+- Project settings pages for file storage, backups, crons, email, domains, and platform policy
 
 ## Quick start
 
@@ -129,7 +130,7 @@ bun test
 ## Current limitations
 
 - Multi-tenancy is out of scope for v1.
-- OAuth provider management is not yet exposed from the admin dashboard.
+- File upload/browser workflows are not yet exposed beyond storage configuration and diagnostics.
 - The API preview layer now defines stable contract metadata, but runtime auth modes other than superadmin are still preview-only until a client-facing router is added.
 - OpenAPI is exported as a project spec endpoint, but the SDK is still only partially abstracted rather than fully code-generated from the spec on every change.
 - The plugin migration coverage is best-effort for the curated set and should be validated against the exact Better Auth version you pin in production.

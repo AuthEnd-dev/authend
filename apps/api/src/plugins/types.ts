@@ -43,6 +43,35 @@ export type ExtensionHandlerRuntime = {
     organization: Record<string, unknown>;
     invitation: Record<string, unknown>;
   }) => Promise<void>;
+  sendMagicLink?: (data: {
+    email: string;
+    url: string;
+    token: string;
+  }, ctx?: unknown) => Promise<void>;
+  generateMagicLinkToken?: (email: string) => Promise<string> | string;
+  usernameValidator?: (username: string) => Promise<boolean> | boolean;
+  displayUsernameValidator?: (displayUsername: string) => Promise<boolean> | boolean;
+  usernameNormalization?: (username: string) => string;
+  displayUsernameNormalization?: (displayUsername: string) => string;
+  jwtDefinePayload?: (session: {
+    user: Record<string, unknown>;
+    session: Record<string, unknown>;
+  }) => Promise<Record<string, unknown>> | Record<string, unknown>;
+  jwtGetSubject?: (session: {
+    user: Record<string, unknown>;
+    session: Record<string, unknown>;
+  }) => Promise<string> | string;
+  jwtSign?: (payload: Record<string, unknown>) => Promise<string> | string;
+  customAPIKeyGetter?: (ctx: unknown) => string | null;
+  customAPIKeyValidator?: (options: {
+    ctx: unknown;
+    key: string;
+  }) => Promise<boolean> | boolean;
+  customKeyGenerator?: (options: {
+    length: number;
+    prefix: string | undefined;
+  }) => Promise<string> | string;
+  defaultPermissions?: (referenceId: string, ctx: unknown) => Promise<Record<string, string[]>> | Record<string, string[]>;
   customCreateDefaultTeam?: (organization: Record<string, unknown>, ctx?: unknown) => Promise<Record<string, unknown>>;
   organizationHook?: (...args: unknown[]) => Promise<unknown> | unknown;
   ac?: unknown;
@@ -53,6 +82,7 @@ export type ExtensionHandlerDefinition = {
   id: string;
   label: string;
   description: string;
+  slotKeys?: string[];
   build: () => ExtensionHandlerRuntime;
 };
 
@@ -79,11 +109,17 @@ export type PluginDefinition = {
   clientNamespaces: string[];
   serverOperations: string[];
   requiredEnv: string[];
+  defaultEnabled?: boolean;
+  required?: boolean;
+  allowUnknownConfigKeys?: boolean;
   defaultConfig?: PluginConfig;
   defaultCapabilityState?: PluginCapabilityState;
   defaultExtensionBindings?: PluginExtensionBindings;
+  validateConfig?: (config: PluginConfig, context: { forEnable: boolean }) => string | null;
+  getRequiredEnv?: (state: PluginInstallState) => string[];
   getProvisionPlan?: (state: PluginInstallState) => PluginSqlPlan | null;
   getRollbackPlan?: (state: PluginInstallState) => PluginSqlPlan | null;
   composeServer?: (context: RuntimePluginContext) => unknown | null;
+  composeAuthOptions?: (context: RuntimePluginContext) => Record<string, unknown> | null;
   composeClient?: (state: PluginInstallState) => string[];
 };

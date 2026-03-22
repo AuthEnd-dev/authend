@@ -11,35 +11,45 @@ import {
   useLocation,
 } from "@tanstack/react-router";
 import { queryClient } from "./lib/query-client";
-import { DashboardPage } from "./pages/dashboard";
 import { PluginsPage } from "./pages/plugins";
-import { SchemaPage } from "./pages/schema";
 import { DataPage } from "./pages/data";
 import { MigrationsPage } from "./pages/migrations";
 import { AuditPage } from "./pages/audit";
+import {
+  AdminAccessSettingsPage,
+  ApiSettingsPage,
+  AuthenticationSettingsPage,
+  BackupsSettingsPage,
+  CronsSettingsPage,
+  DangerZoneSettingsPage,
+  DomainsOriginsSettingsPage,
+  EmailSettingsPage,
+  EnvironmentsSecretsSettingsPage,
+  GeneralSettingsPage,
+  ObservabilitySettingsPage,
+  SessionsSecuritySettingsPage,
+  settingsNavItems,
+  StorageSettingsPage,
+} from "./pages/settings";
 import { AuthGate } from "./components/auth-gate";
 import { client } from "./lib/client";
 import "./styles.css";
 import { useState } from "react";
 import { Input } from "./components/ui/input";
 import { FeedbackProvider } from "./components/ui/feedback";
-import { 
-  Database, ScrollText, Blocks, Settings, ChevronRight, LogOut, 
-  Search, Plus, Folder, FolderOpen, Table2, LayoutDashboard, FileStack, History 
+import {
+  Database, ScrollText, Blocks, Settings, LogOut,
+  Search, Plus, Folder, FolderOpen, Table2
 } from "lucide-react";
 
 import { TableSchemaPanel } from "./components/table-schema-panel";
 
 // Route Categorizations
 const routeGroups = {
-  settings: [
-    { to: "/", label: "Overview", icon: LayoutDashboard },
-    { to: "/schema", label: "Schema Designer", icon: FileStack },
-    { to: "/migrations", label: "Migrations", icon: History },
-  ]
+  settings: settingsNavItems.map((item) => ({ to: item.to, label: item.label })),
 };
 
-const SYSTEM_TABLES = ["plugin_configs", "migration_runs", "audit_logs"];
+const SYSTEM_TABLES = ["plugin_configs", "migration_runs", "audit_logs", "system_settings", "backup_runs", "cron_jobs", "cron_runs"];
 
 function DatabaseSubNav() {
   const location = useLocation();
@@ -168,10 +178,7 @@ function StandardSubNav({ items, activeSection }: { items: RouteItem[], activeSe
 
   return (
     <div className="flex flex-col h-full bg-muted/10">
-      <div className="h-14 px-5 flex items-center border-b border-transparent shrink-0">
-         {/* SubNav spacing sync */}
-      </div>
-      <div className="p-3 mt-2 flex-1 overflow-auto">
+      <div className="p-3 flex-1 overflow-auto">
         <h2 className="px-3 pb-2 text-xs font-bold tracking-wider uppercase text-muted-foreground mb-1">{activeSection}</h2>
         <nav className="flex flex-col gap-0.5">
           {items.map((item) => {
@@ -212,10 +219,7 @@ function DatabaseLayout() {
 }
 
 function StandardLayout({ groupKey, activeSection }: { groupKey: keyof typeof routeGroups; activeSection: string }) {
-  const location = useLocation();
   const subNav = routeGroups[groupKey];
-  const currentItem = subNav.find((n) => n.to === location.pathname);
-  const title = currentItem?.label ?? "Overview";
 
   return (
     <>
@@ -223,13 +227,8 @@ function StandardLayout({ groupKey, activeSection }: { groupKey: keyof typeof ro
         <StandardSubNav items={subNav} activeSection={activeSection} />
       </aside>
       <main className="flex-1 flex flex-col min-w-0 bg-background overflow-hidden relative">
-        <header className="h-14 border-b border-border flex items-center px-6 gap-2 shrink-0 bg-background text-sm sticky top-0 z-10 shadow-sm/50">
-          <span className="text-muted-foreground capitalize">{activeSection}</span>
-          <ChevronRight className="w-4 h-4 text-muted-foreground/50" />
-          <span className="font-semibold">{title}</span>
-        </header>
         <div className="flex-1 overflow-auto">
-          <div className="p-6 md:p-8 w-full mx-auto flex flex-col gap-6 max-w-[1400px] h-[calc(100%-1rem)]">
+          <div className="w-full max-w-[1200px] px-4 py-4 md:px-6 md:py-5">
             <Outlet />
           </div>
         </div>
@@ -254,7 +253,7 @@ function Shell() {
     { id: "database", icon: Database, label: "Database", to: "/data" },
     { id: "logs", icon: ScrollText, label: "Logs", to: "/audit" },
     { id: "plugins", icon: Blocks, label: "Plugins", to: "/plugins" },
-    { id: "settings", icon: Settings, label: "Settings", to: "/" },
+    { id: "settings", icon: Settings, label: "Settings", to: "/general" },
   ];
 
   return (
@@ -354,7 +353,7 @@ const logsGroup = createRoute({
 const indexRoute = createRoute({
   getParentRoute: () => settingsGroup,
   path: "/",
-  component: DashboardPage,
+  component: GeneralSettingsPage,
 });
 
 const pluginsRoute = createRoute({
@@ -363,10 +362,82 @@ const pluginsRoute = createRoute({
   component: PluginsPage,
 });
 
-const schemaRoute = createRoute({
+const generalSettingsRoute = createRoute({
   getParentRoute: () => settingsGroup,
-  path: "/schema",
-  component: SchemaPage,
+  path: "/general",
+  component: GeneralSettingsPage,
+});
+
+const authenticationSettingsRoute = createRoute({
+  getParentRoute: () => settingsGroup,
+  path: "/authentication",
+  component: AuthenticationSettingsPage,
+});
+
+const sessionsSecuritySettingsRoute = createRoute({
+  getParentRoute: () => settingsGroup,
+  path: "/sessions-security",
+  component: SessionsSecuritySettingsPage,
+});
+
+const emailSettingsRoute = createRoute({
+  getParentRoute: () => settingsGroup,
+  path: "/email",
+  component: EmailSettingsPage,
+});
+
+const domainsOriginsSettingsRoute = createRoute({
+  getParentRoute: () => settingsGroup,
+  path: "/domains-origins",
+  component: DomainsOriginsSettingsPage,
+});
+
+const apiSettingsRoute = createRoute({
+  getParentRoute: () => settingsGroup,
+  path: "/api-settings",
+  component: ApiSettingsPage,
+});
+
+const storageSettingsRoute = createRoute({
+  getParentRoute: () => settingsGroup,
+  path: "/storage",
+  component: StorageSettingsPage,
+});
+
+const backupsSettingsRoute = createRoute({
+  getParentRoute: () => settingsGroup,
+  path: "/backups",
+  component: BackupsSettingsPage,
+});
+
+const cronsSettingsRoute = createRoute({
+  getParentRoute: () => settingsGroup,
+  path: "/crons",
+  component: CronsSettingsPage,
+});
+
+const adminAccessSettingsRoute = createRoute({
+  getParentRoute: () => settingsGroup,
+  path: "/admin-access",
+  component: AdminAccessSettingsPage,
+});
+
+const environmentsSecretsSettingsRoute = createRoute({
+  getParentRoute: () => settingsGroup,
+  path: "/environments-secrets",
+  component: EnvironmentsSecretsSettingsPage,
+});
+
+const observabilitySettingsRoute = createRoute({
+  getParentRoute: () => settingsGroup,
+  path: "/observability",
+  component: ObservabilitySettingsPage,
+});
+
+const dangerZoneSettingsRoute = createRoute({
+  getParentRoute: () => settingsGroup,
+  path: "/danger-zone",
+  component: DangerZoneSettingsPage,
 });
 
 const dataRoute = createRoute({
@@ -393,7 +464,23 @@ const auditRoute = createRoute({
 // Compose Tree
 const routeTree = rootRoute.addChildren([
   databaseGroup.addChildren([dataRoute]),
-  settingsGroup.addChildren([indexRoute, schemaRoute, migrationsRoute]),
+  settingsGroup.addChildren([
+    indexRoute,
+    generalSettingsRoute,
+    authenticationSettingsRoute,
+    sessionsSecuritySettingsRoute,
+    emailSettingsRoute,
+    domainsOriginsSettingsRoute,
+    apiSettingsRoute,
+    storageSettingsRoute,
+    backupsSettingsRoute,
+    cronsSettingsRoute,
+    adminAccessSettingsRoute,
+    environmentsSecretsSettingsRoute,
+    observabilitySettingsRoute,
+    dangerZoneSettingsRoute,
+    migrationsRoute,
+  ]),
   pluginsGroup.addChildren([pluginsRoute]),
   logsGroup.addChildren([auditRoute]),
 ]);

@@ -33,6 +33,9 @@ const builtinTables: Record<string, TableDescriptor> = {
       { name: "expires_at", type: "timestamp", nullable: false, unique: false, indexed: false },
       { name: "ip_address", type: "text", nullable: true, unique: false, indexed: false },
       { name: "user_agent", type: "text", nullable: true, unique: false, indexed: false },
+      { name: "active_organization_id", type: "text", nullable: true, unique: false, indexed: false },
+      { name: "active_team_id", type: "text", nullable: true, unique: false, indexed: false },
+      { name: "impersonated_by", type: "text", nullable: true, unique: false, indexed: false },
       { name: "created_at", type: "timestamp", nullable: false, unique: false, indexed: false },
       { name: "updated_at", type: "timestamp", nullable: false, unique: false, indexed: false },
     ],
@@ -48,6 +51,8 @@ const builtinTables: Record<string, TableDescriptor> = {
       { name: "user_id", type: "text", nullable: false, unique: false, indexed: true },
       { name: "account_id", type: "text", nullable: false, unique: false, indexed: false },
       { name: "provider_id", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "access_token_expires_at", type: "timestamp", nullable: true, unique: false, indexed: false },
+      { name: "refresh_token_expires_at", type: "timestamp", nullable: true, unique: false, indexed: false },
       { name: "scope", type: "text", nullable: true, unique: false, indexed: false },
       { name: "created_at", type: "timestamp", nullable: false, unique: false, indexed: false },
       { name: "updated_at", type: "timestamp", nullable: false, unique: false, indexed: false },
@@ -121,119 +126,77 @@ const builtinTables: Record<string, TableDescriptor> = {
     mutableSchema: false,
     ownerPluginId: null,
   },
-};
-
-const pluginTableCatalog: Record<string, Omit<TableDescriptor, "source" | "mutableSchema" | "ownerPluginId">> = {
-  jwks: {
-    table: "jwks",
-    primaryKey: "id",
+  system_settings: {
+    table: "system_settings",
+    primaryKey: "key",
     fields: [
-      { name: "id", type: "text", nullable: false, unique: true, indexed: true },
-      { name: "public_key", type: "text", nullable: false, unique: false, indexed: false },
-      { name: "created_at", type: "timestamp", nullable: false, unique: false, indexed: false },
-      { name: "expires_at", type: "timestamp", nullable: true, unique: false, indexed: false },
-    ],
-  },
-  organization: {
-    table: "organization",
-    primaryKey: "id",
-    fields: [
-      { name: "id", type: "text", nullable: false, unique: true, indexed: true },
-      { name: "name", type: "text", nullable: false, unique: false, indexed: false },
-      { name: "slug", type: "text", nullable: false, unique: true, indexed: true },
-      { name: "logo", type: "text", nullable: true, unique: false, indexed: false },
-      { name: "metadata", type: "text", nullable: true, unique: false, indexed: false },
-      { name: "created_at", type: "timestamp", nullable: false, unique: false, indexed: false },
-    ],
-  },
-  member: {
-    table: "member",
-    primaryKey: "id",
-    fields: [
-      { name: "id", type: "text", nullable: false, unique: true, indexed: true },
-      { name: "user_id", type: "text", nullable: false, unique: false, indexed: true },
-      { name: "organization_id", type: "text", nullable: false, unique: false, indexed: true },
-      { name: "role", type: "text", nullable: false, unique: false, indexed: false },
-      { name: "created_at", type: "timestamp", nullable: false, unique: false, indexed: false },
-    ],
-  },
-  invitation: {
-    table: "invitation",
-    primaryKey: "id",
-    fields: [
-      { name: "id", type: "text", nullable: false, unique: true, indexed: true },
-      { name: "email", type: "text", nullable: false, unique: false, indexed: false },
-      { name: "inviter_id", type: "text", nullable: false, unique: false, indexed: true },
-      { name: "organization_id", type: "text", nullable: false, unique: false, indexed: true },
-      { name: "role", type: "text", nullable: false, unique: false, indexed: false },
-      { name: "status", type: "text", nullable: false, unique: false, indexed: false },
-      { name: "team_id", type: "text", nullable: true, unique: false, indexed: true },
-      { name: "expires_at", type: "timestamp", nullable: false, unique: false, indexed: false },
-      { name: "created_at", type: "timestamp", nullable: false, unique: false, indexed: false },
-    ],
-  },
-  two_factor: {
-    table: "two_factor",
-    primaryKey: "id",
-    fields: [
-      { name: "id", type: "text", nullable: false, unique: true, indexed: true },
-      { name: "user_id", type: "text", nullable: false, unique: true, indexed: true },
-    ],
-  },
-  apikey: {
-    table: "apikey",
-    primaryKey: "id",
-    fields: [
-      { name: "id", type: "text", nullable: false, unique: true, indexed: true },
-      { name: "config_id", type: "text", nullable: false, unique: false, indexed: true },
-      { name: "name", type: "text", nullable: true, unique: false, indexed: false },
-      { name: "start", type: "text", nullable: true, unique: false, indexed: false },
-      { name: "reference_id", type: "text", nullable: false, unique: false, indexed: true },
-      { name: "prefix", type: "text", nullable: true, unique: false, indexed: false },
-      { name: "enabled", type: "boolean", nullable: false, unique: false, indexed: false },
-      { name: "rate_limit_enabled", type: "boolean", nullable: false, unique: false, indexed: false },
-      { name: "rate_limit_time_window", type: "integer", nullable: true, unique: false, indexed: false },
-      { name: "rate_limit_max", type: "integer", nullable: true, unique: false, indexed: false },
-      { name: "request_count", type: "integer", nullable: false, unique: false, indexed: false },
-      { name: "remaining", type: "integer", nullable: true, unique: false, indexed: false },
-      { name: "last_request", type: "timestamp", nullable: true, unique: false, indexed: false },
-      { name: "expires_at", type: "timestamp", nullable: true, unique: false, indexed: false },
+      { name: "key", type: "text", nullable: false, unique: true, indexed: true },
+      { name: "value", type: "jsonb", nullable: false, unique: false, indexed: false },
       { name: "created_at", type: "timestamp", nullable: false, unique: false, indexed: false },
       { name: "updated_at", type: "timestamp", nullable: false, unique: false, indexed: false },
     ],
+    source: "builtin",
+    mutableSchema: false,
+    ownerPluginId: null,
   },
-  team: {
-    table: "team",
+  backup_runs: {
+    table: "backup_runs",
     primaryKey: "id",
     fields: [
-      { name: "id", type: "text", nullable: false, unique: true, indexed: true },
-      { name: "organization_id", type: "text", nullable: false, unique: false, indexed: true },
-      { name: "name", type: "text", nullable: false, unique: false, indexed: false },
-      { name: "created_at", type: "timestamp", nullable: false, unique: false, indexed: false },
-      { name: "updated_at", type: "timestamp", nullable: true, unique: false, indexed: false },
+      { name: "id", type: "text", nullable: false, unique: true, indexed: false },
+      { name: "status", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "trigger", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "destination", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "file_path", type: "text", nullable: true, unique: false, indexed: false },
+      { name: "size_bytes", type: "text", nullable: true, unique: false, indexed: false },
+      { name: "details", type: "jsonb", nullable: false, unique: false, indexed: false },
+      { name: "error", type: "text", nullable: true, unique: false, indexed: false },
+      { name: "started_at", type: "timestamp", nullable: false, unique: false, indexed: false },
+      { name: "completed_at", type: "timestamp", nullable: true, unique: false, indexed: false },
     ],
+    source: "builtin",
+    mutableSchema: false,
+    ownerPluginId: null,
   },
-  team_member: {
-    table: "team_member",
+  cron_jobs: {
+    table: "cron_jobs",
     primaryKey: "id",
     fields: [
-      { name: "id", type: "text", nullable: false, unique: true, indexed: true },
-      { name: "team_id", type: "text", nullable: false, unique: false, indexed: true },
-      { name: "user_id", type: "text", nullable: false, unique: false, indexed: true },
+      { name: "id", type: "text", nullable: false, unique: true, indexed: false },
+      { name: "name", type: "text", nullable: false, unique: true, indexed: true },
+      { name: "description", type: "text", nullable: true, unique: false, indexed: false },
+      { name: "handler", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "schedule", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "enabled", type: "boolean", nullable: false, unique: false, indexed: false },
+      { name: "timeout_seconds", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "concurrency_policy", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "config", type: "jsonb", nullable: false, unique: false, indexed: false },
+      { name: "last_run_at", type: "timestamp", nullable: true, unique: false, indexed: false },
+      { name: "next_run_at", type: "timestamp", nullable: true, unique: false, indexed: false },
       { name: "created_at", type: "timestamp", nullable: false, unique: false, indexed: false },
+      { name: "updated_at", type: "timestamp", nullable: false, unique: false, indexed: false },
     ],
+    source: "builtin",
+    mutableSchema: false,
+    ownerPluginId: null,
   },
-  organization_role: {
-    table: "organization_role",
+  cron_runs: {
+    table: "cron_runs",
     primaryKey: "id",
     fields: [
-      { name: "id", type: "text", nullable: false, unique: true, indexed: true },
-      { name: "organization_id", type: "text", nullable: false, unique: false, indexed: true },
-      { name: "role", type: "text", nullable: false, unique: false, indexed: true },
-      { name: "permission", type: "text", nullable: false, unique: false, indexed: false },
-      { name: "created_at", type: "timestamp", nullable: false, unique: false, indexed: false },
-      { name: "updated_at", type: "timestamp", nullable: true, unique: false, indexed: false },
+      { name: "id", type: "text", nullable: false, unique: true, indexed: false },
+      { name: "job_id", type: "text", nullable: false, unique: false, indexed: true },
+      { name: "status", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "trigger", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "output", type: "jsonb", nullable: false, unique: false, indexed: false },
+      { name: "error", type: "text", nullable: true, unique: false, indexed: false },
+      { name: "started_at", type: "timestamp", nullable: false, unique: false, indexed: false },
+      { name: "completed_at", type: "timestamp", nullable: true, unique: false, indexed: false },
+      { name: "duration_ms", type: "text", nullable: true, unique: false, indexed: false },
     ],
+    source: "builtin",
+    mutableSchema: false,
+    ownerPluginId: null,
   },
 };
 
@@ -277,14 +240,15 @@ async function resolveTableResource(tableInput: string) {
     .find(({ model }) => model.provisioned && (model.tableName === tableInput || model.key === tableInput));
 
   if (pluginModel) {
-    const descriptor = pluginTableCatalog[pluginModel.model.tableName];
-    if (!descriptor) {
+    if (pluginModel.model.fields.length === 0) {
       throw new HttpError(404, `Unknown table ${tableInput}`);
     }
 
     return {
       descriptor: {
-        ...descriptor,
+        table: pluginModel.model.tableName,
+        primaryKey: pluginModel.model.primaryKey,
+        fields: pluginModel.model.fields,
         source: "plugin" as const,
         mutableSchema: false,
         ownerPluginId: pluginModel.manifest.id,

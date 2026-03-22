@@ -7,6 +7,7 @@ export const pluginIdSchema = z.enum([
   "twoFactor",
   "apiKey",
   "magicLink",
+  "socialAuth",
   "admin",
 ]);
 
@@ -276,6 +277,8 @@ export const pluginModelSchema = z.object({
   tableName: z.string().min(1),
   label: z.string(),
   capabilityKeys: z.array(z.string()).default([]),
+  primaryKey: z.string().min(1).default("id"),
+  fields: z.array(fieldBlueprintSchema).default([]),
   provisioned: z.boolean().default(false),
   description: z.string().nullish(),
 });
@@ -374,6 +377,8 @@ export const pluginManifestSchema = z.object({
   description: z.string(),
   category: pluginCategorySchema,
   documentationUrl: z.string().url(),
+  defaultEnabled: z.boolean().default(false),
+  required: z.boolean().default(false),
   dependencies: z.array(pluginIdSchema).default([]),
   requiredEnv: z.array(z.string()).default([]),
   missingEnvKeys: z.array(z.string()).default([]),
@@ -396,6 +401,8 @@ export const pluginCatalogItemSchema = z.object({
   description: z.string(),
   category: pluginCategorySchema,
   documentationUrl: z.string().url(),
+  defaultEnabled: z.boolean().default(false),
+  required: z.boolean().default(false),
   status: z.enum(["enabled", "disabled", "requires-env"]),
   /** Env var names from `requiredEnv` that are unset (server only). */
   missingEnvKeys: z.array(z.string()).default([]),
@@ -539,3 +546,327 @@ export const apiPreviewSchema = z.object({
 });
 
 export type ApiPreview = z.infer<typeof apiPreviewSchema>;
+
+export const settingsSectionIdSchema = z.enum([
+  "general",
+  "authentication",
+  "sessionsSecurity",
+  "email",
+  "domainsOrigins",
+  "api",
+  "storage",
+  "backups",
+  "crons",
+  "adminAccess",
+  "environmentsSecrets",
+  "observability",
+  "dangerZone",
+]);
+
+export type SettingsSectionId = z.infer<typeof settingsSectionIdSchema>;
+
+export const generalSettingsSchema = z.object({
+  projectLabel: z.string().default("Authend Project"),
+  appName: z.string().default("Authend"),
+  appUrl: z.string().url().default("http://localhost:3000"),
+  adminUrl: z.string().url().default("http://localhost:3000/admin"),
+  timezone: z.string().default("Africa/Lagos"),
+  locale: z.string().default("en-US"),
+});
+
+export type GeneralSettings = z.infer<typeof generalSettingsSchema>;
+
+export const authenticationSettingsSchema = z.object({
+  allowSignUp: z.boolean().default(true),
+  requireEmailVerification: z.boolean().default(false),
+  minPasswordLength: z.number().int().min(8).max(128).default(8),
+  maxPasswordLength: z.number().int().min(8).max(256).default(128),
+});
+
+export type AuthenticationSettings = z.infer<typeof authenticationSettingsSchema>;
+
+export const sessionsSecuritySettingsSchema = z.object({
+  sessionTtlSeconds: z.number().int().positive().max(31536000).default(604800),
+  rememberMeTtlSeconds: z.number().int().positive().max(31536000).default(2592000),
+  allowMultipleSessions: z.boolean().default(true),
+  maxSessionsPerUser: z.number().int().positive().max(100).default(10),
+  enforceTwoFactorForAdmins: z.boolean().default(false),
+  magicLinkTtlSeconds: z.number().int().positive().max(86400).default(300),
+  apiKeyDefaultTtlDays: z.number().int().positive().max(3650).default(90),
+  lockoutThreshold: z.number().int().positive().max(20).default(5),
+  lockoutWindowMinutes: z.number().int().positive().max(1440).default(15),
+});
+
+export type SessionsSecuritySettings = z.infer<typeof sessionsSecuritySettingsSchema>;
+
+export const emailSettingsSchema = z.object({
+  smtpHost: z.string().default(""),
+  smtpPort: z.number().int().positive().max(65535).default(587),
+  smtpUsername: z.string().default(""),
+  smtpPassword: z.string().default(""),
+  smtpSecure: z.boolean().default(false),
+  senderName: z.string().default("Authend"),
+  senderEmail: z.string().email().default("no-reply@example.com"),
+  replyToEmail: z.string().email().nullish(),
+  passwordResetSubject: z.string().default("Reset your password"),
+  verificationSubject: z.string().default("Verify your email"),
+  testRecipient: z.string().email().nullish(),
+});
+
+export type EmailSettings = z.infer<typeof emailSettingsSchema>;
+
+export const domainsOriginsSettingsSchema = z.object({
+  trustedOrigins: z.array(z.string().url()).default([]),
+  corsOrigins: z.array(z.string().url()).default([]),
+  redirectOrigins: z.array(z.string().url()).default([]),
+  cookieDomain: z.string().nullish(),
+  secureCookies: z.boolean().default(false),
+});
+
+export type DomainsOriginsSettings = z.infer<typeof domainsOriginsSettingsSchema>;
+
+export const apiSettingsSchema = z.object({
+  defaultPageSize: z.number().int().positive().max(100).default(20),
+  maxPageSize: z.number().int().positive().max(250).default(100),
+  defaultRateLimitPerMinute: z.number().int().positive().max(100000).default(120),
+  maxRateLimitPerMinute: z.number().int().positive().max(100000).default(1000),
+  enableOpenApi: z.boolean().default(true),
+  defaultAuthMode: apiAuthModeSchema.default("superadmin"),
+  allowClientApiPreview: z.boolean().default(false),
+});
+
+export type ApiSettings = z.infer<typeof apiSettingsSchema>;
+
+export const storageDriverSchema = z.enum(["local", "s3"]);
+
+export type StorageDriver = z.infer<typeof storageDriverSchema>;
+
+export const storageSettingsSchema = z.object({
+  driver: storageDriverSchema.default("local"),
+  rootPath: z.string().default("./var/storage"),
+  bucket: z.string().default(""),
+  region: z.string().default(""),
+  endpoint: z.string().default(""),
+  accessKeyId: z.string().default(""),
+  secretAccessKey: z.string().default(""),
+  forcePathStyle: z.boolean().default(true),
+  publicBaseUrl: z.string().url().nullish(),
+  maxUploadBytes: z.number().int().positive().max(1073741824).default(10485760),
+  allowedMimeTypes: z.array(z.string().min(1)).default(["image/png", "image/jpeg", "application/pdf"]),
+  signedUrlTtlSeconds: z.number().int().positive().max(604800).default(900),
+  retentionDays: z.number().int().positive().max(3650).nullish(),
+  defaultVisibility: z.enum(["public", "private"]).default("private"),
+});
+
+export type StorageSettings = z.infer<typeof storageSettingsSchema>;
+
+export const backupFormatSchema = z.enum(["plain", "custom"]);
+
+export type BackupFormat = z.infer<typeof backupFormatSchema>;
+
+export const backupSettingsSchema = z.object({
+  enabled: z.boolean().default(true),
+  directoryPath: z.string().default("./var/backups"),
+  retentionDays: z.number().int().positive().max(3650).default(14),
+  pgDumpPath: z.string().default("pg_dump"),
+  pgRestorePath: z.string().default("pg_restore"),
+  format: backupFormatSchema.default("plain"),
+  verifyOnCreate: z.boolean().default(true),
+});
+
+export type BackupSettings = z.infer<typeof backupSettingsSchema>;
+
+export const cronHandlerSchema = z.enum([
+  "backup.run",
+  "audit.prune",
+  "sessions.pruneExpired",
+  "storage.cleanup",
+]);
+
+export type CronHandler = z.infer<typeof cronHandlerSchema>;
+
+export const cronConcurrencyPolicySchema = z.enum(["skip", "parallel"]);
+
+export type CronConcurrencyPolicy = z.infer<typeof cronConcurrencyPolicySchema>;
+
+export const cronsSettingsSchema = z.object({
+  schedulerEnabled: z.boolean().default(true),
+  tickSeconds: z.number().int().positive().max(300).default(30),
+  defaultTimeoutSeconds: z.number().int().positive().max(3600).default(120),
+  maxConcurrentRuns: z.number().int().positive().max(32).default(4),
+});
+
+export type CronsSettings = z.infer<typeof cronsSettingsSchema>;
+
+export const adminAccessSettingsSchema = z.object({
+  defaultRole: z.string().default("user"),
+  adminRoles: z.array(z.string().min(1)).default(["admin"]),
+  allowImpersonatingAdmins: z.boolean().default(false),
+  requireBanReason: z.boolean().default(true),
+  protectAdminPlugin: z.boolean().default(true),
+});
+
+export type AdminAccessSettings = z.infer<typeof adminAccessSettingsSchema>;
+
+export const environmentsSecretsSettingsSchema = z.object({
+  additionalRequiredEnvKeys: z.array(z.string().min(1)).default([]),
+  sensitivePrefixes: z.array(z.string().min(1)).default(["BETTER_AUTH_", "SMTP_", "DATABASE_", "SUPERADMIN_"]),
+  showMissingSecretsOnDashboard: z.boolean().default(true),
+});
+
+export type EnvironmentsSecretsSettings = z.infer<typeof environmentsSecretsSettingsSchema>;
+
+export const observabilitySettingsSchema = z.object({
+  auditRetentionDays: z.number().int().positive().max(3650).default(90),
+  logLevel: z.enum(["info", "warn", "error"]).default("info"),
+  healthcheckVerbose: z.boolean().default(true),
+  enableRequestLogging: z.boolean().default(true),
+  enableMetrics: z.boolean().default(false),
+});
+
+export type ObservabilitySettings = z.infer<typeof observabilitySettingsSchema>;
+
+export const dangerZoneSettingsSchema = z.object({
+  maintenanceMode: z.boolean().default(false),
+  disablePublicSignup: z.boolean().default(false),
+  allowDestructiveSchemaChanges: z.boolean().default(false),
+  enableDemoReset: z.boolean().default(false),
+});
+
+export type DangerZoneSettings = z.infer<typeof dangerZoneSettingsSchema>;
+
+export const settingsSectionSchemas = {
+  general: generalSettingsSchema,
+  authentication: authenticationSettingsSchema,
+  sessionsSecurity: sessionsSecuritySettingsSchema,
+  email: emailSettingsSchema,
+  domainsOrigins: domainsOriginsSettingsSchema,
+  api: apiSettingsSchema,
+  storage: storageSettingsSchema,
+  backups: backupSettingsSchema,
+  crons: cronsSettingsSchema,
+  adminAccess: adminAccessSettingsSchema,
+  environmentsSecrets: environmentsSecretsSettingsSchema,
+  observability: observabilitySettingsSchema,
+  dangerZone: dangerZoneSettingsSchema,
+} as const;
+
+export type SettingsSectionConfigMap = {
+  general: GeneralSettings;
+  authentication: AuthenticationSettings;
+  sessionsSecurity: SessionsSecuritySettings;
+  email: EmailSettings;
+  domainsOrigins: DomainsOriginsSettings;
+  api: ApiSettings;
+  storage: StorageSettings;
+  backups: BackupSettings;
+  crons: CronsSettings;
+  adminAccess: AdminAccessSettings;
+  environmentsSecrets: EnvironmentsSecretsSettings;
+  observability: ObservabilitySettings;
+  dangerZone: DangerZoneSettings;
+};
+
+export const settingsSectionStateSchema = z.object({
+  section: settingsSectionIdSchema,
+  config: pluginConfigSchema.default({}),
+  diagnostics: z.record(z.string(), jsonValueSchema).default({}),
+  updatedAt: z.string().nullish(),
+});
+
+export type SettingsSectionState = z.infer<typeof settingsSectionStateSchema>;
+
+export const backupRunStatusSchema = z.enum(["running", "succeeded", "failed"]);
+
+export type BackupRunStatus = z.infer<typeof backupRunStatusSchema>;
+
+export const backupRunSchema = z.object({
+  id: z.string(),
+  status: backupRunStatusSchema,
+  trigger: z.enum(["manual", "cron"]),
+  destination: z.string(),
+  filePath: z.string().nullish(),
+  sizeBytes: z.number().int().nonnegative().nullish(),
+  details: z.record(z.string(), jsonValueSchema).default({}),
+  error: z.string().nullish(),
+  startedAt: z.string(),
+  completedAt: z.string().nullish(),
+});
+
+export type BackupRun = z.infer<typeof backupRunSchema>;
+
+export const storageSettingsResponseSchema = z.object({
+  section: z.literal("storage"),
+  config: storageSettingsSchema,
+  diagnostics: z.record(z.string(), jsonValueSchema).default({}),
+  updatedAt: z.string().nullish(),
+});
+
+export type StorageSettingsResponse = z.infer<typeof storageSettingsResponseSchema>;
+
+export const backupSettingsResponseSchema = z.object({
+  section: z.literal("backups"),
+  config: backupSettingsSchema,
+  diagnostics: z.record(z.string(), jsonValueSchema).default({}),
+  updatedAt: z.string().nullish(),
+  runs: z.array(backupRunSchema).default([]),
+});
+
+export type BackupSettingsResponse = z.infer<typeof backupSettingsResponseSchema>;
+
+export const cronJobSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullish(),
+  handler: cronHandlerSchema,
+  schedule: z.string().min(1),
+  enabled: z.boolean().default(true),
+  timeoutSeconds: z.number().int().positive().max(3600).default(120),
+  concurrencyPolicy: cronConcurrencyPolicySchema.default("skip"),
+  config: pluginConfigSchema.default({}),
+  lastRunAt: z.string().nullish(),
+  nextRunAt: z.string().nullish(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type CronJob = z.infer<typeof cronJobSchema>;
+
+export const cronRunSchema = z.object({
+  id: z.string(),
+  jobId: z.string(),
+  jobName: z.string(),
+  status: z.enum(["running", "succeeded", "failed", "skipped"]),
+  trigger: z.enum(["manual", "scheduled", "startup"]),
+  startedAt: z.string(),
+  completedAt: z.string().nullish(),
+  durationMs: z.number().int().nonnegative().nullish(),
+  output: z.record(z.string(), jsonValueSchema).default({}),
+  error: z.string().nullish(),
+});
+
+export type CronRun = z.infer<typeof cronRunSchema>;
+
+export const cronJobInputSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().nullish(),
+  handler: cronHandlerSchema,
+  schedule: z.string().min(1),
+  enabled: z.boolean().default(true),
+  timeoutSeconds: z.number().int().positive().max(3600).default(120),
+  concurrencyPolicy: cronConcurrencyPolicySchema.default("skip"),
+  config: pluginConfigSchema.default({}),
+});
+
+export type CronJobInput = z.infer<typeof cronJobInputSchema>;
+
+export const cronSettingsResponseSchema = z.object({
+  section: z.literal("crons"),
+  config: cronsSettingsSchema,
+  diagnostics: z.record(z.string(), jsonValueSchema).default({}),
+  updatedAt: z.string().nullish(),
+  jobs: z.array(cronJobSchema).default([]),
+  runs: z.array(cronRunSchema).default([]),
+});
+
+export type CronSettingsResponse = z.infer<typeof cronSettingsResponseSchema>;

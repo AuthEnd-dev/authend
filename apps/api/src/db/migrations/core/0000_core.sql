@@ -130,3 +130,51 @@ create table if not exists "audit_logs" (
   "payload" jsonb not null default '{}'::jsonb,
   "created_at" timestamptz not null default now()
 );
+
+create table if not exists "system_settings" (
+  "key" text primary key,
+  "value" jsonb not null default '{}'::jsonb,
+  "created_at" timestamptz not null default now(),
+  "updated_at" timestamptz not null default now()
+);
+
+create table if not exists "backup_runs" (
+  "id" text primary key,
+  "status" text not null,
+  "trigger" text not null,
+  "destination" text not null,
+  "file_path" text,
+  "size_bytes" text,
+  "details" jsonb not null default '{}'::jsonb,
+  "error" text,
+  "started_at" timestamptz not null default now(),
+  "completed_at" timestamptz
+);
+
+create table if not exists "cron_jobs" (
+  "id" text primary key,
+  "name" text not null unique,
+  "description" text,
+  "handler" text not null,
+  "schedule" text not null,
+  "enabled" boolean not null default true,
+  "timeout_seconds" text not null default '120',
+  "concurrency_policy" text not null default 'skip',
+  "config" jsonb not null default '{}'::jsonb,
+  "last_run_at" timestamptz,
+  "next_run_at" timestamptz,
+  "created_at" timestamptz not null default now(),
+  "updated_at" timestamptz not null default now()
+);
+
+create table if not exists "cron_runs" (
+  "id" text primary key,
+  "job_id" text not null references "cron_jobs"("id") on delete cascade,
+  "status" text not null,
+  "trigger" text not null,
+  "output" jsonb not null default '{}'::jsonb,
+  "error" text,
+  "started_at" timestamptz not null default now(),
+  "completed_at" timestamptz,
+  "duration_ms" text
+);

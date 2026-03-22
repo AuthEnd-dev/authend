@@ -36,6 +36,24 @@ function mergeConfigDefaults(definition: PluginDefinition, config: PluginConfig)
   };
 }
 
+function isEnvConfigured(key: string) {
+  const processValue = process.env[key];
+  if (typeof processValue === "string") {
+    return processValue.length > 0;
+  }
+
+  const envValue = (env as Record<string, unknown>)[key];
+  if (typeof envValue === "string") {
+    return envValue.length > 0;
+  }
+
+  return envValue !== undefined && envValue !== null;
+}
+
+function requiredEnvKeys(definition: PluginDefinition, state: PluginInstallState) {
+  return definition.getRequiredEnv?.(state) ?? definition.requiredEnv;
+}
+
 function normalizeCapabilityState(definition: PluginDefinition, input: Record<string, unknown>): Record<string, boolean> {
   const merged = {
     ...(definition.defaultCapabilityState ?? {}),
@@ -75,7 +93,7 @@ function normalizeExtensionBindings(definition: PluginDefinition, input: Record<
 function validatePluginConfig(definition: PluginDefinition, config: PluginConfig): string | null {
   const allowedKeys = new Set(definition.configSchema.map((field) => field.key));
   for (const key of Object.keys(config)) {
-    if (!allowedKeys.has(key)) {
+    if (!definition.allowUnknownConfigKeys && !allowedKeys.has(key)) {
       return `Unknown config key: ${key}`;
     }
   }
@@ -97,6 +115,11 @@ function validatePluginConfig(definition: PluginDefinition, config: PluginConfig
     if ((field.type === "string" || field.type === "password" || field.type === "url") && typeof value !== "string") {
       return `${field.label} must be a string`;
     }
+  }
+
+  const customError = definition.validateConfig?.(config, { forEnable: false });
+  if (customError) {
+    return customError;
   }
 
   return null;
@@ -131,11 +154,14 @@ function isSlotEnabled(slotKey: string, capabilityState: Record<string, boolean>
   return capabilityState.core === true;
 }
 
-function isSlotRequired(slotKey: string, capabilityState: Record<string, boolean>) {
-  if (slotKey === "ac") {
-    return capabilityState.dynamicAccessControl === true;
+function isSlotRequired(
+  slot: PluginDefinition["extensionSlots"][number],
+  capabilityState: Record<string, boolean>,
+) {
+  if (!slot.required) {
+    return false;
   }
-  return false;
+  return isSlotEnabled(slot.key, capabilityState);
 }
 
 function buildDependencyState(
@@ -200,13 +226,23 @@ export async function seedPluginInstallStates() {
     });
 
     if (existing) {
+      if (definition.required && !existing.enabled) {
+        await db
+          .update(pluginConfigs)
+          .set({
+            enabled: true,
+            version: existing.version ?? definition.version,
+            updatedAt: new Date(),
+          })
+          .where(eq(pluginConfigs.pluginId, definition.id));
+      }
       continue;
     }
 
     await db.insert(pluginConfigs).values({
       id: crypto.randomUUID(),
       pluginId: definition.id,
-      enabled: false,
+      enabled: definition.defaultEnabled === true,
       version: definition.version,
       config: mergeConfigDefaults(definition, {}),
       capabilityState: normalizeCapabilityState(definition, {}),
@@ -278,28 +314,39 @@ function buildInstallState(
     if (!isSlotEnabled(slot.key, row.capabilityState)) {
       continue;
     }
-    if (!isSlotRequired(slot.key, row.capabilityState)) {
+    if (!isSlotRequired(slot, row.capabilityState)) {
       continue;
     }
     const selectedHandlerId = row.extensionBindings[slot.key];
+    const allowedHandlerIds = getSlotHandlerDefinitions(slot).map((handler) => handler.id);
     if (!selectedHandlerId) {
       capabilityIssues.push(`${definition.id}.${slot.key} requires a registered handler`);
       continue;
     }
-    if (slot.handlerIds.length > 0 && !slot.handlerIds.includes(selectedHandlerId)) {
+    if (allowedHandlerIds.length > 0 && !allowedHandlerIds.includes(selectedHandlerId)) {
       capabilityIssues.push(`${definition.id}.${slot.key} uses an unsupported handler`);
     }
   }
 
   return {
     pluginId: definition.id,
-    enabled: row.enabled,
+    enabled: definition.required ? true : row.enabled,
     version: row.version ?? definition.version,
     config: row.config,
     capabilityState: row.capabilityState,
     dependencyState,
     health: buildHealth(
-      definition.requiredEnv.filter((key) => !(env as Record<string, unknown>)[key]),
+      requiredEnvKeys(definition, {
+        pluginId: definition.id,
+        enabled: definition.required ? true : row.enabled,
+        version: row.version ?? definition.version,
+        config: row.config,
+        capabilityState: row.capabilityState,
+        dependencyState,
+        health: row.health,
+        provisioningState: row.provisioningState,
+        extensionBindings: row.extensionBindings,
+      }).filter((key) => !isEnvConfigured(key)),
       dependencyState,
       capabilityIssues,
     ),
@@ -319,14 +366,22 @@ function buildCapabilities(definition: PluginDefinition, state: PluginInstallSta
   }));
 }
 
+function getSlotHandlerDefinitions(slot: PluginDefinition["extensionSlots"][number]) {
+  if (slot.handlerIds.length > 0) {
+    return slot.handlerIds
+      .map((handlerId) => getExtensionHandlerDefinition(handlerId))
+      .filter((handler): handler is NonNullable<typeof handler> => handler !== null);
+  }
+
+  return extensionHandlers.filter((handler) => handler.slotKeys?.includes(slot.key));
+}
+
 function buildExtensionSlots(definition: PluginDefinition, state: PluginInstallState): PluginExtensionSlot[] {
   return definition.extensionSlots.map((slot) => ({
     ...slot,
     enabled: isSlotEnabled(slot.key, state.capabilityState),
     selectedHandlerId: state.extensionBindings[slot.key] ?? slot.defaultHandlerId ?? null,
-    availableHandlers: slot.handlerIds
-      .map((handlerId) => getExtensionHandlerDefinition(handlerId))
-      .filter((handler): handler is NonNullable<typeof handler> => handler !== null)
+    availableHandlers: getSlotHandlerDefinitions(slot)
       .map((handler) => ({
         id: handler.id,
         label: handler.label,
@@ -359,9 +414,11 @@ function buildManifest(
     description: definition.description,
     category: definition.category,
     documentationUrl: definition.documentationUrl,
+    defaultEnabled: definition.defaultEnabled === true,
+    required: definition.required === true,
     dependencies: definition.dependencies,
-    requiredEnv: definition.requiredEnv,
-    missingEnvKeys: definition.requiredEnv.filter((key) => !(env as Record<string, unknown>)[key]),
+    requiredEnv: requiredEnvKeys(definition, state),
+    missingEnvKeys: requiredEnvKeys(definition, state).filter((key) => !isEnvConfigured(key)),
     configSchema: definition.configSchema,
     capabilities,
     extensionSlots,
@@ -384,6 +441,8 @@ function manifestToCatalogItem(manifest: PluginManifest): PluginCatalogItem {
     description: manifest.description,
     category: manifest.category,
     documentationUrl: manifest.documentationUrl,
+    defaultEnabled: manifest.defaultEnabled,
+    required: manifest.required,
     status: manifest.missingEnvKeys.length > 0 ? "requires-env" : manifest.installState.enabled ? "enabled" : "disabled",
     missingEnvKeys: manifest.missingEnvKeys,
     config: manifest.installState.config,
@@ -415,7 +474,7 @@ export async function listPluginManifests() {
       rowsById.get(definition.id) ??
       ({
         pluginId: definition.id,
-        enabled: false,
+        enabled: definition.defaultEnabled === true,
         version: definition.version,
         config: mergeConfigDefaults(definition, {}),
         capabilityState: normalizeCapabilityState(definition, {}),
@@ -482,6 +541,11 @@ export async function validatePluginConfigUpdate(pluginId: PluginId, input: Plug
     throw new HttpError(400, configError);
   }
 
+  const customValidationError = definition.validateConfig?.(config, { forEnable });
+  if (customValidationError) {
+    throw new HttpError(400, customValidationError);
+  }
+
   const capabilityState = normalizeCapabilityState(definition, asObject(input.capabilityState));
   const extensionBindings = normalizeExtensionBindings(definition, asObject(input.extensionBindings));
 
@@ -501,11 +565,12 @@ export async function validatePluginConfigUpdate(pluginId: PluginId, input: Plug
     }
 
     const handlerId = extensionBindings[slot.key];
-    if (handlerId && slot.handlerIds.length > 0 && !slot.handlerIds.includes(handlerId)) {
+    const allowedHandlerIds = getSlotHandlerDefinitions(slot).map((handler) => handler.id);
+    if (handlerId && allowedHandlerIds.length > 0 && !allowedHandlerIds.includes(handlerId)) {
       throw new HttpError(400, `${slot.key} does not allow handler ${handlerId}`);
     }
 
-    if (isSlotRequired(slot.key, capabilityState) && !handlerId) {
+    if (isSlotRequired(slot, capabilityState) && !handlerId) {
       throw new HttpError(400, `${slot.key} requires a registered handler`);
     }
   }
@@ -515,6 +580,13 @@ export async function validatePluginConfigUpdate(pluginId: PluginId, input: Plug
     const dependencyManifest = manifests.find((entry) => entry.id === dependency);
     return dependencyManifest?.installState.enabled !== true;
   });
+
+  if (definition.id === "apiKey" && config.references === "organization") {
+    const organizationManifest = manifests.find((entry) => entry.id === "organization");
+    if (organizationManifest?.installState.enabled !== true) {
+      throw new HttpError(400, "apiKey references=organization requires the organization plugin to be enabled");
+    }
+  }
 
   if (forEnable && dependencyProblems.length > 0) {
     throw new HttpError(400, `${pluginId} depends on: ${dependencyProblems.join(", ")}`);

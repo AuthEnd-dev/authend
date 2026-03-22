@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { pluginConfigUpdateSchema, pluginIdSchema, schemaDraftSchema, tableApiConfigSchema } from "@authend/shared";
+import { cronJobInputSchema, pluginConfigUpdateSchema, pluginIdSchema, schemaDraftSchema, settingsSectionIdSchema, tableApiConfigSchema } from "@authend/shared";
 import { requireSuperAdmin } from "../middleware/auth";
 import {
   listPluginCatalog,
@@ -13,6 +13,8 @@ import {
 import { getSchemaDraft, previewDraft, applyDraft } from "../services/schema-service";
 import { listMigrationHistory, previewPendingMigrations, applyPendingMigrations } from "../services/migration-service";
 import { buildApiPreview, listApiResources, saveTableApiConfig } from "../services/api-design-service";
+import { runBackupNow } from "../services/backup-service";
+import { createCronJobFromInput, getSettingsSectionState, removeCronJob, saveSettingsSectionState, triggerCronJob, updateCronJobFromInput } from "../services/settings-service";
 import { desc } from "drizzle-orm";
 import { db } from "../db/client";
 import { auditLogs } from "../db/schema/system";
@@ -40,6 +42,47 @@ export const adminRouter = new Hono()
     const auth = c.get("auth");
     const pluginId = pluginIdSchema.parse(c.req.param("pluginId"));
     return c.json(await disablePlugin(pluginId, auth.user.id));
+  })
+  .post("/settings/backups/run", async (c) => {
+    const auth = c.get("auth");
+    return c.json(await runBackupNow(auth.user.id, "manual"));
+  })
+  .get("/settings/crons/jobs", async (c) => {
+    const state = await getSettingsSectionState("crons");
+    return c.json("jobs" in state ? state.jobs : []);
+  })
+  .post("/settings/crons/jobs", async (c) => {
+    const auth = c.get("auth");
+    const body = cronJobInputSchema.parse(await c.req.json());
+    return c.json(await createCronJobFromInput(body, auth.user.id));
+  })
+  .patch("/settings/crons/jobs/:jobId", async (c) => {
+    const auth = c.get("auth");
+    const body = cronJobInputSchema.partial().parse(await c.req.json());
+    return c.json(await updateCronJobFromInput(c.req.param("jobId"), body, auth.user.id));
+  })
+  .delete("/settings/crons/jobs/:jobId", async (c) => {
+    const auth = c.get("auth");
+    await removeCronJob(c.req.param("jobId"), auth.user.id);
+    return c.body(null, 204);
+  })
+  .get("/settings/crons/runs", async (c) => {
+    const state = await getSettingsSectionState("crons");
+    return c.json("runs" in state ? state.runs : []);
+  })
+  .post("/settings/crons/:jobId/run", async (c) => {
+    const auth = c.get("auth");
+    return c.json(await triggerCronJob(c.req.param("jobId"), auth.user.id));
+  })
+  .get("/settings/:section", async (c) => {
+    const section = settingsSectionIdSchema.parse(c.req.param("section"));
+    return c.json(await getSettingsSectionState(section));
+  })
+  .post("/settings/:section", async (c) => {
+    const auth = c.get("auth");
+    const section = settingsSectionIdSchema.parse(c.req.param("section"));
+    const body = await c.req.json();
+    return c.json(await saveSettingsSectionState(section, body as never, auth.user.id));
   })
   .get("/schema", async (c) => c.json(await getSchemaDraft()))
   .post("/schema/preview", async (c) => {

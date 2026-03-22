@@ -96,11 +96,11 @@ These are deliberately out of scope in the current design:
 - multi-tenancy
 - hosted project management
 - billing
-- file storage
-- jobs and task queues
+- full file upload/browser workflows
+- distributed jobs and task queues
 - user-defined serverless functions
 - webhook orchestration
-- broad OAuth provider management from the dashboard
+- broad custom OAuth provider authoring beyond the curated social sign-on catalog
 
 ## 5. System Overview
 
