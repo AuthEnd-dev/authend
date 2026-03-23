@@ -182,26 +182,31 @@ export async function saveEnvironmentEditorState(raw: string, actorUserId?: stri
 }
 
 async function genericDiagnostics(section: Exclude<SettingsSectionId, "storage" | "backups" | "crons">) {
-  const state = await readSettingsSection(section);
-
   switch (section) {
-    case "general":
+    case "general": {
+      const state = await readSettingsSection("general");
       return {
         appUrlMatchesEnv: state.config.appUrl === env.APP_URL,
         adminUrl: state.config.adminUrl,
       };
-    case "authentication":
+    }
+    case "authentication": {
+      const state = await readSettingsSection("authentication");
       return {
         passwordPolicy: `${state.config.minPasswordLength}+ chars`,
         passwordCeiling: `${state.config.maxPasswordLength} chars`,
         signUpEnabled: state.config.allowSignUp,
       };
-    case "sessionsSecurity":
+    }
+    case "sessionsSecurity": {
+      const state = await readSettingsSection("sessionsSecurity");
       return {
         sessionTtlHours: Math.round(state.config.sessionTtlSeconds / 3600),
         admin2faRequired: state.config.enforceTwoFactorForAdmins,
       };
-    case "email":
+    }
+    case "email": {
+      const state = await readSettingsSection("email");
       return {
         smtpConfigured: Boolean(
           (state.config.smtpHost || env.SMTP_HOST) &&
@@ -211,17 +216,23 @@ async function genericDiagnostics(section: Exclude<SettingsSectionId, "storage" 
         smtpHost: state.config.smtpHost || env.SMTP_HOST || null,
         sender: `${state.config.senderName} <${state.config.senderEmail}>`,
       };
-    case "domainsOrigins":
+    }
+    case "domainsOrigins": {
+      const state = await readSettingsSection("domainsOrigins");
       return {
         trustedOrigins: state.config.trustedOrigins.length,
         corsOrigins: state.config.corsOrigins.length,
       };
-    case "api":
+    }
+    case "api": {
+      const state = await readSettingsSection("api");
       return {
         openApiEnabled: state.config.enableOpenApi,
         defaultAuthMode: state.config.defaultAuthMode,
       };
-    case "aiAssistant":
+    }
+    case "aiAssistant": {
+      const state = await readSettingsSection("aiAssistant");
       return {
         enabled: state.config.enabled,
         provider: state.config.provider,
@@ -230,7 +241,9 @@ async function genericDiagnostics(section: Exclude<SettingsSectionId, "storage" 
         apiKeyEnvVar: state.config.apiKeyEnvVar,
         apiKeyConfigured: Boolean(envValue(state.config.apiKeyEnvVar)),
       };
+    }
     case "adminAccess": {
+      const state = await readSettingsSection("adminAccess");
       const adminPlugin = await readPluginCapabilityManifest("admin");
       return {
         adminPluginRequired: adminPlugin.required,
@@ -247,15 +260,15 @@ async function genericDiagnostics(section: Exclude<SettingsSectionId, "storage" 
       };
     }
     case "observability":
-      return {
+      return readSettingsSection("observability").then((state) => ({
         logLevel: state.config.logLevel,
         auditRetentionDays: state.config.auditRetentionDays,
-      };
+      }));
     case "dangerZone":
-      return {
+      return readSettingsSection("dangerZone").then((state) => ({
         maintenanceMode: state.config.maintenanceMode,
         destructiveSchemaChanges: state.config.allowDestructiveSchemaChanges,
-      };
+      }));
     default:
       return {};
   }

@@ -346,6 +346,10 @@ function quoteIdentifier(value: string) {
   return `"${value}"`;
 }
 
+function quoteQualifiedIdentifier(table: string, column: string) {
+  return `${quoteIdentifier(table)}.${quoteIdentifier(column)}`;
+}
+
 export async function getTableDescriptor(table: string): Promise<TableDescriptor> {
   const resource = await resolveTableResource(table);
   return resource.descriptor;
@@ -357,6 +361,10 @@ export async function getClientTableDescriptor(table: string): Promise<TableDesc
     ...resource.descriptor,
     fields: readableFields(resource.descriptor, resource.config),
   };
+}
+
+function unsafeParams(values: readonly unknown[]) {
+  return values as never[];
 }
 
 async function hiddenFieldsForTable(table: string) {
@@ -507,6 +515,19 @@ async function resolveIncludeRelations(descriptor: TableDescriptor, includes: st
   });
 }
 
+function buildInnerRelationClauses(descriptor: TableDescriptor, relations: IncludeRelation[]) {
+  return relations
+    .filter((relation) => relation.joinType === "inner")
+    .map(
+      (relation) =>
+        `exists (
+          select 1
+          from ${quoteIdentifier(relation.targetTable)}
+          where ${quoteQualifiedIdentifier(relation.targetTable, relation.targetField)} = ${quoteQualifiedIdentifier(descriptor.table, relation.sourceField)}
+        )`,
+    );
+}
+
 export async function listRecords(table: string, query: URLSearchParams, options: ListRecordsOptions = {}) {
   const resource = await resolveTableResource(table);
   const { descriptor } = resource;
@@ -584,6 +605,9 @@ export async function listRecords(table: string, query: URLSearchParams, options
     throw new HttpError(400, `Unknown include field ${disallowedInclude}`);
   }
 
+  const relations = includes.length > 0 ? await resolveIncludeRelations(descriptor, includes) : [];
+  whereClauses.push(...buildInnerRelationClauses(descriptor, relations));
+
   applyOwnershipFilter(descriptor, whereClauses, values, options.access);
 
   const where = whereClauses.length ? `where ${whereClauses.join(" and ")}` : "";
@@ -592,15 +616,14 @@ export async function listRecords(table: string, query: URLSearchParams, options
   const selectSql = selectColumnsSql(descriptor);
   const items = await sql.unsafe(
     `select ${selectSql} from ${tableSql} ${where} order by ${quoteIdentifier(sort)} ${order} ${limitOffsetSql}`,
-    values,
+    unsafeParams(values),
   );
   const [{ count }] = await sql.unsafe<{ count: string }[]>(
     `select count(*)::text as count from ${tableSql} ${where}`,
-    values,
+    unsafeParams(values),
   );
 
   if (includes.length > 0) {
-    const relations = await resolveIncludeRelations(descriptor, includes);
     const filteredItems: Record<string, unknown>[] = [];
     const hiddenFieldCache = new Map<string, Set<string>>();
     const hiddenFields = await hiddenFieldsForTable(descriptor.table);
@@ -625,7 +648,7 @@ export async function listRecords(table: string, query: URLSearchParams, options
           `select ${selectColumnsSql(relatedDescriptor)} from ${quoteIdentifier(relation.targetTable)}
            where ${quoteIdentifier(relation.targetField)} = $1
            limit 1`,
-          [foreignId],
+          unsafeParams([foreignId]),
         );
 
         if (!related && relation.joinType === "inner") {
@@ -643,7 +666,7 @@ export async function listRecords(table: string, query: URLSearchParams, options
 
     return {
       items: filteredItems,
-      total: filteredItems.length,
+      total: Number(count),
       page,
       pageSize,
     };
@@ -669,7 +692,7 @@ export async function getRecord(table: string, id: string, options: MutationReco
     `select ${selectSql} from ${quoteIdentifier(descriptor.table)}
      where ${whereClauses.join(" and ")}
      limit 1`,
-    values,
+    unsafeParams(values),
   );
   if (!record) {
     throw new HttpError(404, "Record not found");
@@ -701,7 +724,7 @@ export async function createRecord(table: string, payload: Record<string, unknow
     `insert into ${quoteIdentifier(descriptor.table)} (${columns.map(quoteIdentifier).join(", ")})
      values (${placeholders})
      returning *`,
-    values,
+    unsafeParams(values),
   );
   return sanitiseRecordForTable(descriptor.table, record);
 }
@@ -735,7 +758,7 @@ export async function updateRecord(table: string, id: string, payload: Record<st
      set ${assignments}
      where ${whereClauses.join(" and ")}
      returning *`,
-    values,
+    unsafeParams(values),
   );
   if (!record) {
     throw new HttpError(404, "Record not found");
@@ -754,7 +777,7 @@ export async function deleteRecord(table: string, id: string, options: MutationR
     `delete from ${quoteIdentifier(descriptor.table)}
      where ${whereClauses.join(" and ")}
      returning *`,
-    values,
+    unsafeParams(values),
   );
   if (!record) {
     throw new HttpError(404, "Record not found");

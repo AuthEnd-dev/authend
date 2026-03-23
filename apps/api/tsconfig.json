@@ -3,6 +3,11 @@
   "compilerOptions": {
     "composite": true
   },
+  "references": [
+    {
+      "path": "../../packages/shared"
+    }
+  ],
   "include": [
     "src",
     "drizzle.config.ts"

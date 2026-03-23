@@ -387,7 +387,7 @@ async function previewActionBatch(batch: AiActionBatch): Promise<AiActionPreview
             `Current status: ${manifest.installState.enabled ? "enabled" : "disabled"}`,
             `Provisioning status: ${manifest.installState.provisioningState.status}`,
           ],
-          warnings: manifest.health.issues,
+          warnings: manifest.installState.health.issues,
         });
         break;
       }

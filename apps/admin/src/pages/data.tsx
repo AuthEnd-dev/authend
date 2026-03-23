@@ -45,6 +45,14 @@ import {
   type Table as ReactTableInstance,
 } from '@tanstack/react-table';
 
+function asDataRecord(value: object): DataRecord {
+  return value as DataRecord;
+}
+
+function asInputValue(value: unknown) {
+  return typeof value === 'string' || typeof value === 'number' ? value : '';
+}
+
 function DataValue({ value, columnKey }: { value: unknown; columnKey: string }) {
   if (value === null || value === undefined || value === '') {
     return <span className="text-muted-foreground/40 italic text-xs font-semibold">N/A</span>;
@@ -181,7 +189,7 @@ function RelationPickerModal({
     queryKey: ['relation-picker-records', relation?.targetTable, appliedSearchValue],
     enabled: isOpen && !!relation?.targetTable,
     queryFn: () =>
-      client.data.resource(relation!.targetTable).list({
+      client.data.resource<DataRecord>(relation!.targetTable).list({
         page: 1,
         pageSize: 20,
         sort: relation!.targetField,
@@ -255,7 +263,8 @@ function RelationPickerModal({
         <div className="flex-1 overflow-auto px-6 py-4">
           <div className="grid gap-2">
             {data?.items.map((item) => {
-              const itemId = item[relation.targetField];
+              const record = item as DataRecord;
+              const itemId = record[relation.targetField];
               const selected = String(value ?? '') === String(itemId ?? '');
               if (typeof itemId !== 'string' && typeof itemId !== 'number') {
                 return null;
@@ -273,7 +282,7 @@ function RelationPickerModal({
                     selected ? 'border-primary bg-primary/5' : 'border-border/60 hover:bg-muted/30'
                   }`}
                 >
-                  <div className="text-sm font-semibold text-foreground">{relationOptionLabel(item)}</div>
+                  <div className="text-sm font-semibold text-foreground">{relationOptionLabel(record)}</div>
                   <div className="font-mono text-xs text-muted-foreground">{String(itemId)}</div>
                 </button>
               );
@@ -451,7 +460,7 @@ function DataRecordPanel({
           },
         });
       } else {
-        const createdRecord = await client.data.create(tableName, payload);
+        const createdRecord = (await client.data.create(tableName, payload)) as DataRecord;
         const createdRecordId = typeof createdRecord.id === 'string' ? createdRecord.id : null;
         showNotice({
           title: 'Record created',
@@ -608,7 +617,7 @@ function DataRecordPanel({
               inputContent = (
                 <Textarea
                   className="font-mono text-xs min-h-[120px]"
-                  value={typeof val === 'object' ? JSON.stringify(val, null, 2) : val || ''}
+                  value={typeof val === 'object' ? JSON.stringify(val, null, 2) : asInputValue(val)}
                   onChange={(e) => {
                     let parsed = e.target.value;
                     try {
@@ -623,7 +632,7 @@ function DataRecordPanel({
               inputContent = (
                 <Input
                   type="number"
-                  value={val ?? ''}
+                  value={typeof val === 'number' ? val : typeof val === 'string' ? val : ''}
                   onChange={(e) => handleChange(field.name, e.target.value ? Number(e.target.value) : null)}
                 />
               );
@@ -644,7 +653,7 @@ function DataRecordPanel({
                 />
               );
             } else {
-              inputContent = <Input type="text" value={val ?? ''} onChange={(e) => handleChange(field.name, e.target.value)} />;
+              inputContent = <Input type="text" value={asInputValue(val)} onChange={(e) => handleChange(field.name, e.target.value)} />;
             }
 
             return (
@@ -714,13 +723,13 @@ export function DataPage() {
   const { data, isFetching, refetch } = useQuery({
     queryKey,
     queryFn: () =>
-      client.data.resource(tableName).list({
+      client.data.resource<DataRecord>(tableName).list({
         filterValue: appliedSearchValue || undefined,
       }),
   });
 
-  const items = useMemo(() => data?.items || [], [data?.items]);
-  const tableSchema = tableMeta;
+  const items = useMemo<DataRecord[]>(() => (data?.items ?? []).map((item) => item as DataRecord), [data?.items]);
+  const tableSchema = tableMeta as TableDescriptor | undefined;
   const canMutateRows = tableMeta?.source === 'generated';
 
   // Form State
@@ -844,7 +853,7 @@ export function DataPage() {
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = useState({});
 
-  const table = useReactTable({
+  const table = useReactTable<DataRecord>({
     data: items,
     columns: dynamicColumns,
     state: { sorting, columnVisibility, rowSelection },

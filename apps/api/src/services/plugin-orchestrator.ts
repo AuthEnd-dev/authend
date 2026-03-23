@@ -419,7 +419,10 @@ function buildManifest(
     dependencies: definition.dependencies,
     requiredEnv: requiredEnvKeys(definition, state),
     missingEnvKeys: requiredEnvKeys(definition, state).filter((key) => !isEnvConfigured(key)),
-    configSchema: definition.configSchema,
+    configSchema: definition.configSchema.map((field) => ({
+      required: false,
+      ...field,
+    })),
     capabilities,
     extensionSlots,
     models,

@@ -486,7 +486,7 @@ export function CodeBlock({ code, language, className }: CodeBlockProps) {
               <span className="px-3 py-1 whitespace-pre">
                 {tokens.length === 0 ? ' ' : tokens.map((token, tokenIndex) => (
                   <Fragment key={`${index}-${tokenIndex}`}>
-                    <span className={tokenClassName(token.kind)}>{token.value}</span>
+                    <span className={tokenClassName(token.kind as TokenKind)}>{token.value}</span>
                   </Fragment>
                 ))}
               </span>

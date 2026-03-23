@@ -270,19 +270,19 @@ export function PluginsPage() {
 
   const apiKeyRecordsQuery = useQuery({
     queryKey: ['plugin-ops', 'apiKey', 'records'],
-    queryFn: () => client.data.resource('apikey').list({ pageSize: 8, sort: 'created_at', order: 'desc' }),
+    queryFn: () => client.data.resource<DataRecord>('apikey').list({ pageSize: 8, sort: 'created_at', order: 'desc' }),
     enabled: selectedPlugin?.id === 'apiKey' && selectedPlugin.installState.enabled,
   });
 
   const adminUsersQuery = useQuery({
     queryKey: ['plugin-ops', 'admin', 'users'],
-    queryFn: () => client.data.resource('user').list({ pageSize: 8, sort: 'created_at', order: 'desc' }),
+    queryFn: () => client.data.resource<DataRecord>('user').list({ pageSize: 8, sort: 'created_at', order: 'desc' }),
     enabled: selectedPlugin?.id === 'admin' && selectedPlugin.installState.enabled,
   });
 
   const adminSessionsQuery = useQuery({
     queryKey: ['plugin-ops', 'admin', 'sessions'],
-    queryFn: () => client.data.resource('session').list({ pageSize: 12, sort: 'created_at', order: 'desc' }),
+    queryFn: () => client.data.resource<DataRecord>('session').list({ pageSize: 12, sort: 'created_at', order: 'desc' }),
     enabled: selectedPlugin?.id === 'admin' && selectedPlugin.installState.enabled,
   });
 

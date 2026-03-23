@@ -305,6 +305,146 @@ describe("validateDraft", () => {
     ).toThrow("Hidden field posts.password does not exist");
   });
 
+  test("rejects hiding the primary key", () => {
+    expect(() =>
+      validateDraft({
+        tables: [
+          {
+            name: "posts",
+            displayName: "Posts",
+            primaryKey: "id",
+            fields: [
+              {
+                name: "id",
+                type: "uuid",
+                nullable: false,
+                unique: true,
+                indexed: true,
+                default: "gen_random_uuid()",
+              },
+              {
+                name: "title",
+                type: "text",
+                nullable: false,
+                unique: false,
+                indexed: false,
+              },
+            ],
+            indexes: [],
+            api: {
+              authMode: "superadmin",
+              access: {
+                ownershipField: null,
+                list: { actors: ["superadmin"], scope: "all" },
+                get: { actors: ["superadmin"], scope: "all" },
+                create: { actors: ["superadmin"], scope: "all" },
+                update: { actors: ["superadmin"], scope: "all" },
+                delete: { actors: ["superadmin"], scope: "all" },
+              },
+              operations: {
+                list: true,
+                get: true,
+                create: true,
+                update: true,
+                delete: true,
+              },
+              pagination: {
+                enabled: true,
+                defaultPageSize: 20,
+                maxPageSize: 100,
+              },
+              filtering: {
+                enabled: true,
+                fields: [],
+              },
+              sorting: {
+                enabled: true,
+                fields: [],
+                defaultOrder: "desc",
+              },
+              includes: {
+                enabled: true,
+                fields: [],
+              },
+              hiddenFields: ["id"],
+            },
+          },
+        ],
+        relations: [],
+      }),
+    ).toThrow("Primary key posts.id cannot be hidden");
+  });
+
+  test("rejects hiding the ownership field", () => {
+    expect(() =>
+      validateDraft({
+        tables: [
+          {
+            name: "posts",
+            displayName: "Posts",
+            primaryKey: "id",
+            fields: [
+              {
+                name: "id",
+                type: "uuid",
+                nullable: false,
+                unique: true,
+                indexed: true,
+                default: "gen_random_uuid()",
+              },
+              {
+                name: "owner_id",
+                type: "text",
+                nullable: false,
+                unique: false,
+                indexed: true,
+              },
+            ],
+            indexes: [],
+            api: {
+              authMode: "session",
+              access: {
+                ownershipField: "owner_id",
+                list: { actors: ["session"], scope: "all" },
+                get: { actors: ["session"], scope: "all" },
+                create: { actors: ["session"], scope: "all" },
+                update: { actors: ["session"], scope: "own" },
+                delete: { actors: ["session"], scope: "own" },
+              },
+              operations: {
+                list: true,
+                get: true,
+                create: true,
+                update: true,
+                delete: true,
+              },
+              pagination: {
+                enabled: true,
+                defaultPageSize: 20,
+                maxPageSize: 100,
+              },
+              filtering: {
+                enabled: true,
+                fields: [],
+              },
+              sorting: {
+                enabled: true,
+                fields: [],
+                defaultOrder: "desc",
+              },
+              includes: {
+                enabled: true,
+                fields: [],
+              },
+              hiddenFields: ["owner_id"],
+            },
+          },
+        ],
+        relations: [],
+      }),
+    ).toThrow("Ownership field posts.owner_id cannot be hidden");
+  });
+
   test("rejects duplicate relation aliases on the same table", () => {
     expect(() =>
       validateDraft({

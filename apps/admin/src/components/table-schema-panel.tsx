@@ -56,7 +56,7 @@ async function listAllRecords(table: string) {
       pageSize: "100",
     });
     const response = await client.data.list(table, searchParams);
-    items.push(...response.items);
+    items.push(...(response.items as DataRecord[]));
     total = response.total;
     page += 1;
   } while (items.length < total);
@@ -203,17 +203,23 @@ function toggleListValue(values: string[], value: string) {
 }
 
 function ensureSuperadminActors(actors: ApiAccessActor[]) {
-  return actors.includes("superadmin") ? actors : [...actors, "superadmin"];
+  return actors.includes("superadmin") ? actors : [...actors, "superadmin"] as ApiAccessActor[];
 }
 
 function withRequiredSuperadminAccess(access: TableApiAccess): TableApiAccess {
+  const listActors = ensureSuperadminActors([...access.list.actors]);
+  const getActors = ensureSuperadminActors([...access.get.actors]);
+  const createActors = ensureSuperadminActors([...access.create.actors]);
+  const updateActors = ensureSuperadminActors([...access.update.actors]);
+  const deleteActors = ensureSuperadminActors([...access.delete.actors]);
+
   return {
     ...access,
-    list: { ...access.list, actors: ensureSuperadminActors(access.list.actors) },
-    get: { ...access.get, actors: ensureSuperadminActors(access.get.actors) },
-    create: { ...access.create, actors: ensureSuperadminActors(access.create.actors) },
-    update: { ...access.update, actors: ensureSuperadminActors(access.update.actors) },
-    delete: { ...access.delete, actors: ensureSuperadminActors(access.delete.actors) },
+    list: { ...access.list, actors: listActors as ApiAccessActor[] },
+    get: { ...access.get, actors: getActors as ApiAccessActor[] },
+    create: { ...access.create, actors: createActors as ApiAccessActor[] },
+    update: { ...access.update, actors: updateActors as ApiAccessActor[] },
+    delete: { ...access.delete, actors: deleteActors as ApiAccessActor[] },
   };
 }
 
@@ -674,11 +680,11 @@ export function TableSchemaPanel({
 
   const updateAccessActors = (operation: ApiPreviewOperation["key"], actor: ApiAccessActor, checked: boolean) => {
     setApiConfig((current) => {
-      const nextActors = actor === "superadmin"
-        ? ensureSuperadminActors(current.access[operation].actors)
+      const nextActors: ApiAccessActor[] = actor === "superadmin"
+        ? ensureSuperadminActors([...current.access[operation].actors])
         : checked
-        ? Array.from(new Set([...current.access[operation].actors, actor]))
-        : current.access[operation].actors.filter((entry) => entry !== actor);
+        ? Array.from(new Set<ApiAccessActor>([...current.access[operation].actors, actor]))
+        : current.access[operation].actors.filter((entry): entry is ApiAccessActor => entry !== actor);
 
       return {
         ...current,
@@ -686,7 +692,7 @@ export function TableSchemaPanel({
           ...current.access,
           [operation]: {
             ...current.access[operation],
-            actors: ensureSuperadminActors(nextActors),
+            actors: ensureSuperadminActors(nextActors) as ApiAccessActor[],
             scope: actor === "public" && checked && current.access[operation].scope === "own" ? "all" : current.access[operation].scope,
           },
         },

@@ -1,7 +1,13 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "composite": true
+    "composite": true,
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "../../node_modules/.cache/authend-ts/sdk",
+    "tsBuildInfoFile": "../../node_modules/.cache/authend-ts/sdk.tsbuildinfo"
   },
   "include": ["src"]
 }

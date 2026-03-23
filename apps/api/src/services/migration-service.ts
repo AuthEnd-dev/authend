@@ -93,23 +93,16 @@ export async function applySqlMigration(input: {
 
   await sql.begin(async (transaction) => {
     await transaction.unsafe(input.sqlText);
-    await transaction`
-      insert into migration_runs (id, migration_key, title, sql, status, created_at, applied_at)
-      values (
-        ${crypto.randomUUID()},
-        ${input.key},
-        ${input.title},
-        ${input.sqlText},
-        'applied',
-        now(),
-        now()
-      )
-      on conflict (migration_key) do update
-      set title = excluded.title,
-          sql = excluded.sql,
-          status = excluded.status,
-          applied_at = excluded.applied_at
-    `;
+    await transaction.unsafe(
+      `insert into migration_runs (id, migration_key, title, sql, status, created_at, applied_at)
+       values ($1, $2, $3, $4, 'applied', now(), now())
+       on conflict (migration_key) do update
+       set title = excluded.title,
+           sql = excluded.sql,
+           status = excluded.status,
+           applied_at = excluded.applied_at`,
+      [crypto.randomUUID(), input.key, input.title, input.sqlText] as never[],
+    );
   });
 
   await writeAuditLog({
@@ -141,22 +134,15 @@ export async function rollbackSqlMigration(input: {
 
   await sql.begin(async (transaction) => {
     await transaction.unsafe(input.sqlText);
-    await transaction`
-      insert into migration_runs (id, migration_key, title, sql, status, created_at, applied_at)
-      values (
-        ${crypto.randomUUID()},
-        ${input.key},
-        ${input.title},
-        ${input.sqlText},
-        'rolled_back',
-        now(),
-        now()
-      )
-      on conflict (migration_key) do update
-      set title = excluded.title,
-          status = excluded.status,
-          applied_at = excluded.applied_at
-    `;
+    await transaction.unsafe(
+      `insert into migration_runs (id, migration_key, title, sql, status, created_at, applied_at)
+       values ($1, $2, $3, $4, 'rolled_back', now(), now())
+       on conflict (migration_key) do update
+       set title = excluded.title,
+           status = excluded.status,
+           applied_at = excluded.applied_at`,
+      [crypto.randomUUID(), input.key, input.title, input.sqlText] as never[],
+    );
   });
 
   await writeAuditLog({

@@ -3,7 +3,7 @@ import { env } from "../config/env";
 import { logger } from "./logger";
 import { readSettingsSection } from "../services/settings-store";
 
-let transporterPromise: Promise<nodemailer.Transporter | null> | null = null;
+let transporterPromise: Promise<ReturnType<typeof nodemailer.createTransport> | null> | null = null;
 let transporterKey: string | null = null;
 
 async function resolveEmailConfig() {

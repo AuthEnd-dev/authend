@@ -43,7 +43,7 @@ export function AuthGate(props: { children: ReactNode }) {
                 password,
               });
               if (result.error) {
-                setError(result.error.message);
+                setError(result.error.message ?? 'Sign in failed');
               }
               setPending(false);
             }}

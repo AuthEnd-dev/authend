@@ -1009,7 +1009,7 @@ export function BackupsSettingsPage() {
                   </p>
                   {run.error ? <p className="mt-1 text-xs text-destructive">{run.error}</p> : null}
                 </div>
-                <div className="text-sm text-muted-foreground">{run.sizeBytes !== null ? `${run.sizeBytes.toLocaleString()} bytes` : "—"}</div>
+                <div className="text-sm text-muted-foreground">{run.sizeBytes != null ? `${run.sizeBytes.toLocaleString()} bytes` : "—"}</div>
               </div>
             ))}
           </div>

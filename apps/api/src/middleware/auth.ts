@@ -40,6 +40,11 @@ type VerifiedApiKey = {
   permissions?: Record<string, string[]> | null;
 };
 
+type VerifyApiKeyResult = {
+  valid: boolean;
+  key: VerifiedApiKey | null;
+};
+
 function flattenApiKeyPermissions(permissions: Record<string, string[]> | null | undefined) {
   const flattened = new Set<string>();
 
@@ -63,8 +68,11 @@ function readApiKeyHeader(c: Context) {
   }
 
   const authorization = c.req.header('authorization');
-  if (authorization?.startsWith('Bearer ')) {
-    return authorization.slice('Bearer '.length).trim();
+  if (authorization) {
+    const match = authorization.match(/^ApiKey\s+(.+)$/i);
+    if (match) {
+      return match[1]?.trim() ?? null;
+    }
   }
 
   return null;
@@ -100,7 +108,9 @@ export async function verifyRequestApiKey(c: Context) {
   }
 
   const auth = await getAuth();
-  const result = await auth.api.verifyApiKey({
+  const result = await (auth.api as typeof auth.api & {
+    verifyApiKey: (input: { body: { key: string } }) => Promise<VerifyApiKeyResult>;
+  }).verifyApiKey({
     body: {
       key: presentedKey,
     },

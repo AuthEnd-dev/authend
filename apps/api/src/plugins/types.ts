@@ -14,6 +14,7 @@ import type {
   PluginManifest,
   PluginModel,
 } from "@authend/shared";
+import type { BetterAuthPlugin as BetterAuthRuntimePlugin } from "better-auth";
 
 export type PluginSqlPlan = {
   key: string;
@@ -100,7 +101,7 @@ export type PluginDefinition = {
   documentationUrl: string;
   migrationStrategy: "none" | "sql" | "manual";
   dependencies: PluginId[];
-  configSchema: PluginConfigField[];
+  configSchema: Array<Omit<PluginConfigField, "required"> & { required?: boolean }>;
   capabilities: Omit<PluginCapability, "enabled" | "missingRequirements">[];
   extensionSlots: Omit<PluginExtensionSlot, "enabled" | "selectedHandlerId" | "availableHandlers">[];
   models: Omit<PluginModel, "provisioned">[];
@@ -119,7 +120,7 @@ export type PluginDefinition = {
   getRequiredEnv?: (state: PluginInstallState) => string[];
   getProvisionPlan?: (state: PluginInstallState) => PluginSqlPlan | null;
   getRollbackPlan?: (state: PluginInstallState) => PluginSqlPlan | null;
-  composeServer?: (context: RuntimePluginContext) => unknown | null;
+  composeServer?: (context: RuntimePluginContext) => BetterAuthRuntimePlugin | null;
   composeAuthOptions?: (context: RuntimePluginContext) => Record<string, unknown> | null;
   composeClient?: (state: PluginInstallState) => string[];
 };

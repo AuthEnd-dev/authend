@@ -113,25 +113,27 @@ export const apiAccessScopeSchema = z.enum(["all", "own"]);
 
 export type ApiAccessScope = z.infer<typeof apiAccessScopeSchema>;
 
-const defaultOperationAccess = {
-  actors: ["superadmin"],
-  scope: "all",
-} as const;
+function defaultOperationAccess() {
+  return {
+    actors: ["superadmin"] as ApiAccessActor[],
+    scope: "all" as ApiAccessScope,
+  };
+}
 
 export const apiOperationAccessSchema = z.object({
-  actors: z.array(apiAccessActorSchema).default([...defaultOperationAccess.actors]),
-  scope: apiAccessScopeSchema.default(defaultOperationAccess.scope),
+  actors: z.array(apiAccessActorSchema).default(() => defaultOperationAccess().actors),
+  scope: apiAccessScopeSchema.default(defaultOperationAccess().scope),
 });
 
 export type ApiOperationAccess = z.infer<typeof apiOperationAccessSchema>;
 
 export const tableApiAccessSchema = z.object({
   ownershipField: z.string().min(1).nullish(),
-  list: apiOperationAccessSchema.default(defaultOperationAccess),
-  get: apiOperationAccessSchema.default(defaultOperationAccess),
-  create: apiOperationAccessSchema.default(defaultOperationAccess),
-  update: apiOperationAccessSchema.default(defaultOperationAccess),
-  delete: apiOperationAccessSchema.default(defaultOperationAccess),
+  list: apiOperationAccessSchema.default(() => defaultOperationAccess()),
+  get: apiOperationAccessSchema.default(() => defaultOperationAccess()),
+  create: apiOperationAccessSchema.default(() => defaultOperationAccess()),
+  update: apiOperationAccessSchema.default(() => defaultOperationAccess()),
+  delete: apiOperationAccessSchema.default(() => defaultOperationAccess()),
 });
 
 export type TableApiAccess = z.infer<typeof tableApiAccessSchema>;
@@ -160,66 +162,21 @@ export const apiSortingSchema = z.object({
 
 export type ApiSortingConfig = z.infer<typeof apiSortingSchema>;
 
-export const tableApiConfigSchema = z.object({
-  routeSegment: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/).nullish(),
-  tag: z.string().min(1).nullish(),
-  sdkName: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/).nullish(),
-  description: z.string().min(1).nullish(),
-  authMode: apiAuthModeSchema.default("superadmin"),
-  access: tableApiAccessSchema.default({
+function defaultTableApiAccess() {
+  return {
     ownershipField: null,
-    list: defaultOperationAccess,
-    get: defaultOperationAccess,
-    create: defaultOperationAccess,
-    update: defaultOperationAccess,
-    delete: defaultOperationAccess,
-  }),
-  operations: tableApiOperationsSchema.default({
-    list: true,
-    get: true,
-    create: true,
-    update: true,
-    delete: true,
-  }),
-  pagination: apiPaginationSchema.default({
-    enabled: true,
-    defaultPageSize: 20,
-    maxPageSize: 100,
-  }),
-  filtering: apiFieldAccessSchema.default({
-    enabled: true,
-    fields: [],
-  }),
-  sorting: apiSortingSchema.default({
-    enabled: true,
-    fields: [],
-    defaultOrder: "desc",
-  }),
-  includes: apiFieldAccessSchema.default({
-    enabled: true,
-    fields: [],
-  }),
-  hiddenFields: z.array(z.string().min(1)).default([]),
-});
+    list: defaultOperationAccess(),
+    get: defaultOperationAccess(),
+    create: defaultOperationAccess(),
+    update: defaultOperationAccess(),
+    delete: defaultOperationAccess(),
+  };
+}
 
-export type TableApiConfig = z.infer<typeof tableApiConfigSchema>;
-
-export const tableBlueprintSchema = z.object({
-  name: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/),
-  displayName: z.string().min(1),
-  primaryKey: z.string().min(1).default("id"),
-  fields: z.array(fieldBlueprintSchema).min(1),
-  indexes: z.array(z.array(z.string().min(1)).min(1)).default([]),
-  api: tableApiConfigSchema.default({
-    authMode: "superadmin",
-    access: {
-      ownershipField: null,
-      list: defaultOperationAccess,
-      get: defaultOperationAccess,
-      create: defaultOperationAccess,
-      update: defaultOperationAccess,
-      delete: defaultOperationAccess,
-    },
+function defaultTableApiConfig() {
+  return {
+    authMode: "superadmin" as ApiAuthMode,
+    access: defaultTableApiAccess(),
     operations: {
       list: true,
       get: true,
@@ -234,19 +191,45 @@ export const tableBlueprintSchema = z.object({
     },
     filtering: {
       enabled: true,
-      fields: [],
+      fields: [] as string[],
     },
     sorting: {
       enabled: true,
-      fields: [],
-      defaultOrder: "desc",
+      fields: [] as string[],
+      defaultOrder: "desc" as const,
     },
     includes: {
       enabled: true,
-      fields: [],
+      fields: [] as string[],
     },
-    hiddenFields: [],
-  }),
+    hiddenFields: [] as string[],
+  };
+}
+
+export const tableApiConfigSchema = z.object({
+  routeSegment: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/).nullish(),
+  tag: z.string().min(1).nullish(),
+  sdkName: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/).nullish(),
+  description: z.string().min(1).nullish(),
+  authMode: apiAuthModeSchema.default("superadmin"),
+  access: tableApiAccessSchema.default(() => defaultTableApiAccess()),
+  operations: tableApiOperationsSchema.default(() => defaultTableApiConfig().operations),
+  pagination: apiPaginationSchema.default(() => defaultTableApiConfig().pagination),
+  filtering: apiFieldAccessSchema.default(() => defaultTableApiConfig().filtering),
+  sorting: apiSortingSchema.default(() => defaultTableApiConfig().sorting),
+  includes: apiFieldAccessSchema.default(() => defaultTableApiConfig().includes),
+  hiddenFields: z.array(z.string().min(1)).default([]),
+});
+
+export type TableApiConfig = z.infer<typeof tableApiConfigSchema>;
+
+export const tableBlueprintSchema = z.object({
+  name: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/),
+  displayName: z.string().min(1),
+  primaryKey: z.string().min(1).default("id"),
+  fields: z.array(fieldBlueprintSchema).min(1),
+  indexes: z.array(z.array(z.string().min(1)).min(1)).default([]),
+  api: tableApiConfigSchema.default(() => defaultTableApiConfig()),
 });
 
 export type TableBlueprint = z.infer<typeof tableBlueprintSchema>;

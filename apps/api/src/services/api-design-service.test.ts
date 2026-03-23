@@ -104,11 +104,20 @@ describe("normaliseTableApiConfig", () => {
     const config = normaliseTableApiConfig(
       {
         authMode: "public",
+        access: {
+          ownershipField: null,
+          list: { actors: ["public"], scope: "all" },
+          get: { actors: ["public"], scope: "all" },
+          create: { actors: ["public"], scope: "all" },
+          update: { actors: ["public"], scope: "all" },
+          delete: { actors: ["public"], scope: "all" },
+        },
         operations: baseTable.api.operations,
         pagination: baseTable.api.pagination,
         filtering: baseTable.api.filtering,
         sorting: baseTable.api.sorting,
         includes: baseTable.api.includes,
+        hiddenFields: [],
       },
       baseTable,
       draft,
@@ -199,7 +208,7 @@ describe("normaliseTableApiConfig", () => {
     );
 
     expect(config.hiddenFields).toEqual(["owner_id"]);
-    expect(config.filtering.fields).toEqual(["id", "title", "author_id"]);
+    expect(config.filtering.fields).toEqual(["id", "title"]);
     expect(config.sorting.fields).toEqual(["id"]);
     expect(config.sorting.defaultField).toBe("id");
   });

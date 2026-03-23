@@ -1,3 +1,5 @@
+import type { z } from "zod";
+import { schemaDraftSchema } from "./contracts";
 import type { FieldBlueprint, FieldType, SchemaDraft, TableBlueprint } from "./contracts";
 
 const builtinRelationTables = new Set([
@@ -51,7 +53,8 @@ export function ensureFieldDefaults(field: FieldBlueprint): FieldBlueprint {
   };
 }
 
-export function validateDraft(draft: SchemaDraft) {
+export function validateDraft(rawDraft: z.input<typeof schemaDraftSchema>): SchemaDraft {
+  const draft = schemaDraftSchema.parse(rawDraft);
   const tableNames = new Set<string>();
   const routeSegments = new Set<string>([
     "user",
@@ -145,6 +148,14 @@ export function validateDraft(draft: SchemaDraft) {
       if (!fieldNames.has(field)) {
         throw new Error(`Hidden field ${table.name}.${field} does not exist`);
       }
+    }
+
+    if (hiddenFields.includes(table.primaryKey)) {
+      throw new Error(`Primary key ${table.name}.${table.primaryKey} cannot be hidden`);
+    }
+
+    if (ownershipField && hiddenFields.includes(ownershipField)) {
+      throw new Error(`Ownership field ${table.name}.${ownershipField} cannot be hidden`);
     }
   }
 

@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import type { BetterAuthPlugin } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { env } from "../config/env";
 import { db } from "../db/client";
@@ -44,7 +45,7 @@ async function runtimeContributions() {
 
       return acc;
     },
-    { plugins: [] as unknown[], authOptions: {} as Record<string, unknown> },
+    { plugins: [] as BetterAuthPlugin[], authOptions: {} as Record<string, unknown> },
   );
 }
 

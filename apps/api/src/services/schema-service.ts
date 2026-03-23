@@ -389,40 +389,42 @@ end $$;`);
 
 async function replaceMetadata(draft: SchemaDraft) {
   await sql.begin(async (transaction) => {
-    await transaction`delete from schema_relations`;
-    await transaction`delete from schema_fields`;
-    await transaction`delete from schema_tables`;
+    await transaction.unsafe(`delete from schema_relations`);
+    await transaction.unsafe(`delete from schema_fields`);
+    await transaction.unsafe(`delete from schema_tables`);
 
     for (const table of draft.tables.map(withDefaultId)) {
       const tableId = crypto.randomUUID();
-      await transaction`
-        insert into schema_tables (id, table_name, display_name, primary_key, definition, created_at, updated_at)
-        values (${tableId}, ${table.name}, ${table.displayName}, ${table.primaryKey}, ${JSON.stringify(table)}::jsonb, now(), now())
-      `;
+      await transaction.unsafe(
+        `insert into schema_tables (id, table_name, display_name, primary_key, definition, created_at, updated_at)
+         values ($1, $2, $3, $4, $5::jsonb, now(), now())`,
+        [tableId, table.name, table.displayName, table.primaryKey, JSON.stringify(table)] as never[],
+      );
 
       for (const field of table.fields) {
-        await transaction`
-          insert into schema_fields (id, table_id, field_name, definition, created_at)
-          values (${crypto.randomUUID()}, ${tableId}, ${field.name}, ${JSON.stringify(field)}::jsonb, now())
-        `;
+        await transaction.unsafe(
+          `insert into schema_fields (id, table_id, field_name, definition, created_at)
+           values ($1, $2, $3, $4::jsonb, now())`,
+          [crypto.randomUUID(), tableId, field.name, JSON.stringify(field)] as never[],
+        );
       }
     }
 
     for (const relation of draft.relations) {
-      await transaction`
-        insert into schema_relations (id, source_table, source_field, target_table, target_field, on_delete, on_update, definition, created_at)
-        values (
-          ${crypto.randomUUID()},
-          ${relation.sourceTable},
-          ${relation.sourceField},
-          ${relation.targetTable},
-          ${relation.targetField},
-          ${relation.onDelete},
-          ${relation.onUpdate},
-          ${JSON.stringify(relation)}::jsonb,
-          now()
-        )
-      `;
+      await transaction.unsafe(
+        `insert into schema_relations (id, source_table, source_field, target_table, target_field, on_delete, on_update, definition, created_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, now())`,
+        [
+          crypto.randomUUID(),
+          relation.sourceTable,
+          relation.sourceField,
+          relation.targetTable,
+          relation.targetField,
+          relation.onDelete,
+          relation.onUpdate,
+          JSON.stringify(relation),
+        ] as never[],
+      );
     }
   });
 }
