@@ -13,7 +13,7 @@ import type {
   StorageSettings,
   StorageSettingsResponse,
 } from "@authend/shared";
-import { Code2, Copy, Eye, EyeOff, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Code2, Copy, Eye, EyeOff, Pencil, Plus, Trash2 } from "lucide-react";
 import { client } from "../lib/client";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -22,6 +22,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import { SidePanel } from "../components/ui/side-panel";
 import { getErrorMessage, useFeedback } from "../components/ui/feedback";
+import { cn } from "../lib/utils";
 
 type SettingsNavItem = {
   id: string;
@@ -126,10 +127,12 @@ function Panel({
   title,
   description,
   children,
+  contentClassName,
 }: {
   title?: string;
   description?: string;
   children: ReactNode;
+  contentClassName?: string;
 }) {
   return (
     <section className="overflow-hidden rounded-2xl border border-border/60 bg-background">
@@ -139,7 +142,41 @@ function Panel({
           {description ? <p className="mt-1 text-xs text-muted-foreground">{description}</p> : null}
         </div>
       ) : null}
-      {children}
+      <div className={cn("p-4 md:p-5", contentClassName)}>{children}</div>
+    </section>
+  );
+}
+
+function CollapsiblePanel({
+  title,
+  description,
+  children,
+  defaultCollapsed = false,
+  actions,
+  contentClassName,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+  defaultCollapsed?: boolean;
+  actions?: ReactNode;
+  contentClassName?: string;
+}) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-border/60 bg-background">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border/60 px-4 py-3 md:px-5">
+        <button type="button" onClick={() => setCollapsed((current) => !current)} className="flex min-w-0 flex-1 items-start gap-2 text-left">
+          {collapsed ? <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />}
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+            {description ? <p className="mt-1 text-xs text-muted-foreground">{description}</p> : null}
+          </div>
+        </button>
+        {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+      </div>
+      {!collapsed ? <div className={cn("p-4 md:p-5", contentClassName)}>{children}</div> : null}
     </section>
   );
 }
@@ -151,16 +188,16 @@ function SettingsDiagnostics({ diagnostics }: { diagnostics: Record<string, unkn
   }
 
   return (
-    <Panel title="Diagnostics" description="Live runtime checks and derived state for this section.">
+    <CollapsiblePanel title="Diagnostics" description="Live runtime checks and derived state for this section." defaultCollapsed>
       <div className="divide-y divide-border/50">
         {entries.map(([key, value]) => (
-          <div key={key} className="grid gap-1 px-4 py-3 md:grid-cols-[220px_1fr] md:items-start md:gap-4">
+          <div key={key} className="grid gap-1 py-3 first:pt-0 last:pb-0 md:grid-cols-[220px_1fr] md:items-start md:gap-4">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{key}</span>
             <span className="text-sm text-foreground break-words">{renderValue(value)}</span>
           </div>
         ))}
       </div>
-    </Panel>
+    </CollapsiblePanel>
   );
 }
 
@@ -175,7 +212,7 @@ function SettingsFieldInput({
 }) {
   if (field.kind === "boolean") {
     return (
-      <div className="grid gap-3 px-4 py-3 md:grid-cols-[220px_1fr] md:items-center md:gap-4">
+      <div className="grid gap-3 py-3 first:pt-0 last:pb-0 md:grid-cols-[220px_1fr] md:items-center md:gap-4">
         <div>
           <Label className="text-sm font-medium">{field.label}</Label>
           {field.helpText ? <p className="mt-1 text-xs text-muted-foreground">{field.helpText}</p> : null}
@@ -194,7 +231,7 @@ function SettingsFieldInput({
   }
 
   return (
-    <div className="grid gap-3 px-4 py-3 md:grid-cols-[220px_1fr] md:items-start md:gap-4">
+    <div className="grid gap-3 py-3 first:pt-0 last:pb-0 md:grid-cols-[220px_1fr] md:items-start md:gap-4">
       <div>
         <Label className="text-sm font-medium">{field.label}</Label>
         {field.helpText ? <p className="mt-1 text-xs text-muted-foreground">{field.helpText}</p> : null}
@@ -252,13 +289,19 @@ function SettingsFieldsPanel({
   fields,
   draft,
   setDraft,
+  title = "Configuration",
+  description = "Review and update this section.",
+  defaultCollapsed = false,
 }: {
   fields: SettingsField[];
   draft: Record<string, unknown>;
   setDraft: (next: Record<string, unknown>) => void;
+  title?: string;
+  description?: string;
+  defaultCollapsed?: boolean;
 }) {
   return (
-    <Panel>
+    <CollapsiblePanel title={title} description={description} defaultCollapsed={defaultCollapsed}>
       <div className="divide-y divide-border/50">
         {fields.map((field) => (
           <SettingsFieldInput
@@ -274,7 +317,7 @@ function SettingsFieldsPanel({
           />
         ))}
       </div>
-    </Panel>
+    </CollapsiblePanel>
   );
 }
 
@@ -333,6 +376,8 @@ function createSettingsSectionPage<TSection extends Exclude<SettingsSectionId, "
 
         {draft ? (
           <SettingsFieldsPanel
+            title={`${title} settings`}
+            description={description}
             fields={fields}
             draft={draft as Record<string, unknown>}
             setDraft={(next) => setDraft(next as SettingsSectionConfigMap[TSection])}
@@ -597,7 +642,7 @@ export function StorageSettingsPage() {
 
       {draft ? (
         <>
-          <Panel title="Driver" description="Select the storage backend used by the project.">
+          <CollapsiblePanel title="Driver" description="Select the storage backend used by the project.">
             <div className="divide-y divide-border/50">
               <SettingsFieldInput
                 field={{
@@ -613,16 +658,20 @@ export function StorageSettingsPage() {
                 onChange={(value) => setDraft({ ...draft, driver: value as StorageSettings["driver"] })}
               />
             </div>
-          </Panel>
+          </CollapsiblePanel>
 
           {draft.driver === "local" ? (
             <SettingsFieldsPanel
+              title="Local storage"
+              description="Filesystem-backed storage settings for the current project."
               fields={[{ key: "rootPath", label: "Root path", kind: "text" }]}
               draft={draft as unknown as Record<string, unknown>}
               setDraft={(next) => setDraft(next as unknown as StorageSettings)}
             />
           ) : (
             <SettingsFieldsPanel
+              title="S3-compatible storage"
+              description="Bucket, credentials, and endpoint settings for object storage providers."
               fields={[
                 { key: "bucket", label: "Bucket", kind: "text" },
                 { key: "region", label: "Region", kind: "text" },
@@ -637,6 +686,8 @@ export function StorageSettingsPage() {
           )}
 
           <SettingsFieldsPanel
+            title="Shared storage policy"
+            description="Visibility, upload limits, MIME rules, and signed URL defaults."
             fields={storageSharedFields}
             draft={draft as unknown as Record<string, unknown>}
             setDraft={(next) => setDraft(next as unknown as StorageSettings)}
@@ -783,9 +834,9 @@ export function EnvironmentsSecretsSettingsPage() {
         }
       />
 
-      <Panel>
+      <CollapsiblePanel title="Environment variables" description="Project .env values, required-key health, and per-variable actions.">
         <div className="divide-y divide-border/50">
-          <div className="grid gap-2 px-4 py-3">
+          <div className="grid gap-2 pb-3">
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span>File: {data?.filePath ?? ".env"}</span>
               <Badge variant={(envState?.missingKeys.length ?? 0) > 0 ? "destructive" : "secondary"}>
@@ -811,12 +862,12 @@ export function EnvironmentsSecretsSettingsPage() {
             ) : null}
           </div>
           {(variables ?? []).length === 0 ? (
-            <div className="px-4 py-8 text-sm text-muted-foreground">No environment variables found in the project .env file.</div>
+            <div className="py-8 text-sm text-muted-foreground">No environment variables found in the project .env file.</div>
           ) : (
             variables.map((entry) => {
               const revealed = revealedNames[entry.name] === true;
               return (
-                <div key={entry.name} className="grid gap-3 px-4 py-3 md:grid-cols-[1.2fr_1fr_auto] md:items-center">
+                <div key={entry.name} className="grid gap-3 py-3 md:grid-cols-[1.2fr_1fr_auto] md:items-center">
                   <div className="font-mono text-sm text-foreground">{entry.name}</div>
                   <div className="group flex items-center gap-2 overflow-hidden">
                     <div className="min-w-0 flex-1 truncate rounded-md border border-border/60 bg-muted/20 px-3 py-2 font-mono text-sm text-muted-foreground">
@@ -844,7 +895,7 @@ export function EnvironmentsSecretsSettingsPage() {
             })
           )}
         </div>
-      </Panel>
+      </CollapsiblePanel>
 
       <SidePanel
         isOpen={rawOpen}
@@ -968,6 +1019,8 @@ export function BackupsSettingsPage() {
 
       {draft ? (
         <SettingsFieldsPanel
+          title="Backup settings"
+          description="pg_dump and retention defaults for backup creation."
           fields={[
             { key: "enabled", label: "Enable backups", kind: "boolean" },
             { key: "directoryPath", label: "Backup directory", kind: "text" },
@@ -992,13 +1045,13 @@ export function BackupsSettingsPage() {
 
       <SettingsDiagnostics diagnostics={response?.diagnostics ?? {}} />
 
-      <Panel title="Recent runs">
+      <CollapsiblePanel title="Recent runs" description="Latest backup executions, artifacts, and failures." defaultCollapsed>
         {(response?.runs ?? []).length === 0 ? (
-          <div className="px-4 py-6 text-sm text-muted-foreground">No backup runs recorded yet.</div>
+          <div className="py-6 text-sm text-muted-foreground">No backup runs recorded yet.</div>
         ) : (
           <div className="divide-y divide-border/50">
             {(response?.runs ?? []).map((run) => (
-              <div key={run.id} className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[auto_1fr_auto] md:items-start md:gap-4">
+              <div key={run.id} className="grid gap-2 py-3 text-sm md:grid-cols-[auto_1fr_auto] md:items-start md:gap-4">
                 <Badge variant={run.status === "succeeded" ? "default" : run.status === "failed" ? "destructive" : "secondary"}>
                   {run.status}
                 </Badge>
@@ -1014,7 +1067,7 @@ export function BackupsSettingsPage() {
             ))}
           </div>
         )}
-      </Panel>
+      </CollapsiblePanel>
     </div>
   );
 }
@@ -1180,6 +1233,8 @@ export function CronsSettingsPage() {
 
       {draft ? (
         <SettingsFieldsPanel
+          title="Scheduler settings"
+          description="Global scheduler cadence, concurrency, and timeout defaults."
           fields={[
             { key: "schedulerEnabled", label: "Scheduler enabled", kind: "boolean" },
             { key: "tickSeconds", label: "Tick seconds", kind: "number" },
@@ -1193,13 +1248,13 @@ export function CronsSettingsPage() {
 
       <SettingsDiagnostics diagnostics={response?.diagnostics ?? {}} />
 
-      <Panel title="Jobs">
+      <CollapsiblePanel title="Jobs" description="Configured cron jobs with run, edit, and delete actions.">
         {(response?.jobs ?? []).length === 0 ? (
-          <div className="px-4 py-6 text-sm text-muted-foreground">No cron jobs configured yet.</div>
+          <div className="py-6 text-sm text-muted-foreground">No cron jobs configured yet.</div>
         ) : (
           <div className="divide-y divide-border/50">
             {(response?.jobs ?? []).map((job) => (
-              <div key={job.id} className="grid gap-3 px-4 py-3 lg:grid-cols-[1.3fr_1fr_auto]">
+              <div key={job.id} className="grid gap-3 py-3 lg:grid-cols-[1.3fr_1fr_auto]">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-medium text-foreground">{job.name}</p>
@@ -1248,15 +1303,15 @@ export function CronsSettingsPage() {
             ))}
           </div>
         )}
-      </Panel>
+      </CollapsiblePanel>
 
-      <Panel title="Recent runs">
+      <CollapsiblePanel title="Recent runs" description="Recent cron executions across all configured jobs." defaultCollapsed>
         {(response?.runs ?? []).length === 0 ? (
-          <div className="px-4 py-6 text-sm text-muted-foreground">No cron runs recorded yet.</div>
+          <div className="py-6 text-sm text-muted-foreground">No cron runs recorded yet.</div>
         ) : (
           <div className="divide-y divide-border/50">
             {(response?.runs ?? []).map((run) => (
-              <div key={run.id} className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[1fr_auto] md:items-start md:gap-4">
+              <div key={run.id} className="grid gap-2 py-3 text-sm md:grid-cols-[1fr_auto] md:items-start md:gap-4">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-medium text-foreground">{run.jobName}</p>
@@ -1274,7 +1329,7 @@ export function CronsSettingsPage() {
             ))}
           </div>
         )}
-      </Panel>
+      </CollapsiblePanel>
 
       <SidePanel
         isOpen={panelOpen}
