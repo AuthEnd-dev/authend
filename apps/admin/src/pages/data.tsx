@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { startTransition, useMemo, useState, useRef, useEffect } from 'react';
 import type { DataRecord, TableDescriptor } from '@authend/shared';
@@ -39,7 +39,7 @@ import { getErrorMessage, useFeedback } from '../components/ui/feedback';
 import {
   useReactTable,
   getCoreRowModel,
-  getSortedRowModel,
+  functionalUpdate,
   flexRender,
   SortingState,
   VisibilityState,
@@ -715,14 +715,24 @@ export function DataPage() {
   const navigate = useNavigate({ from: '/data' });
   const search = useSearch({ from: '/database/data' });
   const tableName = search.table ?? 'user';
+  const previousTableNameRef = useRef(tableName);
   const { data: tableMeta, refetch: refetchMeta } = useQuery({
     queryKey: ['table-meta', tableName],
     queryFn: () => client.data.meta(tableName),
   });
   const pageSizeOptions = useMemo(() => {
-    const maxPageSize = tableMeta?.pagination?.maxPageSize ?? 100;
-    return [25, 50, 100, 250].filter((size) => size <= maxPageSize);
-  }, [tableMeta?.pagination?.maxPageSize]);
+    const maxPageSize = Math.max(1, Math.floor(tableMeta?.pagination?.maxPageSize ?? 100));
+    const defaultPageSize = Math.min(
+      maxPageSize,
+      Math.max(1, Math.floor(tableMeta?.pagination?.defaultPageSize ?? Math.min(20, maxPageSize))),
+    );
+
+    return Array.from(new Set([
+      defaultPageSize,
+      maxPageSize,
+      ...[25, 50, 100, 250].filter((size) => size <= maxPageSize),
+    ])).sort((left, right) => left - right);
+  }, [tableMeta?.pagination?.defaultPageSize, tableMeta?.pagination?.maxPageSize]);
   const currentPage = typeof search.page === 'number' && search.page > 0 ? Math.floor(search.page) : 1;
   const fallbackPageSize = pageSizeOptions[0] ?? 25;
   const currentPageSize = typeof search.pageSize === 'number' && pageSizeOptions.includes(search.pageSize)
@@ -730,10 +740,16 @@ export function DataPage() {
     : fallbackPageSize;
   const [searchValue, setSearchValue] = useState('');
   const [appliedSearchValue, setAppliedSearchValue] = useState('');
+  const [sorting, setSorting] = useState<SortingState>([]);
 
   useEffect(() => {
     setSearchValue('');
     setAppliedSearchValue('');
+    setSorting([]);
+  }, [tableName]);
+
+  useEffect(() => {
+    previousTableNameRef.current = tableName;
   }, [tableName]);
 
   const updateDataSearch = (patch: { page?: number; pageSize?: number; table?: string }) => {
@@ -749,16 +765,19 @@ export function DataPage() {
   };
 
   const queryKey = useMemo(
-    () => ['records', tableName, appliedSearchValue, currentPage, currentPageSize],
-    [appliedSearchValue, currentPage, currentPageSize, tableName],
+    () => ['records', tableName, appliedSearchValue, currentPage, currentPageSize, sorting[0]?.id ?? null, sorting[0]?.desc ?? null],
+    [appliedSearchValue, currentPage, currentPageSize, sorting, tableName],
   );
 
-  const { data, isFetching, refetch } = useQuery({
+  const { data, isFetching, isPlaceholderData, refetch } = useQuery({
     queryKey,
+    placeholderData: (previousData) => previousTableNameRef.current === tableName ? keepPreviousData(previousData) : undefined,
     queryFn: () =>
       client.data.resource<DataRecord>(tableName).list({
         page: currentPage,
         pageSize: currentPageSize,
+        sort: sorting[0]?.id,
+        order: sorting[0]?.desc ? 'desc' : 'asc',
         filterValue: appliedSearchValue || undefined,
       }),
   });
@@ -807,6 +826,10 @@ export function DataPage() {
       updateDataSearch({ page: 1, pageSize: fallbackPageSize });
     }
   }, [currentPageSize, fallbackPageSize, pageSizeOptions]);
+
+  useEffect(() => {
+    setSelectedRecordIds(new Set());
+  }, [appliedSearchValue, tableName]);
 
   const allPageRowsSelected = pageRecordIds.length > 0 && pageRecordIds.every((id) => selectedRecordIds.has(id));
   const somePageRowsSelected = pageRecordIds.some((id) => selectedRecordIds.has(id));
@@ -946,17 +969,24 @@ export function DataPage() {
       : [cols[0], { id: 'id', header: 'id', cell: () => 'N/A' } satisfies ColumnDef<DataRecord>, cols[1]];
   }, [allPageRowsSelected, selectedRecordIds, somePageRowsSelected, tableSchema]);
 
-  const [sorting, setSorting] = useState<SortingState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
 
   const table = useReactTable<DataRecord>({
     data: items,
     columns: dynamicColumns,
     state: { sorting, columnVisibility },
-    onSortingChange: setSorting,
+    manualSorting: true,
+    onSortingChange: (updater) => {
+      setSorting((current) => {
+        const next = functionalUpdate(updater, current).slice(0, 1);
+        if ((next[0]?.id ?? null) !== (current[0]?.id ?? null) || (next[0]?.desc ?? null) !== (current[0]?.desc ?? null)) {
+          updateDataSearch({ page: 1 });
+        }
+        return next;
+      });
+    },
     onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
   });
 
   return (
@@ -984,7 +1014,7 @@ export function DataPage() {
             className="h-7 w-7 text-muted-foreground max-w-fit px-1.5 hover:bg-muted/60"
             onClick={() => refetch()}
           >
-            <RotateCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin opacity-50' : ''}`} />
+            <RotateCw className={`w-3.5 h-3.5 ${isFetching && !isPlaceholderData ? 'animate-spin opacity-50' : isFetching ? 'opacity-50' : ''}`} />
           </Button>
         </div>
         <div className="flex gap-2.5">
@@ -1062,6 +1092,11 @@ export function DataPage() {
             )}
           </div>
           <div className="flex items-center gap-2 ml-4">
+            {isFetching ? (
+              <span className="text-[11px] font-medium text-muted-foreground">
+                Updating…
+              </span>
+            ) : null}
             <ViewOptionsToggle table={table} />
           </div>
         </div>
@@ -1162,7 +1197,7 @@ export function DataPage() {
                 size="sm"
                 className="h-8 px-2"
                 onClick={() => updateDataSearch({ page: 1 })}
-                disabled={currentPage <= 1 || isFetching}
+                disabled={currentPage <= 1}
               >
                 <ChevronsLeft className="h-3.5 w-3.5" />
               </Button>
@@ -1171,7 +1206,7 @@ export function DataPage() {
                 size="sm"
                 className="h-8 px-2"
                 onClick={() => updateDataSearch({ page: currentPage - 1 })}
-                disabled={currentPage <= 1 || isFetching}
+                disabled={currentPage <= 1}
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </Button>
@@ -1183,7 +1218,7 @@ export function DataPage() {
                 size="sm"
                 className="h-8 px-2"
                 onClick={() => updateDataSearch({ page: currentPage + 1 })}
-                disabled={currentPage >= totalPages || isFetching}
+                disabled={currentPage >= totalPages}
               >
                 <ChevronRight className="h-3.5 w-3.5" />
               </Button>
@@ -1192,7 +1227,7 @@ export function DataPage() {
                 size="sm"
                 className="h-8 px-2"
                 onClick={() => updateDataSearch({ page: totalPages })}
-                disabled={currentPage >= totalPages || isFetching}
+                disabled={currentPage >= totalPages}
               >
                 <ChevronsRight className="h-3.5 w-3.5" />
               </Button>
