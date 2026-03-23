@@ -350,9 +350,20 @@ function quoteQualifiedIdentifier(table: string, column: string) {
   return `${quoteIdentifier(table)}.${quoteIdentifier(column)}`;
 }
 
+function descriptorPagination(config?: TableApiConfig | null): ApiPaginationConfig {
+  return config?.pagination ?? {
+    enabled: true,
+    defaultPageSize: 20,
+    maxPageSize: 100,
+  };
+}
+
 export async function getTableDescriptor(table: string): Promise<TableDescriptor> {
   const resource = await resolveTableResource(table);
-  return resource.descriptor;
+  return {
+    ...resource.descriptor,
+    pagination: descriptorPagination(resource.config),
+  };
 }
 
 export async function getClientTableDescriptor(table: string): Promise<TableDescriptor> {
@@ -360,6 +371,7 @@ export async function getClientTableDescriptor(table: string): Promise<TableDesc
   return {
     ...resource.descriptor,
     fields: readableFields(resource.descriptor, resource.config),
+    pagination: descriptorPagination(resource.config),
   };
 }
 

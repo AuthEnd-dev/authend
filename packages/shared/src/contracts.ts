@@ -518,6 +518,7 @@ export const tableDescriptorSchema = z.object({
   source: z.enum(["builtin", "generated", "plugin"]),
   mutableSchema: z.boolean(),
   ownerPluginId: pluginIdSchema.nullish(),
+  pagination: apiPaginationSchema.optional(),
 });
 
 export type TableDescriptor = z.infer<typeof tableDescriptorSchema>;

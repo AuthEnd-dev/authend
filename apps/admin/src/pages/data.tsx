@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useSearch } from '@tanstack/react-router';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { startTransition, useMemo, useState, useRef, useEffect } from 'react';
 import type { DataRecord, TableDescriptor } from '@authend/shared';
 import { createPortal } from 'react-dom';
@@ -24,6 +24,10 @@ import {
   ChevronDown,
   ChevronsUpDown,
   Trash2,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -51,6 +55,10 @@ function asDataRecord(value: object): DataRecord {
 
 function asInputValue(value: unknown) {
   return typeof value === 'string' || typeof value === 'number' ? value : '';
+}
+
+function recordIdOf(record: DataRecord) {
+  return typeof record.id === 'string' ? record.id : null;
 }
 
 function DataValue({ value, columnKey }: { value: unknown; columnKey: string }) {
@@ -704,12 +712,22 @@ function DataRecordPanel({
 }
 
 export function DataPage() {
+  const navigate = useNavigate({ from: '/data' });
   const search = useSearch({ from: '/database/data' });
   const tableName = search.table ?? 'user';
   const { data: tableMeta, refetch: refetchMeta } = useQuery({
     queryKey: ['table-meta', tableName],
     queryFn: () => client.data.meta(tableName),
   });
+  const pageSizeOptions = useMemo(() => {
+    const maxPageSize = tableMeta?.pagination?.maxPageSize ?? 100;
+    return [25, 50, 100, 250].filter((size) => size <= maxPageSize);
+  }, [tableMeta?.pagination?.maxPageSize]);
+  const currentPage = typeof search.page === 'number' && search.page > 0 ? Math.floor(search.page) : 1;
+  const fallbackPageSize = pageSizeOptions[0] ?? 25;
+  const currentPageSize = typeof search.pageSize === 'number' && pageSizeOptions.includes(search.pageSize)
+    ? search.pageSize
+    : fallbackPageSize;
   const [searchValue, setSearchValue] = useState('');
   const [appliedSearchValue, setAppliedSearchValue] = useState('');
 
@@ -718,12 +736,29 @@ export function DataPage() {
     setAppliedSearchValue('');
   }, [tableName]);
 
-  const queryKey = useMemo(() => ['records', tableName, appliedSearchValue], [appliedSearchValue, tableName]);
+  const updateDataSearch = (patch: { page?: number; pageSize?: number; table?: string }) => {
+    void navigate({
+      to: '/data',
+      search: (current) => ({
+        table: patch.table ?? current.table,
+        page: patch.page ?? current.page,
+        pageSize: patch.pageSize ?? current.pageSize,
+      }),
+      replace: true,
+    });
+  };
+
+  const queryKey = useMemo(
+    () => ['records', tableName, appliedSearchValue, currentPage, currentPageSize],
+    [appliedSearchValue, currentPage, currentPageSize, tableName],
+  );
 
   const { data, isFetching, refetch } = useQuery({
     queryKey,
     queryFn: () =>
       client.data.resource<DataRecord>(tableName).list({
+        page: currentPage,
+        pageSize: currentPageSize,
         filterValue: appliedSearchValue || undefined,
       }),
   });
@@ -731,12 +766,18 @@ export function DataPage() {
   const items = useMemo<DataRecord[]>(() => (data?.items ?? []).map((item) => item as DataRecord), [data?.items]);
   const tableSchema = tableMeta as TableDescriptor | undefined;
   const canMutateRows = tableMeta?.source === 'generated';
+  const totalRecords = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalRecords / currentPageSize));
+  const visibleStart = totalRecords === 0 ? 0 : (currentPage - 1) * currentPageSize + 1;
+  const visibleEnd = totalRecords === 0 ? 0 : Math.min(currentPage * currentPageSize, totalRecords);
+  const pageRecordIds = useMemo(() => items.map(recordIdOf).filter((value): value is string => Boolean(value)), [items]);
 
   // Form State
   const [formOpen, setFormOpen] = useState(false);
   const [schemaOpen, setSchemaOpen] = useState(false);
   const [apiPreviewOpen, setApiPreviewOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<DataRecord | null>(null);
+  const [selectedRecordIds, setSelectedRecordIds] = useState<Set<string>>(new Set());
 
   const handleEditRecord = (record: DataRecord) => {
     if (!canMutateRows) return;
@@ -753,6 +794,54 @@ export function DataPage() {
   const handleFormSuccess = () => {
     refetch();
     refetchMeta();
+  };
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      updateDataSearch({ page: totalPages });
+    }
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    if (!pageSizeOptions.includes(currentPageSize)) {
+      updateDataSearch({ page: 1, pageSize: fallbackPageSize });
+    }
+  }, [currentPageSize, fallbackPageSize, pageSizeOptions]);
+
+  const allPageRowsSelected = pageRecordIds.length > 0 && pageRecordIds.every((id) => selectedRecordIds.has(id));
+  const somePageRowsSelected = pageRecordIds.some((id) => selectedRecordIds.has(id));
+
+  const togglePageSelection = (checked: boolean) => {
+    setSelectedRecordIds((current) => {
+      const next = new Set(current);
+      if (checked) {
+        for (const id of pageRecordIds) {
+          next.add(id);
+        }
+      } else {
+        for (const id of pageRecordIds) {
+          next.delete(id);
+        }
+      }
+      return next;
+    });
+  };
+
+  const toggleRecordSelection = (record: DataRecord, checked: boolean) => {
+    const recordId = recordIdOf(record);
+    if (!recordId) {
+      return;
+    }
+
+    setSelectedRecordIds((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(recordId);
+      } else {
+        next.delete(recordId);
+      }
+      return next;
+    });
   };
 
   const dynamicColumns = useMemo<ColumnDef<DataRecord>[]>(() => {
@@ -778,13 +867,18 @@ export function DataPage() {
     const cols: ColumnDef<DataRecord>[] = [
       {
         id: 'select',
-        header: ({ table }) => (
+        header: () => (
           <div className="px-1 flex items-center">
             <input
               type="checkbox"
               className="rounded-sm border-muted-foreground/40 accent-primary w-4 h-4 cursor-pointer"
-              checked={table.getIsAllPageRowsSelected()}
-              onChange={table.getToggleAllPageRowsSelectedHandler()}
+              checked={allPageRowsSelected}
+              ref={(node) => {
+                if (node) {
+                  node.indeterminate = somePageRowsSelected && !allPageRowsSelected;
+                }
+              }}
+              onChange={(event) => togglePageSelection(event.target.checked)}
             />
           </div>
         ),
@@ -793,8 +887,11 @@ export function DataPage() {
             <input
               type="checkbox"
               className="rounded-sm border-muted-foreground/40 accent-primary w-4 h-4 cursor-pointer"
-              checked={row.getIsSelected()}
-              onChange={row.getToggleSelectedHandler()}
+              checked={(() => {
+                const recordId = recordIdOf(row.original);
+                return recordId ? selectedRecordIds.has(recordId) : false;
+              })()}
+              onChange={(event) => toggleRecordSelection(row.original, event.target.checked)}
               onClick={(e) => e.stopPropagation()}
             />
           </div>
@@ -847,18 +944,15 @@ export function DataPage() {
     return cols.length > 2
       ? cols
       : [cols[0], { id: 'id', header: 'id', cell: () => 'N/A' } satisfies ColumnDef<DataRecord>, cols[1]];
-  }, [items, tableSchema]);
+  }, [allPageRowsSelected, selectedRecordIds, somePageRowsSelected, tableSchema]);
 
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  const [rowSelection, setRowSelection] = useState({});
 
   const table = useReactTable<DataRecord>({
     data: items,
     columns: dynamicColumns,
-    state: { sorting, columnVisibility, rowSelection },
-    enableRowSelection: true,
-    onRowSelectionChange: setRowSelection,
+    state: { sorting, columnVisibility },
     onSortingChange: setSorting,
     onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
@@ -926,7 +1020,10 @@ export function DataPage() {
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
                   event.preventDefault();
-                  startTransition(() => setAppliedSearchValue(searchValue.trim()));
+                  startTransition(() => {
+                    setAppliedSearchValue(searchValue.trim());
+                    updateDataSearch({ page: 1 });
+                  });
                 }
               }}
               placeholder={`SQL search all ${tableName} fields...`}
@@ -939,7 +1036,10 @@ export function DataPage() {
                   variant="ghost"
                   size="sm"
                   className="h-7 px-2 text-xs"
-                  onClick={() => startTransition(() => setAppliedSearchValue(searchValue.trim()))}
+                  onClick={() => startTransition(() => {
+                    setAppliedSearchValue(searchValue.trim());
+                    updateDataSearch({ page: 1 });
+                  })}
                 >
                   Search
                 </Button>
@@ -950,7 +1050,10 @@ export function DataPage() {
                   className="h-7 px-2 text-xs"
                   onClick={() => {
                     setSearchValue('');
-                    startTransition(() => setAppliedSearchValue(''));
+                    startTransition(() => {
+                      setAppliedSearchValue('');
+                      updateDataSearch({ page: 1 });
+                    });
                   }}
                 >
                   Clear
@@ -964,8 +1067,8 @@ export function DataPage() {
         </div>
 
         <div className="flex-1 overflow-auto relative custom-scrollbar">
-          <Table className="w-full relative min-w-[600px]">
-            <TableHeader className="bg-background sticky top-0 z-20 border-border group">
+          <Table containerClassName="overflow-visible" className="w-full relative min-w-[600px]">
+            <TableHeader className="bg-background border-border group">
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow
                   key={headerGroup.id}
@@ -977,7 +1080,7 @@ export function DataPage() {
                     return (
                       <TableHead
                         key={header.id}
-                        className={`font-semibold text-muted-foreground h-11 px-4 text-[11px] uppercase tracking-wider whitespace-nowrap align-middle select-none bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 ${isSelect ? 'sticky left-0 z-30 w-12 border-r border-border/30 shadow-[1px_0_0_0_hsl(var(--border)_/_0.3)] bg-background' : isActions ? 'sticky right-0 z-30 w-12 bg-background border-l border-border/30' : ''}`}
+                        className={`sticky top-0 font-semibold text-muted-foreground h-11 px-4 text-[11px] uppercase tracking-wider whitespace-nowrap align-middle select-none border-b border-border/70 bg-background/95 shadow-[0_1px_0_0_hsl(var(--border)_/_0.75),0_10px_18px_-16px_rgba(15,23,42,0.45)] backdrop-blur supports-[backdrop-filter]:bg-background/80 ${isSelect ? 'left-0 z-30 w-12 border-r border-border/30 bg-background shadow-[1px_0_0_0_hsl(var(--border)_/_0.3),0_1px_0_0_hsl(var(--border)_/_0.75),0_10px_18px_-16px_rgba(15,23,42,0.45)]' : isActions ? 'right-0 z-30 w-12 bg-background border-l border-border/30 shadow-[0_1px_0_0_hsl(var(--border)_/_0.75),0_10px_18px_-16px_rgba(15,23,42,0.45)]' : 'z-20'} ${isSelect || isActions ? 'sticky' : ''}`}
                       >
                         {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                       </TableHead>
@@ -992,7 +1095,10 @@ export function DataPage() {
                 table.getRowModel().rows.map((row) => (
                   <TableRow
                     key={row.id}
-                    data-state={row.getIsSelected() && 'selected'}
+                    data-state={(() => {
+                      const recordId = recordIdOf(row.original);
+                      return recordId && selectedRecordIds.has(recordId) ? 'selected' : undefined;
+                    })()}
                     onClick={() => handleEditRecord(row.original)}
                     className={`group border-b border-border/40 transition-colors ${
                       canMutateRows ? 'cursor-pointer hover:bg-muted/30' : 'cursor-default hover:bg-card'
@@ -1031,11 +1137,66 @@ export function DataPage() {
         {table.getRowModel().rows.length > 0 && (
           <div className="p-2.5 bg-background border-t border-border/50 px-6 text-[11px] text-muted-foreground font-medium shrink-0 flex items-center justify-between shadow-[0_-1px_3px_auto_rgba(0,0,0,0.02)] z-20 sticky bottom-0">
             <div className="flex items-center gap-4">
-              <span>{table.getSelectedRowModel().rows.length} selected row(s)</span>
+              <span>{selectedRecordIds.size} selected row(s)</span>
               <div className="w-px h-3 bg-border" />
-              <span>{data?.total ?? table.getRowModel().rows.length} records total</span>
+              <span>{totalRecords} records total</span>
+              <div className="w-px h-3 bg-border" />
+              <span>
+                Showing {visibleStart}-{visibleEnd}
+              </span>
             </div>
-            <span className="opacity-50 hidden sm:inline-block tracking-widest font-mono uppercase">Authend</span>
+            <div className="flex items-center gap-2">
+              <select
+                value={String(currentPageSize)}
+                onChange={(event) => updateDataSearch({ page: 1, pageSize: Number(event.target.value) })}
+                className="h-8 rounded-md border border-border bg-background px-2 text-[11px]"
+              >
+                {pageSizeOptions.map((size) => (
+                  <option key={size} value={size}>
+                    {size} / page
+                  </option>
+                ))}
+              </select>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2"
+                onClick={() => updateDataSearch({ page: 1 })}
+                disabled={currentPage <= 1 || isFetching}
+              >
+                <ChevronsLeft className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2"
+                onClick={() => updateDataSearch({ page: currentPage - 1 })}
+                disabled={currentPage <= 1 || isFetching}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <span className="min-w-[90px] text-center text-[11px] font-semibold text-foreground">
+                Page {currentPage} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2"
+                onClick={() => updateDataSearch({ page: currentPage + 1 })}
+                disabled={currentPage >= totalPages || isFetching}
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2"
+                onClick={() => updateDataSearch({ page: totalPages })}
+                disabled={currentPage >= totalPages || isFetching}
+              >
+                <ChevronsRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
         )}
       </div>

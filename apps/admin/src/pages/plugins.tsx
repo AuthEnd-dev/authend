@@ -895,7 +895,7 @@ export function PluginsPage() {
                     <h3 className="text-sm font-semibold text-foreground">Issued keys</h3>
                     <p className="mt-1 text-sm text-muted-foreground">Operational view of recently issued API keys.</p>
                   </div>
-                  <Link to="/data" search={{ table: 'apikey' }} className="text-xs font-medium text-primary hover:underline">
+                  <Link to="/data" search={{ table: 'apikey', page: undefined, pageSize: undefined }} className="text-xs font-medium text-primary hover:underline">
                     Open table
                   </Link>
                 </div>
@@ -967,10 +967,10 @@ export function PluginsPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-3 text-xs font-medium">
-                    <Link to="/data" search={{ table: 'user' }} className="text-primary hover:underline">
+                    <Link to="/data" search={{ table: 'user', page: undefined, pageSize: undefined }} className="text-primary hover:underline">
                       Users
                     </Link>
-                    <Link to="/data" search={{ table: 'session' }} className="text-primary hover:underline">
+                    <Link to="/data" search={{ table: 'session', page: undefined, pageSize: undefined }} className="text-primary hover:underline">
                       Sessions
                     </Link>
                   </div>

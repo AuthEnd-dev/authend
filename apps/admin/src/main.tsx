@@ -109,7 +109,7 @@ function DatabaseSubNav() {
           <Link
             key={tableName}
             to="/data"
-            search={{ table: tableName }}
+            search={{ table: tableName, page: undefined, pageSize: undefined }}
             className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
               currentTable === tableName && location.pathname === "/data"
                 ? "bg-secondary text-foreground font-medium shadow-sm"
@@ -136,7 +136,7 @@ function DatabaseSubNav() {
                   <Link
                     key={tableName}
                     to="/data"
-                    search={{ table: tableName }}
+                    search={{ table: tableName, page: undefined, pageSize: undefined }}
                     className={`flex items-center gap-2.5 px-3 pl-8 py-1.5 rounded-md text-sm transition-colors relative ${
                       currentTable === tableName && location.pathname === "/data"
                         ? "bg-secondary text-foreground font-medium shadow-sm"
@@ -462,6 +462,8 @@ const dataRoute = createRoute({
   path: "/data",
   validateSearch: (search: Record<string, unknown>) => ({
     table: typeof search.table === "string" ? search.table : undefined,
+    page: typeof search.page === "number" && Number.isFinite(search.page) ? search.page : undefined,
+    pageSize: typeof search.pageSize === "number" && Number.isFinite(search.pageSize) ? search.pageSize : undefined,
   }),
   component: DataPage,
 });

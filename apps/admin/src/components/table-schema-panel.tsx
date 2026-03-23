@@ -34,6 +34,9 @@ const tableEditorTabs = [
 
 const accessActors: ApiAccessActor[] = ["public", "session", "apiKey", "superadmin"];
 const operationKeys: ApiPreviewOperation["key"][] = ["list", "get", "create", "update", "delete"];
+const queryCapabilityKeys = ["hiddenFields", "pagination", "filtering", "sorting", "includes"] as const;
+
+type QueryCapabilityKey = (typeof queryCapabilityKeys)[number];
 
 async function invalidateSchemaQueries(queryClient: QueryClient) {
   await Promise.all([
@@ -370,6 +373,13 @@ export function TableSchemaPanel({
   const [activeTab, setActiveTab] = useState<(typeof tableEditorTabs)[number]["key"]>("fields");
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [collapsedQuerySections, setCollapsedQuerySections] = useState<Record<QueryCapabilityKey, boolean>>({
+    hiddenFields: true,
+    pagination: true,
+    filtering: true,
+    sorting: true,
+    includes: true,
+  });
 
   const availableTableNames = useMemo(() => {
     const names = Object.keys(tableCatalog ?? {});
@@ -462,6 +472,13 @@ export function TableSchemaPanel({
   useEffect(() => {
     if (isOpen) {
       setActiveTab("fields");
+      setCollapsedQuerySections({
+        hiddenFields: true,
+        pagination: true,
+        filtering: true,
+        sorting: true,
+        includes: true,
+      });
     }
   }, [isOpen]);
 
@@ -569,6 +586,23 @@ export function TableSchemaPanel({
 
   const setAllRelationsCollapsed = (collapsed: boolean) => {
     setCollapsedRelations(relations.map(() => collapsed));
+  };
+
+  const toggleQuerySectionCollapsed = (section: QueryCapabilityKey) => {
+    setCollapsedQuerySections((current) => ({
+      ...current,
+      [section]: !current[section],
+    }));
+  };
+
+  const setAllQuerySectionsCollapsed = (collapsed: boolean) => {
+    setCollapsedQuerySections({
+      hiddenFields: collapsed,
+      pagination: collapsed,
+      filtering: collapsed,
+      sorting: collapsed,
+      includes: collapsed,
+    });
   };
 
   const buildTableDraft = (): TableBlueprint => {
@@ -826,7 +860,7 @@ export function TableSchemaPanel({
 
       onSuccess?.();
       onClose();
-      void navigate({ to: "/data", search: { table: name } });
+      void navigate({ to: "/data", search: { table: name, page: undefined, pageSize: undefined } });
 
       showNotice({
         title: isEditing ? `Saved ${name}` : `Created ${name}`,
@@ -845,7 +879,7 @@ export function TableSchemaPanel({
           }
           await invalidateSchemaQueries(queryClient);
           onSuccess?.();
-          void navigate({ to: "/data", search: { table: tableName ?? "user" } });
+          void navigate({ to: "/data", search: { table: tableName ?? "user", page: undefined, pageSize: undefined } });
         },
       });
     } catch (error) {
@@ -892,7 +926,7 @@ export function TableSchemaPanel({
 
       onSuccess?.();
       onClose();
-      void navigate({ to: "/data", search: { table: "user" } });
+      void navigate({ to: "/data", search: { table: "user", page: undefined, pageSize: undefined } });
 
       showNotice({
         title: `Deleted ${tableName}`,
@@ -907,7 +941,7 @@ export function TableSchemaPanel({
           }
           await invalidateSchemaQueries(queryClient);
           onSuccess?.();
-          void navigate({ to: "/data", search: { table: tableName } });
+          void navigate({ to: "/data", search: { table: tableName, page: undefined, pageSize: undefined } });
         },
       });
     } catch (error) {
@@ -1619,218 +1653,343 @@ export function TableSchemaPanel({
             </section>
 
             <section className="grid gap-4 rounded-2xl border border-border/60 bg-background p-4">
-              <div className="flex items-center gap-2 text-sm font-bold">
-                <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
-                Query Capabilities
-              </div>
-
-              <div className="grid gap-2 border-b border-border/60 pb-3">
-                <div className="text-sm font-semibold">Hidden Response Fields</div>
-                <div className="text-[11px] text-muted-foreground">
-                  Selected fields are stripped from API responses, metadata, SDK record shapes, and included relations.
-                </div>
-                <FieldToggleList
-                  fields={["id", ...availableFieldNames].filter((field, index, collection) => collection.indexOf(field) === index)}
-                  selected={apiConfig.hiddenFields}
-                  disabled={false}
-                  emptyLabel="Add fields first to hide them from responses."
-                  onToggle={toggleHiddenField}
-                />
-              </div>
-
-              <div className="grid gap-3 border-b border-border/60 pb-3 md:grid-cols-3">
-                <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={apiConfig.pagination.enabled}
-                    onChange={(event) =>
-                      setApiConfig((current) => ({
-                        ...current,
-                        pagination: {
-                          ...current.pagination,
-                          enabled: event.target.checked,
-                        },
-                      }))
-                    }
-                    className="h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
-                  />
-                  Pagination
-                </label>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Default Page Size</label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={100}
-                    value={String(apiConfig.pagination.defaultPageSize)}
-                    onChange={(event) =>
-                      setApiConfig((current) => ({
-                        ...current,
-                        pagination: {
-                          ...current.pagination,
-                          defaultPageSize: Number(event.target.value || "20"),
-                        },
-                      }))
-                    }
-                    className="h-9 font-mono text-xs"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Max Page Size</label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={250}
-                    value={String(apiConfig.pagination.maxPageSize)}
-                    onChange={(event) =>
-                      setApiConfig((current) => ({
-                        ...current,
-                        pagination: {
-                          ...current.pagination,
-                          maxPageSize: Number(event.target.value || "100"),
-                        },
-                      }))
-                    }
-                    className="h-9 font-mono text-xs"
-                  />
+              <div className="flex items-center justify-between border-b border-border/50 pb-3">
+                <h3 className="flex items-center gap-2 text-sm font-bold">
+                  <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+                  Query Capabilities
+                </h3>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAllQuerySectionsCollapsed(false)}>
+                      Expand all
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAllQuerySectionsCollapsed(true)}>
+                      Collapse all
+                    </Button>
+                  </div>
+                  <span className="font-mono text-xs text-muted-foreground">{queryCapabilityKeys.length} sections</span>
                 </div>
               </div>
 
               <div className="grid gap-3">
-                <div className="grid gap-2 border-b border-border/60 pb-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-semibold">Filtering</div>
-                    <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={apiConfig.filtering.enabled}
-                        onChange={(event) =>
-                          setApiConfig((current) => ({
-                            ...current,
-                            filtering: {
-                              ...current.filtering,
-                              enabled: event.target.checked,
-                            },
-                          }))
-                        }
-                        className="h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
+                <div className="rounded-xl border border-border/60 bg-muted/20">
+                  <button
+                    type="button"
+                    onClick={() => toggleQuerySectionCollapsed("hiddenFields")}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold">Hidden Response Fields</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {apiConfig.hiddenFields.length} field{apiConfig.hiddenFields.length === 1 ? "" : "s"} hidden from responses
+                      </div>
+                    </div>
+                    {collapsedQuerySections.hiddenFields ? (
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
+                  </button>
+                  {!collapsedQuerySections.hiddenFields && (
+                    <div className="grid gap-2 border-t border-border/60 px-3 py-3">
+                      <div className="text-[11px] text-muted-foreground">
+                        Selected fields are stripped from API responses, metadata, SDK record shapes, and included relations.
+                      </div>
+                      <FieldToggleList
+                        fields={["id", ...availableFieldNames].filter((field, index, collection) => collection.indexOf(field) === index)}
+                        selected={apiConfig.hiddenFields}
+                        disabled={false}
+                        emptyLabel="Add fields first to hide them from responses."
+                        onToggle={toggleHiddenField}
                       />
-                      Enabled
-                    </label>
-                  </div>
-                  <FieldToggleList
-                    fields={filterableFieldNames}
-                    selected={apiConfig.filtering.fields}
-                    disabled={!apiConfig.filtering.enabled}
-                    emptyLabel="Add fields first to configure filtering."
-                    onToggle={toggleFilterField}
-                  />
+                    </div>
+                  )}
                 </div>
 
-                <div className="grid gap-2 border-b border-border/60 pb-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-semibold">Sorting</div>
-                    <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={apiConfig.sorting.enabled}
-                        onChange={(event) =>
-                          setApiConfig((current) => ({
-                            ...current,
-                            sorting: {
-                              ...current.sorting,
-                              enabled: event.target.checked,
-                            },
-                          }))
-                        }
-                        className="h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
-                      />
-                      Enabled
-                    </label>
-                  </div>
-                  <FieldToggleList
-                    fields={filterableFieldNames}
-                    selected={apiConfig.sorting.fields}
-                    disabled={!apiConfig.sorting.enabled}
-                    emptyLabel="Add fields first to configure sorting."
-                    onToggle={toggleSortField}
-                  />
-                  <div className="grid gap-2 md:grid-cols-2">
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Default Sort Field</label>
-                      <select
-                        value={apiConfig.sorting.defaultField ?? ""}
-                        onChange={(event) =>
-                          setApiConfig((current) => ({
-                            ...current,
-                            sorting: {
-                              ...current.sorting,
-                              defaultField: event.target.value,
-                            },
-                          }))
-                        }
-                        disabled={!apiConfig.sorting.enabled || availableSortFields.length === 0}
-                        className="h-9 rounded-md border border-border bg-background px-3 text-xs"
-                      >
-                        <option value="">Select field</option>
-                        {availableSortFields.map((field) => (
-                          <option key={field} value={field}>
-                            {field}
-                          </option>
-                        ))}
-                      </select>
+                <div className="rounded-xl border border-border/60 bg-muted/20">
+                  <button
+                    type="button"
+                    onClick={() => toggleQuerySectionCollapsed("pagination")}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold">Pagination</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {apiConfig.pagination.enabled
+                          ? `${apiConfig.pagination.defaultPageSize} default / ${apiConfig.pagination.maxPageSize} max`
+                          : "Disabled"}
+                      </div>
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Default Order</label>
-                      <select
-                        value={apiConfig.sorting.defaultOrder}
-                        onChange={(event) =>
-                          setApiConfig((current) => ({
-                            ...current,
-                            sorting: {
-                              ...current.sorting,
-                              defaultOrder: event.target.value as "asc" | "desc",
-                            },
-                          }))
-                        }
+                    {collapsedQuerySections.pagination ? (
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
+                  </button>
+                  {!collapsedQuerySections.pagination && (
+                    <div className="grid gap-3 border-t border-border/60 px-3 py-3 md:grid-cols-3">
+                      <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={apiConfig.pagination.enabled}
+                          onChange={(event) =>
+                            setApiConfig((current) => ({
+                              ...current,
+                              pagination: {
+                                ...current.pagination,
+                                enabled: event.target.checked,
+                              },
+                            }))
+                          }
+                          className="h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
+                        />
+                        Pagination
+                      </label>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Default Page Size</label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={String(apiConfig.pagination.defaultPageSize)}
+                          onChange={(event) =>
+                            setApiConfig((current) => ({
+                              ...current,
+                              pagination: {
+                                ...current.pagination,
+                                defaultPageSize: Number(event.target.value || "20"),
+                              },
+                            }))
+                          }
+                          className="h-9 font-mono text-xs"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Max Page Size</label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={250}
+                          value={String(apiConfig.pagination.maxPageSize)}
+                          onChange={(event) =>
+                            setApiConfig((current) => ({
+                              ...current,
+                              pagination: {
+                                ...current.pagination,
+                                maxPageSize: Number(event.target.value || "100"),
+                              },
+                            }))
+                          }
+                          className="h-9 font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-border/60 bg-muted/20">
+                  <button
+                    type="button"
+                    onClick={() => toggleQuerySectionCollapsed("filtering")}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold">Filtering</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {apiConfig.filtering.enabled
+                          ? `${apiConfig.filtering.fields.length} field${apiConfig.filtering.fields.length === 1 ? "" : "s"} enabled`
+                          : "Disabled"}
+                      </div>
+                    </div>
+                    {collapsedQuerySections.filtering ? (
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
+                  </button>
+                  {!collapsedQuerySections.filtering && (
+                    <div className="grid gap-2 border-t border-border/60 px-3 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-semibold">Filtering</div>
+                        <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            checked={apiConfig.filtering.enabled}
+                            onChange={(event) =>
+                              setApiConfig((current) => ({
+                                ...current,
+                                filtering: {
+                                  ...current.filtering,
+                                  enabled: event.target.checked,
+                                },
+                              }))
+                            }
+                            className="h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
+                          />
+                          Enabled
+                        </label>
+                      </div>
+                      <FieldToggleList
+                        fields={filterableFieldNames}
+                        selected={apiConfig.filtering.fields}
+                        disabled={!apiConfig.filtering.enabled}
+                        emptyLabel="Add fields first to configure filtering."
+                        onToggle={toggleFilterField}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-border/60 bg-muted/20">
+                  <button
+                    type="button"
+                    onClick={() => toggleQuerySectionCollapsed("sorting")}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold">Sorting</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {apiConfig.sorting.enabled
+                          ? `${apiConfig.sorting.fields.length} field${apiConfig.sorting.fields.length === 1 ? "" : "s"} enabled`
+                          : "Disabled"}
+                      </div>
+                    </div>
+                    {collapsedQuerySections.sorting ? (
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
+                  </button>
+                  {!collapsedQuerySections.sorting && (
+                    <div className="grid gap-2 border-t border-border/60 px-3 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-semibold">Sorting</div>
+                        <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            checked={apiConfig.sorting.enabled}
+                            onChange={(event) =>
+                              setApiConfig((current) => ({
+                                ...current,
+                                sorting: {
+                                  ...current.sorting,
+                                  enabled: event.target.checked,
+                                },
+                              }))
+                            }
+                            className="h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
+                          />
+                          Enabled
+                        </label>
+                      </div>
+                      <FieldToggleList
+                        fields={filterableFieldNames}
+                        selected={apiConfig.sorting.fields}
                         disabled={!apiConfig.sorting.enabled}
-                        className="h-9 rounded-md border border-border bg-background px-3 text-xs"
-                      >
-                        <option value="desc">Descending</option>
-                        <option value="asc">Ascending</option>
-                      </select>
+                        emptyLabel="Add fields first to configure sorting."
+                        onToggle={toggleSortField}
+                      />
+                      <div className="grid gap-2 md:grid-cols-2">
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Default Sort Field</label>
+                          <select
+                            value={apiConfig.sorting.defaultField ?? ""}
+                            onChange={(event) =>
+                              setApiConfig((current) => ({
+                                ...current,
+                                sorting: {
+                                  ...current.sorting,
+                                  defaultField: event.target.value,
+                                },
+                              }))
+                            }
+                            disabled={!apiConfig.sorting.enabled || availableSortFields.length === 0}
+                            className="h-9 rounded-md border border-border bg-background px-3 text-xs"
+                          >
+                            <option value="">Select field</option>
+                            {availableSortFields.map((field) => (
+                              <option key={field} value={field}>
+                                {field}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Default Order</label>
+                          <select
+                            value={apiConfig.sorting.defaultOrder}
+                            onChange={(event) =>
+                              setApiConfig((current) => ({
+                                ...current,
+                                sorting: {
+                                  ...current.sorting,
+                                  defaultOrder: event.target.value as "asc" | "desc",
+                                },
+                              }))
+                            }
+                            disabled={!apiConfig.sorting.enabled}
+                            className="h-9 rounded-md border border-border bg-background px-3 text-xs"
+                          >
+                            <option value="desc">Descending</option>
+                            <option value="asc">Ascending</option>
+                          </select>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
-                <div className="grid gap-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-semibold">Relation Includes</div>
-                    <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={apiConfig.includes.enabled}
-                        onChange={(event) =>
-                          setApiConfig((current) => ({
-                            ...current,
-                            includes: {
-                              ...current.includes,
-                              enabled: event.target.checked,
-                            },
-                          }))
-                        }
-                        className="h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
+                <div className="rounded-xl border border-border/60 bg-muted/20">
+                  <button
+                    type="button"
+                    onClick={() => toggleQuerySectionCollapsed("includes")}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold">Relation Includes</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {apiConfig.includes.enabled
+                          ? `${apiConfig.includes.fields.length} relation${apiConfig.includes.fields.length === 1 ? "" : "s"} enabled`
+                          : "Disabled"}
+                      </div>
+                    </div>
+                    {collapsedQuerySections.includes ? (
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
+                  </button>
+                  {!collapsedQuerySections.includes && (
+                    <div className="grid gap-2 border-t border-border/60 px-3 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-semibold">Relation Includes</div>
+                        <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            checked={apiConfig.includes.enabled}
+                            onChange={(event) =>
+                              setApiConfig((current) => ({
+                                ...current,
+                                includes: {
+                                  ...current.includes,
+                                  enabled: event.target.checked,
+                                },
+                              }))
+                            }
+                            className="h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
+                          />
+                          Enabled
+                        </label>
+                      </div>
+                      <FieldToggleList
+                        fields={relations.map((relation) => relation.alias || (relation.sourceFieldMode === "auto" ? relation.generatedSourceField : relation.sourceField)).filter(Boolean)}
+                        selected={apiConfig.includes.fields}
+                        disabled={!apiConfig.includes.enabled}
+                        emptyLabel="Add relations in Options to configure includes."
+                        onToggle={toggleIncludeField}
                       />
-                      Enabled
-                    </label>
-                  </div>
-                  <FieldToggleList
-                    fields={relations.map((relation) => relation.alias || (relation.sourceFieldMode === "auto" ? relation.generatedSourceField : relation.sourceField)).filter(Boolean)}
-                    selected={apiConfig.includes.fields}
-                    disabled={!apiConfig.includes.enabled}
-                    emptyLabel="Add relations in Options to configure includes."
-                    onToggle={toggleIncludeField}
-                  />
+                    </div>
+                  )}
                 </div>
               </div>
             </section>

@@ -18,6 +18,12 @@ export type TableApiOperations = {
   delete: boolean;
 };
 
+export type ApiPaginationConfig = {
+  enabled: boolean;
+  defaultPageSize: number;
+  maxPageSize: number;
+};
+
 export type FieldBlueprint = {
   name: string;
   type: 'text' | 'varchar' | 'integer' | 'bigint' | 'boolean' | 'timestamp' | 'date' | 'jsonb' | 'uuid' | 'numeric' | 'enum';
@@ -42,6 +48,7 @@ export type TableDescriptor = {
   source: 'builtin' | 'generated' | 'plugin';
   mutableSchema: boolean;
   ownerPluginId?: PluginId | null;
+  pagination?: ApiPaginationConfig;
 };
 
 export type PluginManifest = {
