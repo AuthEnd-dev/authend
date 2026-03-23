@@ -1,10 +1,12 @@
 import type {
+  ApiAccessActor,
   ApiPreview,
   ApiPreviewOperation,
   ApiResource,
   DataRecord,
   FieldBlueprint,
   SchemaDraft,
+  TableApiAccess,
   TableApiConfig,
   TableBlueprint,
 } from "@authend/shared";
@@ -29,23 +31,25 @@ const generatedOperations = {
   delete: true,
 } as const;
 
+const operationKeys = ["list", "get", "create", "update", "delete"] as const;
+
+function defaultTableAccess(): TableApiAccess {
+  return {
+    ownershipField: null,
+    list: { actors: ["superadmin"], scope: "all" },
+    get: { actors: ["superadmin"], scope: "all" },
+    create: { actors: ["superadmin"], scope: "all" },
+    update: { actors: ["superadmin"], scope: "all" },
+    delete: { actors: ["superadmin"], scope: "all" },
+  };
+}
+
 function startCase(value: string) {
   return value
     .split("_")
     .filter(Boolean)
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(" ");
-}
-
-function authDescription(authMode: TableApiConfig["authMode"]) {
-  switch (authMode) {
-    case "public":
-      return "No authenticated session is required.";
-    case "session":
-      return "A signed-in Better Auth session is required.";
-    default:
-      return "A superadmin Better Auth session is required.";
-  }
 }
 
 function fieldNames(table: TableBlueprint) {
@@ -68,6 +72,149 @@ function allowedFields(selected: string[], available: string[]) {
   return valid.length > 0 ? valid : available;
 }
 
+function hasExplicitAccess(
+  rawConfig: TableApiConfig | null | undefined,
+): rawConfig is TableApiConfig & { access: NonNullable<TableApiConfig["access"]> } {
+  return Boolean(rawConfig && typeof rawConfig === "object" && "access" in rawConfig && rawConfig.access);
+}
+
+function legacyAccess(authMode: TableApiConfig["authMode"]): TableApiAccess {
+  const actor = authMode === "session" ? "session" : authMode === "public" ? "public" : "superadmin";
+  return {
+    ownershipField: null,
+    list: { actors: [actor], scope: "all" },
+    get: { actors: [actor], scope: "all" },
+    create: { actors: [actor], scope: "all" },
+    update: { actors: [actor], scope: "all" },
+    delete: { actors: [actor], scope: "all" },
+  };
+}
+
+function sortActors(actors: ApiAccessActor[]) {
+  const order: ApiAccessActor[] = ["public", "session", "apiKey", "superadmin"];
+  return Array.from(new Set(actors)).sort((left, right) => order.indexOf(left) - order.indexOf(right));
+}
+
+function normaliseAccess(
+  rawConfig: TableApiConfig | null | undefined,
+  parsed: TableApiConfig,
+  allFields: string[],
+): TableApiAccess {
+  const source = hasExplicitAccess(rawConfig) ? parsed.access : legacyAccess(parsed.authMode ?? "superadmin");
+  const ownershipField = source.ownershipField && allFields.includes(source.ownershipField) ? source.ownershipField : null;
+
+  return {
+    ownershipField,
+    list: {
+      actors: sortActors([...source.list.actors, "superadmin"]),
+      scope: ownershipField ? source.list.scope : "all",
+    },
+    get: {
+      actors: sortActors([...source.get.actors, "superadmin"]),
+      scope: ownershipField ? source.get.scope : "all",
+    },
+    create: {
+      actors: sortActors([...source.create.actors, "superadmin"]),
+      scope: ownershipField ? source.create.scope : "all",
+    },
+    update: {
+      actors: sortActors([...source.update.actors, "superadmin"]),
+      scope: ownershipField ? source.update.scope : "all",
+    },
+    delete: {
+      actors: sortActors([...source.delete.actors, "superadmin"]),
+      scope: ownershipField ? source.delete.scope : "all",
+    },
+  };
+}
+
+function visibleFields(allFields: string[], hiddenFields: string[]) {
+  return allFields.filter((field) => !hiddenFields.includes(field));
+}
+
+function derivedAuthMode(access: TableApiAccess): TableApiConfig["authMode"] {
+  const actors = new Set<ApiAccessActor>(operationKeys.flatMap((key) => access[key].actors));
+  if (actors.has("public")) {
+    return "public";
+  }
+  if (actors.has("session") || actors.has("apiKey")) {
+    return "session";
+  }
+  return "superadmin";
+}
+
+function actorLabel(actor: ApiAccessActor) {
+  switch (actor) {
+    case "public":
+      return "Public";
+    case "session":
+      return "Signed-in users";
+    case "apiKey":
+      return "API keys";
+    default:
+      return "Superadmins";
+  }
+}
+
+function operationLabel(operation: (typeof operationKeys)[number]) {
+  switch (operation) {
+    case "list":
+      return "list";
+    case "get":
+      return "get";
+    case "create":
+      return "create";
+    case "update":
+      return "update";
+    default:
+      return "delete";
+  }
+}
+
+function joinOperationLabels(values: string[]) {
+  if (values.length <= 1) {
+    return values[0] ?? "";
+  }
+  if (values.length === 2) {
+    return `${values[0]} and ${values[1]}`;
+  }
+  return `${values.slice(0, -1).join(", ")}, and ${values[values.length - 1]}`;
+}
+
+export function describeAccessPolicy(access: TableApiAccess) {
+  const byActor = new Map<string, string[]>();
+
+  for (const operation of operationKeys) {
+    const rule = access[operation];
+    for (const actor of rule.actors) {
+      const suffix = rule.scope === "own" && actor !== "superadmin" ? `${operationLabel(operation)} own` : operationLabel(operation);
+      const current = byActor.get(actor) ?? [];
+      current.push(suffix);
+      byActor.set(actor, current);
+    }
+  }
+
+  const parts = Array.from(byActor.entries()).map(([actor, operations]) => `${actorLabel(actor as ApiAccessActor)} can ${joinOperationLabels(operations)}`);
+  if (access.ownershipField) {
+    const ownerOperations = operationKeys.filter((key) => access[key].scope === "own");
+    if (ownerOperations.length > 0) {
+      parts.push(`Owner checks use ${access.ownershipField} for ${joinOperationLabels(ownerOperations.map(operationLabel))}`);
+    }
+  }
+
+  return parts.join(". ");
+}
+
+export function apiKeyPermissionName(routeSegment: string, operation: ApiPreviewOperation["key"]) {
+  return `resource:${routeSegment}:${operation}`;
+}
+
+export function apiKeyPermissionRequirement(routeSegment: string, operation: ApiPreviewOperation["key"]) {
+  return {
+    [`resource:${routeSegment}`]: [operation],
+  };
+}
+
 export function normaliseTableApiConfig(
   rawConfig: TableApiConfig | null | undefined,
   table: TableBlueprint,
@@ -76,6 +223,8 @@ export function normaliseTableApiConfig(
 ): TableApiConfig {
   const parsed = tableApiConfigSchema.parse(rawConfig ?? {});
   const allFields = fieldNames(table);
+  const hiddenFields = parsed.hiddenFields.filter((field) => allFields.includes(field));
+  const readableFields = visibleFields(allFields, hiddenFields);
   const relationFields = relationIncludeNames(table, draft);
   const operations = editable
     ? { ...generatedOperations, ...parsed.operations }
@@ -88,13 +237,18 @@ export function normaliseTableApiConfig(
         delete: false,
       };
 
-  const sortingFields = parsed.sorting.enabled ? allowedFields(parsed.sorting.fields, allFields) : [];
-  const filteringFields = parsed.filtering.enabled ? allowedFields(parsed.filtering.fields, allFields) : [];
+  const sortingFields = parsed.sorting.enabled ? allowedFields(parsed.sorting.fields, readableFields) : [];
+  const filteringFields = parsed.filtering.enabled ? allowedFields(parsed.filtering.fields, readableFields) : [];
   const includeFields = parsed.includes.enabled ? allowedFields(parsed.includes.fields, relationFields) : [];
+  const access = normaliseAccess(rawConfig, parsed, allFields);
   const defaultSortField =
     parsed.sorting.defaultField && sortingFields.includes(parsed.sorting.defaultField)
       ? parsed.sorting.defaultField
-      : table.primaryKey;
+      : sortingFields[0];
+
+  if (parsed.access.ownershipField && access.ownershipField === null) {
+    throw new HttpError(400, `Ownership field ${parsed.access.ownershipField} does not exist on ${table.name}`);
+  }
 
   return {
     ...parsed,
@@ -102,7 +256,8 @@ export function normaliseTableApiConfig(
     tag: parsed.tag ?? startCase(table.name),
     sdkName: parsed.sdkName ?? table.name,
     description: parsed.description ?? `${startCase(table.name)} API`,
-    authMode: parsed.authMode ?? "superadmin",
+    authMode: derivedAuthMode(access),
+    access,
     operations,
     pagination: {
       enabled: parsed.pagination.enabled,
@@ -123,6 +278,7 @@ export function normaliseTableApiConfig(
       enabled: parsed.includes.enabled,
       fields: includeFields,
     },
+    hiddenFields,
   };
 }
 
@@ -150,8 +306,8 @@ function exampleValueForField(field: FieldBlueprint) {
   }
 }
 
-function exampleRecord(table: TableBlueprint): DataRecord {
-  return Object.fromEntries(table.fields.map((field) => [field.name, exampleValueForField(field)]));
+function exampleRecord(fields: FieldBlueprint[]): DataRecord {
+  return Object.fromEntries(fields.map((field) => [field.name, exampleValueForField(field)]));
 }
 
 function requestExample(table: TableBlueprint) {
@@ -168,7 +324,8 @@ function operationId(sdkName: string, key: ApiPreviewOperation["key"]) {
 
 function buildOperations(table: TableBlueprint, config: TableApiConfig): ApiPreviewOperation[] {
   const routeBase = `/api/data/${config.routeSegment}`;
-  const recordExample = exampleRecord(table);
+  const readableFields = table.fields.filter((field) => !config.hiddenFields.includes(field.name));
+  const recordExample = exampleRecord(readableFields);
   const createExample = requestExample(table);
   const primaryKeyExample = String(recordExample[table.primaryKey] ?? "record_id");
   const listQueryParams: ApiPreviewOperation["queryParams"] = [];
@@ -349,6 +506,7 @@ async function tableFromDescriptor(input: string): Promise<{ table: TableBluepri
       indexes: [],
       api: {
         authMode: "superadmin",
+        access: defaultTableAccess(),
         operations: builtinOperations,
         pagination: {
           enabled: true,
@@ -368,6 +526,7 @@ async function tableFromDescriptor(input: string): Promise<{ table: TableBluepri
           enabled: true,
           fields: [],
         },
+        hiddenFields: [],
       },
     },
     editable: false,
@@ -381,6 +540,7 @@ export async function resolvePreviewTable(input: string) {
 
 function buildResource(resolved: { table: TableBlueprint; editable: boolean; draft?: SchemaDraft | null }): ApiResource {
   const config = normaliseTableApiConfig(resolved.table.api, resolved.table, resolved.draft, resolved.editable);
+  const readableFields = resolved.table.fields.filter((field) => !config.hiddenFields.includes(field.name));
   return apiResourceSchema.parse({
     table: resolved.table.name,
     displayName: resolved.table.displayName,
@@ -389,10 +549,10 @@ function buildResource(resolved: { table: TableBlueprint; editable: boolean; dra
     routeBase: `/api/data/${config.routeSegment ?? resolved.table.name}`,
     config,
     editable: resolved.editable,
-    fields: resolved.table.fields,
+    fields: readableFields,
     security: {
       authMode: config.authMode,
-      description: authDescription(config.authMode),
+      description: describeAccessPolicy(config.access),
     },
     query: {
       pagination: config.pagination,

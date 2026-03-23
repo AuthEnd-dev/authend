@@ -32,6 +32,14 @@ const initialDraft: SchemaDraft = {
       indexes: [],
       api: {
         authMode: 'superadmin',
+        access: {
+          ownershipField: null,
+          list: { actors: ['superadmin'], scope: 'all' },
+          get: { actors: ['superadmin'], scope: 'all' },
+          create: { actors: ['superadmin'], scope: 'all' },
+          update: { actors: ['superadmin'], scope: 'all' },
+          delete: { actors: ['superadmin'], scope: 'all' },
+        },
         operations: {
           list: true,
           get: true,
@@ -57,6 +65,7 @@ const initialDraft: SchemaDraft = {
           enabled: true,
           fields: [],
         },
+        hiddenFields: [],
       },
     },
   ],

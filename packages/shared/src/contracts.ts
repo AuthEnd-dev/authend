@@ -100,6 +100,42 @@ export const apiAuthModeSchema = z.enum([
 
 export type ApiAuthMode = z.infer<typeof apiAuthModeSchema>;
 
+export const apiAccessActorSchema = z.enum([
+  "public",
+  "session",
+  "superadmin",
+  "apiKey",
+]);
+
+export type ApiAccessActor = z.infer<typeof apiAccessActorSchema>;
+
+export const apiAccessScopeSchema = z.enum(["all", "own"]);
+
+export type ApiAccessScope = z.infer<typeof apiAccessScopeSchema>;
+
+const defaultOperationAccess = {
+  actors: ["superadmin"],
+  scope: "all",
+} as const;
+
+export const apiOperationAccessSchema = z.object({
+  actors: z.array(apiAccessActorSchema).default([...defaultOperationAccess.actors]),
+  scope: apiAccessScopeSchema.default(defaultOperationAccess.scope),
+});
+
+export type ApiOperationAccess = z.infer<typeof apiOperationAccessSchema>;
+
+export const tableApiAccessSchema = z.object({
+  ownershipField: z.string().min(1).nullish(),
+  list: apiOperationAccessSchema.default(defaultOperationAccess),
+  get: apiOperationAccessSchema.default(defaultOperationAccess),
+  create: apiOperationAccessSchema.default(defaultOperationAccess),
+  update: apiOperationAccessSchema.default(defaultOperationAccess),
+  delete: apiOperationAccessSchema.default(defaultOperationAccess),
+});
+
+export type TableApiAccess = z.infer<typeof tableApiAccessSchema>;
+
 export const apiPaginationSchema = z.object({
   enabled: z.boolean().default(true),
   defaultPageSize: z.number().int().positive().max(100).default(20),
@@ -130,6 +166,14 @@ export const tableApiConfigSchema = z.object({
   sdkName: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/).nullish(),
   description: z.string().min(1).nullish(),
   authMode: apiAuthModeSchema.default("superadmin"),
+  access: tableApiAccessSchema.default({
+    ownershipField: null,
+    list: defaultOperationAccess,
+    get: defaultOperationAccess,
+    create: defaultOperationAccess,
+    update: defaultOperationAccess,
+    delete: defaultOperationAccess,
+  }),
   operations: tableApiOperationsSchema.default({
     list: true,
     get: true,
@@ -155,6 +199,7 @@ export const tableApiConfigSchema = z.object({
     enabled: true,
     fields: [],
   }),
+  hiddenFields: z.array(z.string().min(1)).default([]),
 });
 
 export type TableApiConfig = z.infer<typeof tableApiConfigSchema>;
@@ -167,6 +212,14 @@ export const tableBlueprintSchema = z.object({
   indexes: z.array(z.array(z.string().min(1)).min(1)).default([]),
   api: tableApiConfigSchema.default({
     authMode: "superadmin",
+    access: {
+      ownershipField: null,
+      list: defaultOperationAccess,
+      get: defaultOperationAccess,
+      create: defaultOperationAccess,
+      update: defaultOperationAccess,
+      delete: defaultOperationAccess,
+    },
     operations: {
       list: true,
       get: true,
@@ -192,6 +245,7 @@ export const tableBlueprintSchema = z.object({
       enabled: true,
       fields: [],
     },
+    hiddenFields: [],
   }),
 });
 

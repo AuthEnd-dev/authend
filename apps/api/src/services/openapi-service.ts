@@ -1,4 +1,5 @@
 import { listApiResources } from "./api-design-service";
+import { getTableDescriptor } from "./crud-service";
 
 function staticPaths() {
   return {
@@ -59,24 +60,44 @@ function staticPaths() {
   } as const;
 }
 
-function authSecurity(authMode: "superadmin" | "session" | "public") {
-  if (authMode === "public") {
-    return [];
+function authSecurity(
+  actors: Array<"public" | "session" | "superadmin" | "apiKey">,
+) {
+  const security: Array<Record<string, string[]>> = [];
+
+  if (actors.includes("public")) {
+    security.push({});
   }
 
-  return [{ betterAuthSession: [] }];
+  if (actors.includes("session") || actors.includes("superadmin")) {
+    security.push({ betterAuthSession: [] });
+  }
+
+  if (actors.includes("apiKey")) {
+    security.push({ apiKeyAuth: [] });
+  }
+
+  return security;
 }
 
-function authDescription(authMode: "superadmin" | "session" | "public") {
-  if (authMode === "public") {
-    return "No authentication required.";
+function authDescription(
+  actors: Array<"public" | "session" | "superadmin" | "apiKey">,
+  scope: "all" | "own",
+  ownershipField?: string | null,
+) {
+  const labels = [
+    actors.includes("public") ? "public callers" : null,
+    actors.includes("session") ? "signed-in users" : null,
+    actors.includes("apiKey") ? "API keys" : null,
+    actors.includes("superadmin") ? "superadmins" : null,
+  ].filter(Boolean);
+
+  const base = labels.length > 0 ? `Allowed callers: ${labels.join(", ")}.` : "No callers are allowed.";
+  if (scope === "own" && ownershipField) {
+    return `${base} Owner scope is enforced through ${ownershipField}.`;
   }
 
-  if (authMode === "session") {
-    return "Requires an authenticated Better Auth session.";
-  }
-
-  return "Requires an authenticated Better Auth superadmin session.";
+  return base;
 }
 
 function fieldSchema(field: { type: string; nullable?: boolean; enumValues?: string[] | null }) {
@@ -125,15 +146,16 @@ function fieldSchema(field: { type: string; nullable?: boolean; enumValues?: str
   return schema;
 }
 
-function resourceSchemas(resource: Awaited<ReturnType<typeof listApiResources>>[number]) {
+async function resourceSchemas(resource: Awaited<ReturnType<typeof listApiResources>>[number]) {
+  const descriptor = await getTableDescriptor(resource.table);
   const properties = Object.fromEntries(resource.fields.map((field) => [field.name, fieldSchema(field)]));
   const required = resource.fields.filter((field) => !field.nullable).map((field) => field.name);
   const writeProperties = Object.fromEntries(
-    resource.fields
+    descriptor.fields
       .filter((field) => field.name !== resource.primaryKey)
       .map((field) => [field.name, fieldSchema(field)]),
   );
-  const writeRequired = resource.fields
+  const writeRequired = descriptor.fields
     .filter((field) => field.name !== resource.primaryKey && !field.nullable && !field.default)
     .map((field) => field.name);
   const componentBase = resource.config.sdkName ?? resource.table;
@@ -178,7 +200,7 @@ export async function buildOpenApiSpec() {
   const schemas: Record<string, unknown> = {};
 
   for (const resource of resources) {
-    Object.assign(schemas, resourceSchemas(resource));
+    Object.assign(schemas, await resourceSchemas(resource));
 
     const collectionPath = resource.routeBase;
     const detailPath = `${resource.routeBase}/{id}`;
@@ -193,12 +215,13 @@ export async function buildOpenApiSpec() {
     paths[detailPath] = {};
 
     if (listOperation?.enabled) {
+      const listAccess = resource.config.access.list;
       paths[collectionPath].get = {
         summary: listOperation.summary,
         operationId: listOperation.operationId,
         tags: [resource.config.tag],
-        security: authSecurity(resource.security.authMode),
-        description: authDescription(resource.security.authMode),
+        security: authSecurity(listAccess.actors),
+        description: authDescription(listAccess.actors, listAccess.scope, resource.config.access.ownershipField),
         parameters: listOperation.queryParams.map((param) => ({
           name: param.name,
           in: "query",
@@ -223,18 +246,20 @@ export async function buildOpenApiSpec() {
           routeSegment: resource.routeSegment,
           sdkName: resource.config.sdkName,
           authMode: resource.security.authMode,
+          access: listAccess,
           query: resource.query,
         },
       };
     }
 
     if (createOperation?.enabled) {
+      const createAccess = resource.config.access.create;
       paths[collectionPath].post = {
         summary: createOperation.summary,
         operationId: createOperation.operationId,
         tags: [resource.config.tag],
-        security: authSecurity(resource.security.authMode),
-        description: authDescription(resource.security.authMode),
+        security: authSecurity(createAccess.actors),
+        description: authDescription(createAccess.actors, createAccess.scope, resource.config.access.ownershipField),
         requestBody: {
           required: true,
           content: {
@@ -262,17 +287,19 @@ export async function buildOpenApiSpec() {
           routeSegment: resource.routeSegment,
           sdkName: resource.config.sdkName,
           authMode: resource.security.authMode,
+          access: createAccess,
         },
       };
     }
 
     if (getOperation?.enabled) {
+      const getAccess = resource.config.access.get;
       paths[detailPath].get = {
         summary: getOperation.summary,
         operationId: getOperation.operationId,
         tags: [resource.config.tag],
-        security: authSecurity(resource.security.authMode),
-        description: authDescription(resource.security.authMode),
+        security: authSecurity(getAccess.actors),
+        description: authDescription(getAccess.actors, getAccess.scope, resource.config.access.ownershipField),
         parameters: [
           {
             name: "id",
@@ -300,17 +327,19 @@ export async function buildOpenApiSpec() {
           routeSegment: resource.routeSegment,
           sdkName: resource.config.sdkName,
           authMode: resource.security.authMode,
+          access: getAccess,
         },
       };
     }
 
     if (updateOperation?.enabled) {
+      const updateAccess = resource.config.access.update;
       paths[detailPath].patch = {
         summary: updateOperation.summary,
         operationId: updateOperation.operationId,
         tags: [resource.config.tag],
-        security: authSecurity(resource.security.authMode),
-        description: authDescription(resource.security.authMode),
+        security: authSecurity(updateAccess.actors),
+        description: authDescription(updateAccess.actors, updateAccess.scope, resource.config.access.ownershipField),
         parameters: [
           {
             name: "id",
@@ -348,17 +377,19 @@ export async function buildOpenApiSpec() {
           routeSegment: resource.routeSegment,
           sdkName: resource.config.sdkName,
           authMode: resource.security.authMode,
+          access: updateAccess,
         },
       };
     }
 
     if (deleteOperation?.enabled) {
+      const deleteAccess = resource.config.access.delete;
       paths[detailPath].delete = {
         summary: deleteOperation.summary,
         operationId: deleteOperation.operationId,
         tags: [resource.config.tag],
-        security: authSecurity(resource.security.authMode),
-        description: authDescription(resource.security.authMode),
+        security: authSecurity(deleteAccess.actors),
+        description: authDescription(deleteAccess.actors, deleteAccess.scope, resource.config.access.ownershipField),
         parameters: [
           {
             name: "id",
@@ -379,6 +410,7 @@ export async function buildOpenApiSpec() {
           routeSegment: resource.routeSegment,
           sdkName: resource.config.sdkName,
           authMode: resource.security.authMode,
+          access: deleteAccess,
         },
       };
     }
@@ -398,6 +430,12 @@ export async function buildOpenApiSpec() {
           in: "cookie",
           name: "better-auth.session_token",
           description: "Better Auth session cookie.",
+        },
+        apiKeyAuth: {
+          type: "apiKey",
+          in: "header",
+          name: "x-api-key",
+          description: "Better Auth API key header.",
         },
       },
       schemas,

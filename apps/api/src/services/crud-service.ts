@@ -1,4 +1,4 @@
-import type { FieldBlueprint, TableDescriptor } from "@authend/shared";
+import type { ApiFieldAccess, ApiPaginationConfig, ApiSortingConfig, FieldBlueprint, TableApiConfig, TableDescriptor } from "@authend/shared";
 import { getSchemaDraft } from "./schema-service";
 import { HttpError } from "../lib/http";
 import { sql } from "../db/client";
@@ -259,6 +259,11 @@ function selectColumnsSql(descriptor: TableDescriptor) {
   return descriptor.fields.map((field) => quoteIdentifier(field.name)).join(", ");
 }
 
+function readableFields(descriptor: TableDescriptor, config?: TableApiConfig | null) {
+  const hiddenFields = new Set(config?.hiddenFields ?? []);
+  return descriptor.fields.filter((field) => !hiddenFields.has(field.name));
+}
+
 function assertWritableDescriptor(descriptor: TableDescriptor) {
   if (descriptor.source !== "generated") {
     throw new HttpError(403, `Table ${descriptor.table} is read-only`);
@@ -285,6 +290,7 @@ async function resolveTableResource(tableInput: string) {
 
     return {
       descriptor: builtinTables[tableInput],
+      config: null,
     };
   }
 
@@ -308,6 +314,7 @@ async function resolveTableResource(tableInput: string) {
         mutableSchema: false,
         ownerPluginId: pluginModel.manifest.id,
       },
+      config: null,
     };
   }
 
@@ -328,6 +335,7 @@ async function resolveTableResource(tableInput: string) {
       mutableSchema: true,
       ownerPluginId: null,
     },
+    config: current.api ?? null,
   };
 }
 
@@ -341,6 +349,37 @@ function quoteIdentifier(value: string) {
 export async function getTableDescriptor(table: string): Promise<TableDescriptor> {
   const resource = await resolveTableResource(table);
   return resource.descriptor;
+}
+
+export async function getClientTableDescriptor(table: string): Promise<TableDescriptor> {
+  const resource = await resolveTableResource(table);
+  return {
+    ...resource.descriptor,
+    fields: readableFields(resource.descriptor, resource.config),
+  };
+}
+
+async function hiddenFieldsForTable(table: string) {
+  const draft = await getSchemaDraft();
+  const current = draft.tables.find((entry) => entry.name === table || (entry.api?.routeSegment ?? entry.name) === table);
+  return new Set(current?.api?.hiddenFields ?? []);
+}
+
+function sanitiseRecord(record: Record<string, unknown>, hiddenFields: Set<string>) {
+  return Object.fromEntries(Object.entries(record).filter(([key]) => !hiddenFields.has(key)));
+}
+
+async function sanitiseRecordForTable(
+  table: string,
+  record: Record<string, unknown>,
+  cache = new Map<string, Set<string>>(),
+) {
+  let hiddenFields = cache.get(table);
+  if (!hiddenFields) {
+    hiddenFields = await hiddenFieldsForTable(table);
+    cache.set(table, hiddenFields);
+  }
+  return sanitiseRecord(record, hiddenFields);
 }
 
 function serialiseValue(value: unknown) {
@@ -392,6 +431,46 @@ type IncludeRelation = {
   joinType: "inner" | "left" | "right" | "full",
 };
 
+export type RecordAccessContext = {
+  ownershipField?: string | null;
+  subjectId?: string | null;
+  bypassOwnership?: boolean;
+};
+
+export type ListRecordsOptions = {
+  pagination?: ApiPaginationConfig;
+  filtering?: ApiFieldAccess;
+  sorting?: ApiSortingConfig;
+  includes?: ApiFieldAccess;
+  access?: RecordAccessContext;
+};
+
+export type MutationRecordOptions = {
+  access?: RecordAccessContext;
+};
+
+function applyOwnershipFilter(
+  descriptor: TableDescriptor,
+  whereClauses: string[],
+  values: unknown[],
+  access?: RecordAccessContext,
+) {
+  if (!access || access.bypassOwnership || !access.ownershipField) {
+    return;
+  }
+
+  if (!descriptor.fields.some((field) => field.name === access.ownershipField)) {
+    throw new HttpError(400, `Unknown ownership field ${access.ownershipField}`);
+  }
+
+  if (!access.subjectId) {
+    throw new HttpError(403, "Owner-scoped access requires an authenticated subject");
+  }
+
+  values.push(access.subjectId);
+  whereClauses.push(`${quoteIdentifier(access.ownershipField)} = $${values.length}`);
+}
+
 async function resolveIncludeRelations(descriptor: TableDescriptor, includes: string[]) {
   if (includes.length === 0) {
     return [];
@@ -428,13 +507,36 @@ async function resolveIncludeRelations(descriptor: TableDescriptor, includes: st
   });
 }
 
-export async function listRecords(table: string, query: URLSearchParams) {
+export async function listRecords(table: string, query: URLSearchParams, options: ListRecordsOptions = {}) {
   const resource = await resolveTableResource(table);
   const { descriptor } = resource;
-  const page = Math.max(1, Number(query.get("page") ?? "1"));
-  const pageSize = Math.min(100, Math.max(1, Number(query.get("pageSize") ?? "20")));
-  const sort = query.get("sort") ?? descriptor.primaryKey;
-  const order = (query.get("order") ?? "desc").toLowerCase() === "asc" ? "asc" : "desc";
+  const pagination = options.pagination ?? {
+    enabled: true,
+    defaultPageSize: 20,
+    maxPageSize: 100,
+  };
+  const sorting = options.sorting ?? {
+    enabled: true,
+    fields: descriptor.fields.map((field) => field.name),
+    defaultField: descriptor.primaryKey,
+    defaultOrder: "desc",
+  };
+  const filtering = options.filtering ?? {
+    enabled: true,
+    fields: descriptor.fields.map((field) => field.name),
+  };
+  const includesConfig = options.includes ?? {
+    enabled: true,
+    fields: [],
+  };
+  const page = pagination.enabled ? Math.max(1, Number(query.get("page") ?? "1")) : 1;
+  const requestedPageSize = pagination.enabled ? Number(query.get("pageSize") ?? String(pagination.defaultPageSize)) : pagination.defaultPageSize;
+  const pageSize = Math.min(pagination.maxPageSize, Math.max(1, requestedPageSize));
+  const requestedSort = query.get("sort");
+  const sort = sorting.enabled ? requestedSort ?? sorting.defaultField ?? descriptor.primaryKey : sorting.defaultField ?? descriptor.primaryKey;
+  const order = sorting.enabled
+    ? (query.get("order") ?? sorting.defaultOrder).toLowerCase() === "asc" ? "asc" : "desc"
+    : sorting.defaultOrder;
   const filterField = query.get("filterField");
   const filterValue = query.get("filterValue");
   const includes = (query.get("include") ?? "")
@@ -442,7 +544,11 @@ export async function listRecords(table: string, query: URLSearchParams) {
     .map((value) => value.trim())
     .filter(Boolean);
 
-  if (!descriptor.fields.some((field) => field.name === sort)) {
+  if (!sorting.enabled && (query.get("sort") || query.get("order"))) {
+    throw new HttpError(400, `Sorting is disabled for ${descriptor.table}`);
+  }
+
+  if (requestedSort && !sorting.fields.includes(sort)) {
     throw new HttpError(400, `Unknown sort field ${sort}`);
   }
 
@@ -450,20 +556,35 @@ export async function listRecords(table: string, query: URLSearchParams) {
   const values: unknown[] = [];
 
   if (filterValue) {
+    if (!filtering.enabled) {
+      throw new HttpError(400, `Filtering is disabled for ${descriptor.table}`);
+    }
+
     values.push(filterValue);
 
     if (filterField) {
-      if (!descriptor.fields.some((field) => field.name === filterField)) {
+      if (!filtering.fields.includes(filterField)) {
         throw new HttpError(400, `Unknown filter field ${filterField}`);
       }
       whereClauses.push(`${quoteIdentifier(filterField)}::text ilike '%' || $${values.length} || '%'`);
     } else {
-      const searchableFields = descriptor.fields.map((field) => `${quoteIdentifier(field.name)}::text ilike '%' || $${values.length} || '%'`);
+      const searchableFields = filtering.fields.map((field) => `${quoteIdentifier(field)}::text ilike '%' || $${values.length} || '%'`);
       if (searchableFields.length > 0) {
         whereClauses.push(`(${searchableFields.join(" or ")})`);
       }
     }
   }
+
+  if (!includesConfig.enabled && includes.length > 0) {
+    throw new HttpError(400, `Relation includes are disabled for ${descriptor.table}`);
+  }
+
+  const disallowedInclude = includes.find((include) => !includesConfig.fields.includes(include));
+  if (disallowedInclude) {
+    throw new HttpError(400, `Unknown include field ${disallowedInclude}`);
+  }
+
+  applyOwnershipFilter(descriptor, whereClauses, values, options.access);
 
   const where = whereClauses.length ? `where ${whereClauses.join(" and ")}` : "";
   const limitOffsetSql = `limit ${pageSize} offset ${(page - 1) * pageSize}`;
@@ -481,8 +602,12 @@ export async function listRecords(table: string, query: URLSearchParams) {
   if (includes.length > 0) {
     const relations = await resolveIncludeRelations(descriptor, includes);
     const filteredItems: Record<string, unknown>[] = [];
+    const hiddenFieldCache = new Map<string, Set<string>>();
+    const hiddenFields = await hiddenFieldsForTable(descriptor.table);
+    hiddenFieldCache.set(descriptor.table, hiddenFields);
 
     for (const item of items as Record<string, unknown>[]) {
+      const sanitisedItem = sanitiseRecord(item, hiddenFields);
       let shouldKeep = true;
 
       for (const relation of relations) {
@@ -508,11 +633,11 @@ export async function listRecords(table: string, query: URLSearchParams) {
           break;
         }
 
-        item[relation.resultKey] = related ?? null;
+        sanitisedItem[relation.resultKey] = related ? await sanitiseRecordForTable(relation.targetTable, related, hiddenFieldCache) : null;
       }
 
       if (shouldKeep) {
-        filteredItems.push(item);
+        filteredItems.push(sanitisedItem);
       }
     }
 
@@ -524,40 +649,51 @@ export async function listRecords(table: string, query: URLSearchParams) {
     };
   }
 
+  const hiddenFieldCache = new Map<string, Set<string>>();
   return {
-    items: items as Record<string, unknown>[],
+    items: await Promise.all((items as Record<string, unknown>[]).map((item) => sanitiseRecordForTable(descriptor.table, item, hiddenFieldCache))),
     total: Number(count),
     page,
     pageSize,
   };
 }
 
-export async function getRecord(table: string, id: string) {
+export async function getRecord(table: string, id: string, options: MutationRecordOptions = {}) {
   const resource = await resolveTableResource(table);
   const { descriptor } = resource;
   const selectSql = selectColumnsSql(descriptor);
+  const whereClauses = [`${quoteIdentifier(descriptor.primaryKey)} = $1`];
+  const values: unknown[] = [id];
+  applyOwnershipFilter(descriptor, whereClauses, values, options.access);
   const [record] = await sql.unsafe<Record<string, unknown>[]>(
     `select ${selectSql} from ${quoteIdentifier(descriptor.table)}
-     where ${quoteIdentifier(descriptor.primaryKey)} = $1
+     where ${whereClauses.join(" and ")}
      limit 1`,
-    [id],
+    values,
   );
   if (!record) {
     throw new HttpError(404, "Record not found");
   }
-  return record;
+  return sanitiseRecordForTable(descriptor.table, record);
 }
 
-export async function createRecord(table: string, payload: Record<string, unknown>) {
+export async function createRecord(table: string, payload: Record<string, unknown>, options: MutationRecordOptions = {}) {
   const resource = await resolveTableResource(table);
   const { descriptor } = resource;
   assertWritableDescriptor(descriptor);
+  const nextPayload = { ...payload };
+  if (options.access?.ownershipField && !options.access.bypassOwnership) {
+    if (!options.access.subjectId) {
+      throw new HttpError(403, "Owner-scoped access requires an authenticated subject");
+    }
+    nextPayload[options.access.ownershipField] = options.access.subjectId;
+  }
   const allowedFields = descriptor.fields;
-  const columns = Object.keys(payload).filter((column) => allowedFields.some((field) => field.name === column));
+  const columns = Object.keys(nextPayload).filter((column) => allowedFields.some((field) => field.name === column));
   if (columns.length === 0) {
     throw new HttpError(400, "No writable fields provided");
   }
-  const values = columns.map((column) => serialiseValue(payload[column]));
+  const values = columns.map((column) => serialiseValue(nextPayload[column]));
   const placeholders = columns
     .map((column, index) => placeholderForField(allowedFields.find((field) => field.name === column)!, index + 1))
     .join(", ");
@@ -567,20 +703,24 @@ export async function createRecord(table: string, payload: Record<string, unknow
      returning *`,
     values,
   );
-  return record;
+  return sanitiseRecordForTable(descriptor.table, record);
 }
 
-export async function updateRecord(table: string, id: string, payload: Record<string, unknown>) {
+export async function updateRecord(table: string, id: string, payload: Record<string, unknown>, options: MutationRecordOptions = {}) {
   const resource = await resolveTableResource(table);
   const { descriptor } = resource;
   assertWritableDescriptor(descriptor);
-  const columns = Object.keys(payload).filter(
+  const nextPayload = { ...payload };
+  if (options.access?.ownershipField && !options.access.bypassOwnership) {
+    delete nextPayload[options.access.ownershipField];
+  }
+  const columns = Object.keys(nextPayload).filter(
     (column) => column !== descriptor.primaryKey && descriptor.fields.some((field) => field.name === column),
   );
   if (columns.length === 0) {
     throw new HttpError(400, "No writable fields provided");
   }
-  const values = columns.map((column) => serialiseValue(payload[column]));
+  const values = columns.map((column) => serialiseValue(nextPayload[column]));
   const assignments = columns
     .map((column, index) => {
       const field = descriptor.fields.find((entry) => entry.name === column)!;
@@ -588,28 +728,33 @@ export async function updateRecord(table: string, id: string, payload: Record<st
     })
     .join(", ");
   values.push(id);
+  const whereClauses = [`${quoteIdentifier(descriptor.primaryKey)} = $${values.length}`];
+  applyOwnershipFilter(descriptor, whereClauses, values, options.access);
   const [record] = await sql.unsafe<Record<string, unknown>[]>(
     `update ${quoteIdentifier(descriptor.table)}
      set ${assignments}
-     where ${quoteIdentifier(descriptor.primaryKey)} = $${values.length}
+     where ${whereClauses.join(" and ")}
      returning *`,
     values,
   );
   if (!record) {
     throw new HttpError(404, "Record not found");
   }
-  return record;
+  return sanitiseRecordForTable(descriptor.table, record);
 }
 
-export async function deleteRecord(table: string, id: string) {
+export async function deleteRecord(table: string, id: string, options: MutationRecordOptions = {}) {
   const resource = await resolveTableResource(table);
   const { descriptor } = resource;
   assertWritableDescriptor(descriptor);
+  const whereClauses = [`${quoteIdentifier(descriptor.primaryKey)} = $1`];
+  const values: unknown[] = [id];
+  applyOwnershipFilter(descriptor, whereClauses, values, options.access);
   const [record] = await sql.unsafe<Record<string, unknown>[]>(
     `delete from ${quoteIdentifier(descriptor.table)}
-     where ${quoteIdentifier(descriptor.primaryKey)} = $1
+     where ${whereClauses.join(" and ")}
      returning *`,
-    [id],
+    values,
   );
   if (!record) {
     throw new HttpError(404, "Record not found");

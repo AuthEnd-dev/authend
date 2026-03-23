@@ -134,6 +134,18 @@ export function validateDraft(draft: SchemaDraft) {
         throw new Error(`Filter field ${table.name}.${field} does not exist`);
       }
     }
+
+    const ownershipField = table.api?.access?.ownershipField;
+    if (ownershipField && !fieldNames.has(ownershipField)) {
+      throw new Error(`Ownership field ${table.name}.${ownershipField} does not exist`);
+    }
+
+    const hiddenFields = table.api?.hiddenFields ?? [];
+    for (const field of hiddenFields) {
+      if (!fieldNames.has(field)) {
+        throw new Error(`Hidden field ${table.name}.${field} does not exist`);
+      }
+    }
   }
 
   const aliasesBySource = new Map<string, Set<string>>();

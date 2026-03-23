@@ -44,6 +44,30 @@ function buildContext(pathname: string, search: Record<string, unknown>): AiCont
   };
 }
 
+const ALLOWED_PLUGIN_IDS = [
+  "username",
+  "jwt",
+  "organization",
+  "twoFactor",
+  "apiKey",
+  "magicLink",
+  "socialAuth",
+  "admin",
+] as const;
+
+type AllowedPluginId = (typeof ALLOWED_PLUGIN_IDS)[number];
+
+function isAllowedPluginId(value: string): value is AllowedPluginId {
+  return (ALLOWED_PLUGIN_IDS as readonly string[]).includes(value);
+}
+
+function normalizeSelectedPluginId(value: unknown): AiContext["selectedPluginId"] {
+  if (typeof value !== "string") {
+    return null;
+  }
+  return isAllowedPluginId(value) ? value : null;
+}
+
 export function AiAssistantDrawer({
   isOpen,
   onClose,
@@ -56,12 +80,13 @@ export function AiAssistantDrawer({
   const { showNotice } = useFeedback();
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
-  const [selectedPluginId, setSelectedPluginId] = useState<string | null>(null);
+  const [selectedPluginId, setSelectedPluginId] = useState<AiContext["selectedPluginId"]>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ selectedPluginId?: string | null }>).detail;
-      setSelectedPluginId(typeof detail?.selectedPluginId === "string" ? detail.selectedPluginId : null);
+      setSelectedPluginId(normalizeSelectedPluginId(detail?.selectedPluginId));
     };
 
     window.addEventListener("authend:assistant-context", handler as EventListener);
@@ -228,58 +253,63 @@ export function AiAssistantDrawer({
 
   return (
     <SidePanel isOpen={isOpen} onClose={onClose} title="AI Assistant" footer={footer}>
-      <div className="grid h-full min-h-[70vh] gap-0 lg:grid-cols-[210px_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col border-b border-border/60 pb-4 lg:border-b-0 lg:border-r lg:pb-0">
-          <div className="flex items-center justify-between px-1 pb-3">
-            <div>
-              <h3 className="text-sm font-semibold text-foreground">Threads</h3>
-              <p className="text-xs text-muted-foreground">Persistent sessions</p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8"
-              onClick={() => createThreadMutation.mutate(message.trim() ? message.trim().slice(0, 60) : undefined)}
-              disabled={createThreadMutation.isPending}
-            >
-              New
-            </Button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto pr-3">
-            {threadsQuery.isLoading ? (
-              <div className="px-1 py-4 text-sm text-muted-foreground">Loading threads...</div>
-            ) : (threadsQuery.data ?? []).length === 0 ? (
-              <div className="px-1 py-4 text-sm text-muted-foreground">No assistant threads yet.</div>
-            ) : (
-              <div className="space-y-1">
-                {(threadsQuery.data ?? []).map((thread) => (
-                  <button
-                    key={thread.id}
-                    onClick={() => setActiveThreadId(thread.id)}
-                    className={`w-full rounded-lg px-3 py-2.5 text-left transition-colors ${
-                      activeThreadId === thread.id ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="truncate text-sm font-medium">{thread.title}</p>
-                      {thread.latestRunStatus ? <Badge variant={runStatusVariant(thread.latestRunStatus)}>{thread.latestRunStatus}</Badge> : null}
-                    </div>
-                    <p className="mt-1 text-[11px] text-muted-foreground">{new Date(thread.updatedAt).toLocaleString()}</p>
-                  </button>
-                ))}
+      <div className="flex h-full min-h-[70vh] min-w-0 flex-col">
+        <section className="flex min-h-0 flex-1 flex-col">
+          <div className="sticky top-0 z-10 border-b border-border/60 bg-background pb-3 pt-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="truncate text-sm font-semibold text-foreground">{activeDetail?.thread.title ?? "New assistant thread"}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Preview + confirm only. No env edits, backups, crons, raw SQL, or danger-zone actions.
+                </p>
               </div>
-            )}
-          </div>
-        </aside>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" className="h-8" onClick={() => setHistoryOpen((prev) => !prev)}>
+                  {historyOpen ? "Hide history" : "History"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => createThreadMutation.mutate(message.trim() ? message.trim().slice(0, 60) : undefined)}
+                  disabled={createThreadMutation.isPending}
+                >
+                  New
+                </Button>
+              </div>
+            </div>
 
-        <section className="flex min-h-0 flex-col lg:pl-6">
-          <div className="border-b border-border/60 pb-3">
-            <h3 className="text-sm font-semibold text-foreground">{activeDetail?.thread.title ?? "New assistant thread"}</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Preview + confirm only. No env edits, backups, crons, raw SQL, or danger-zone actions.
-            </p>
+            {historyOpen ? (
+              <div className="mt-3 max-h-56 overflow-auto rounded-md border border-border/60 bg-background p-2">
+                {threadsQuery.isLoading ? (
+                  <div className="px-1 py-2 text-sm text-muted-foreground">Loading history...</div>
+                ) : (threadsQuery.data ?? []).length === 0 ? (
+                  <div className="px-1 py-2 text-sm text-muted-foreground">No assistant history yet.</div>
+                ) : (
+                  <div className="space-y-1">
+                    {(threadsQuery.data ?? []).map((thread) => (
+                      <button
+                        key={thread.id}
+                        onClick={() => {
+                          setActiveThreadId(thread.id);
+                          setHistoryOpen(false);
+                        }}
+                        className={`w-full rounded-lg px-3 py-2.5 text-left transition-colors ${
+                          activeThreadId === thread.id ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="truncate text-sm font-medium">{thread.title}</p>
+                          {thread.latestRunStatus ? <Badge variant={runStatusVariant(thread.latestRunStatus)}>{thread.latestRunStatus}</Badge> : null}
+                        </div>
+                        <p className="mt-1 text-[11px] text-muted-foreground">{new Date(thread.updatedAt).toLocaleString()}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
-
           <div className="min-h-0 flex-1 overflow-auto py-5">
             {!activeThreadId ? (
               <div className="px-1 py-10 text-sm text-muted-foreground">
