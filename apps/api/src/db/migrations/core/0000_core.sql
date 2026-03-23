@@ -178,3 +178,40 @@ create table if not exists "cron_runs" (
   "completed_at" timestamptz,
   "duration_ms" text
 );
+
+create table if not exists "ai_threads" (
+  "id" text primary key,
+  "title" text not null,
+  "actor_user_id" text not null,
+  "created_at" timestamptz not null default now(),
+  "updated_at" timestamptz not null default now()
+);
+
+create table if not exists "ai_messages" (
+  "id" text primary key,
+  "thread_id" text not null references "ai_threads"("id") on delete cascade,
+  "role" text not null,
+  "content" text not null,
+  "context" jsonb,
+  "run_id" text,
+  "created_at" timestamptz not null default now()
+);
+
+create table if not exists "ai_runs" (
+  "id" text primary key,
+  "thread_id" text not null references "ai_threads"("id") on delete cascade,
+  "user_message_id" text not null,
+  "assistant_message_id" text,
+  "status" text not null,
+  "summary" text not null,
+  "rationale" text not null,
+  "action_batch" jsonb not null default '{}'::jsonb,
+  "previews" jsonb not null default '[]'::jsonb,
+  "results" jsonb not null default '[]'::jsonb,
+  "error" text,
+  "actor_user_id" text,
+  "approved_by_user_id" text,
+  "created_at" timestamptz not null default now(),
+  "approved_at" timestamptz,
+  "completed_at" timestamptz
+);

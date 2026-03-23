@@ -155,3 +155,40 @@ export const cronRuns = pgTable("cron_runs", {
   completedAt: timestamp("completed_at", { withTimezone: true }),
   durationMs: text("duration_ms"),
 });
+
+export const aiThreads = pgTable("ai_threads", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  actorUserId: text("actor_user_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const aiMessages = pgTable("ai_messages", {
+  id: text("id").primaryKey(),
+  threadId: text("thread_id").notNull().references(() => aiThreads.id, { onDelete: "cascade" }),
+  role: text("role").notNull(),
+  content: text("content").notNull(),
+  context: jsonb("context"),
+  runId: text("run_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const aiRuns = pgTable("ai_runs", {
+  id: text("id").primaryKey(),
+  threadId: text("thread_id").notNull().references(() => aiThreads.id, { onDelete: "cascade" }),
+  userMessageId: text("user_message_id").notNull(),
+  assistantMessageId: text("assistant_message_id"),
+  status: text("status").notNull(),
+  summary: text("summary").notNull(),
+  rationale: text("rationale").notNull(),
+  actionBatch: jsonb("action_batch").notNull().default({}),
+  previews: jsonb("previews").notNull().default([]),
+  results: jsonb("results").notNull().default([]),
+  error: text("error"),
+  actorUserId: text("actor_user_id"),
+  approvedByUserId: text("approved_by_user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+});

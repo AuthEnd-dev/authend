@@ -15,6 +15,22 @@ function staticPaths() {
     "/api/admin/plugins": {
       get: { summary: "List plugin catalog" },
     },
+    "/api/admin/ai/threads": {
+      get: { summary: "List AI assistant threads" },
+      post: { summary: "Create a new AI assistant thread" },
+    },
+    "/api/admin/ai/threads/{threadId}": {
+      get: { summary: "Get an AI assistant thread with messages and runs" },
+    },
+    "/api/admin/ai/threads/{threadId}/messages": {
+      post: { summary: "Send a message to the AI assistant and receive a preview-only action batch" },
+    },
+    "/api/admin/ai/runs/{runId}/approve": {
+      post: { summary: "Approve and execute a pending AI assistant run" },
+    },
+    "/api/admin/ai/runs/{runId}/reject": {
+      post: { summary: "Reject a pending AI assistant run" },
+    },
     "/api/admin/schema": {
       get: { summary: "Read current schema draft" },
     },

@@ -17,6 +17,7 @@ const defaultSettings = {
   storage: settingsSectionSchemas.storage.parse({}),
   backups: settingsSectionSchemas.backups.parse({}),
   crons: settingsSectionSchemas.crons.parse({}),
+  aiAssistant: settingsSectionSchemas.aiAssistant.parse({}),
   adminAccess: settingsSectionSchemas.adminAccess.parse({}),
   environmentsSecrets: settingsSectionSchemas.environmentsSecrets.parse({}),
   observability: settingsSectionSchemas.observability.parse({}),

@@ -248,6 +248,26 @@ export function PluginsPage() {
 
   const selectedPlugin = useMemo(() => data?.find((plugin) => plugin.id === selectedPluginId) ?? null, [data, selectedPluginId]);
 
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("authend:assistant-context", {
+        detail: {
+          selectedPluginId,
+        },
+      }),
+    );
+
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent("authend:assistant-context", {
+          detail: {
+            selectedPluginId: null,
+          },
+        }),
+      );
+    };
+  }, [selectedPluginId]);
+
   const apiKeyRecordsQuery = useQuery({
     queryKey: ['plugin-ops', 'apiKey', 'records'],
     queryFn: () => client.data.resource('apikey').list({ pageSize: 8, sort: 'created_at', order: 'desc' }),

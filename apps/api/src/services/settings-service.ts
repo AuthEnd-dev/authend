@@ -122,9 +122,13 @@ async function cronDiagnostics() {
 
 async function computeRequiredEnvironmentKeys() {
   const state = await readSettingsSection("environmentsSecrets");
+  const aiState = await readSettingsSection("aiAssistant");
   const pluginManifests = await listPluginCapabilityManifests();
   const pluginMissingKeys = pluginManifests.flatMap((manifest) => manifest.missingEnvKeys);
-  const requiredKeys = Array.from(new Set([...CORE_ENV_KEYS, ...state.config.additionalRequiredEnvKeys, ...pluginMissingKeys]));
+  const aiKeys = aiState.config.enabled ? [aiState.config.apiKeyEnvVar] : [];
+  const requiredKeys = Array.from(
+    new Set([...CORE_ENV_KEYS, ...state.config.additionalRequiredEnvKeys, ...pluginMissingKeys, ...aiKeys]),
+  );
   const missingKeys = requiredKeys.filter((key) => !envValue(key));
   return { requiredKeys, missingKeys };
 }
@@ -216,6 +220,15 @@ async function genericDiagnostics(section: Exclude<SettingsSectionId, "storage" 
       return {
         openApiEnabled: state.config.enableOpenApi,
         defaultAuthMode: state.config.defaultAuthMode,
+      };
+    case "aiAssistant":
+      return {
+        enabled: state.config.enabled,
+        provider: state.config.provider,
+        baseUrl: state.config.baseUrl,
+        model: state.config.model,
+        apiKeyEnvVar: state.config.apiKeyEnvVar,
+        apiKeyConfigured: Boolean(envValue(state.config.apiKeyEnvVar)),
       };
     case "adminAccess": {
       const adminPlugin = await readPluginCapabilityManifest("admin");

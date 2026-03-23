@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import { cn } from '../../lib/utils';
 
-type CodeLanguage = 'ts' | 'tsx' | 'js' | 'json' | 'bash' | 'http';
+type CodeLanguage = 'ts' | 'tsx' | 'js' | 'json' | 'bash' | 'http' | 'sql';
 
 type TokenKind =
   | 'plain'
@@ -67,6 +67,47 @@ const SHARED_KEYWORDS = new Set([
 const SCRIPT_KEYWORDS = new Set([...SHARED_KEYWORDS, 'true', 'false', 'null', 'undefined']);
 const SHELL_KEYWORDS = new Set(['if', 'then', 'else', 'fi', 'for', 'do', 'done', 'case', 'esac', 'function', 'export']);
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+const SQL_KEYWORDS = new Set([
+  'select',
+  'from',
+  'where',
+  'and',
+  'or',
+  'insert',
+  'into',
+  'values',
+  'update',
+  'delete',
+  'alter',
+  'table',
+  'create',
+  'drop',
+  'join',
+  'left',
+  'right',
+  'inner',
+  'outer',
+  'full',
+  'on',
+  'group',
+  'by',
+  'order',
+  'limit',
+  'offset',
+  'returning',
+  'set',
+  'null',
+  'not',
+  'primary',
+  'key',
+  'default',
+  'references',
+  'cascade',
+  'restrict',
+  'as',
+  'if',
+  'exists',
+]);
 
 function pushPlain(tokens: Token[], value: string) {
   if (!value) {
@@ -344,6 +385,65 @@ function tokenizeHttpLine(line: string, index: number) {
   return tokenizeJsonLine(line);
 }
 
+function tokenizeSqlLine(line: string) {
+  const tokens: Token[] = [];
+  let cursor = 0;
+
+  while (cursor < line.length) {
+    const rest = line.slice(cursor);
+
+    if (rest.startsWith('--')) {
+      tokens.push({ kind: 'comment', value: rest });
+      break;
+    }
+
+    const char = line[cursor];
+    if (char === '"' || char === '\'') {
+      const value = consumeString(line, cursor, char);
+      tokens.push({ kind: 'string', value });
+      cursor += value.length;
+      continue;
+    }
+
+    const keywordMatch = rest.match(/^[A-Za-z_][\w$]*/);
+    if (keywordMatch) {
+      const value = keywordMatch[0];
+      if (SQL_KEYWORDS.has(value.toLowerCase())) {
+        tokens.push({ kind: 'keyword', value });
+      } else {
+        pushPlain(tokens, value);
+      }
+      cursor += value.length;
+      continue;
+    }
+
+    const numberMatch = rest.match(/^-?\d+(?:\.\d+)?/);
+    if (numberMatch) {
+      tokens.push({ kind: 'number', value: numberMatch[0] });
+      cursor += numberMatch[0].length;
+      continue;
+    }
+
+    const operatorMatch = rest.match(/^(::|<=|>=|<>|!=|[=+\-*/%<>])/);
+    if (operatorMatch) {
+      tokens.push({ kind: 'operator', value: operatorMatch[0] });
+      cursor += operatorMatch[0].length;
+      continue;
+    }
+
+    if (/^[()[\]{}.,;]$/.test(char)) {
+      tokens.push({ kind: 'punctuation', value: char });
+      cursor += 1;
+      continue;
+    }
+
+    pushPlain(tokens, char);
+    cursor += 1;
+  }
+
+  return tokens;
+}
+
 function tokenizeLine(line: string, language: CodeLanguage, index: number) {
   switch (language) {
     case 'json':
@@ -352,6 +452,8 @@ function tokenizeLine(line: string, language: CodeLanguage, index: number) {
       return tokenizeBashLine(line);
     case 'http':
       return tokenizeHttpLine(line, index);
+    case 'sql':
+      return tokenizeSqlLine(line);
     case 'ts':
     case 'tsx':
     case 'js':

@@ -1,5 +1,8 @@
 import { createAuthendClient } from '@authend/sdk';
 import type {
+  AiMessageCreate,
+  AiThread,
+  AiThreadDetail,
   ApiPreview,
   ApiResource,
   AuditLog,
@@ -52,6 +55,28 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const client = {
   ...sdkClient,
   system: {
+    ai: {
+      threads: () => request<AiThread[]>('/api/admin/ai/threads'),
+      createThread: (title?: string) =>
+        request<AiThread>('/api/admin/ai/threads', {
+          method: 'POST',
+          body: JSON.stringify(title ? { title } : {}),
+        }),
+      thread: (threadId: string) => request<AiThreadDetail>(`/api/admin/ai/threads/${threadId}`),
+      sendMessage: (threadId: string, payload: AiMessageCreate) =>
+        request<AiThreadDetail>(`/api/admin/ai/threads/${threadId}/messages`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }),
+      approveRun: (runId: string) =>
+        request<AiThreadDetail>(`/api/admin/ai/runs/${runId}/approve`, {
+          method: 'POST',
+        }),
+      rejectRun: (runId: string) =>
+        request<AiThreadDetail>(`/api/admin/ai/runs/${runId}/reject`, {
+          method: 'POST',
+        }),
+    },
     setupStatus: () => request<SetupStatus>('/api/setup/status'),
     auditLogs: () => request<AuditLog[]>('/api/admin/audit'),
     migrations: () => request<MigrationRecord[]>('/api/admin/migrations'),

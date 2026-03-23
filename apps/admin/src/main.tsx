@@ -16,6 +16,7 @@ import { DataPage } from "./pages/data";
 import { MigrationsPage } from "./pages/migrations";
 import { AuditPage } from "./pages/audit";
 import {
+  AiAssistantSettingsPage,
   AdminAccessSettingsPage,
   ApiSettingsPage,
   AuthenticationSettingsPage,
@@ -38,18 +39,19 @@ import { useState } from "react";
 import { Input } from "./components/ui/input";
 import { FeedbackProvider } from "./components/ui/feedback";
 import {
-  Database, ScrollText, Blocks, Settings, LogOut,
+  Database, ScrollText, Blocks, Settings, LogOut, Bot,
   Search, Plus, Folder, FolderOpen, Table2
 } from "lucide-react";
 
 import { TableSchemaPanel } from "./components/table-schema-panel";
+import { AiAssistantDrawer } from "./components/ai-assistant-drawer";
 
 // Route Categorizations
 const routeGroups = {
   settings: settingsNavItems.map((item) => ({ to: item.to, label: item.label })),
 };
 
-const SYSTEM_TABLES = ["plugin_configs", "migration_runs", "audit_logs", "system_settings", "backup_runs", "cron_jobs", "cron_runs"];
+const SYSTEM_TABLES = ["plugin_configs", "migration_runs", "audit_logs", "system_settings", "backup_runs", "cron_jobs", "cron_runs", "ai_threads", "ai_messages", "ai_runs"];
 
 function DatabaseSubNav() {
   const location = useLocation();
@@ -240,6 +242,7 @@ function StandardLayout({ groupKey, activeSection }: { groupKey: keyof typeof ro
 function Shell() {
   const location = useLocation();
   const session = client.auth.useSession();
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   // Highlight active tier 1 icon based on pathname prefix
   const path = location.pathname;
@@ -291,6 +294,13 @@ function Shell() {
           </nav>
           
           <div className="mt-auto px-2 flex flex-col gap-3 items-center">
+            <button
+              className="w-11 h-11 rounded-xl flex items-center justify-center text-muted-foreground hover:bg-secondary/80 hover:text-foreground transition-all"
+              onClick={() => setAssistantOpen(true)}
+              title="AI Assistant"
+            >
+              <Bot className="w-5 h-5" strokeWidth={2} />
+            </button>
             <button 
               className="w-11 h-11 rounded-xl flex items-center justify-center text-muted-foreground hover:bg-secondary/80 hover:text-foreground transition-all"
               onClick={() => void client.auth.signOut()}
@@ -306,6 +316,7 @@ function Shell() {
 
         {/* Outer Outlet for Group Layouts */}
         <Outlet />
+        <AiAssistantDrawer isOpen={assistantOpen} onClose={() => setAssistantOpen(false)} />
       </div>
     </AuthGate>
   );
@@ -416,6 +427,12 @@ const cronsSettingsRoute = createRoute({
   component: CronsSettingsPage,
 });
 
+const aiAssistantSettingsRoute = createRoute({
+  getParentRoute: () => settingsGroup,
+  path: "/ai-assistant",
+  component: AiAssistantSettingsPage,
+});
+
 const adminAccessSettingsRoute = createRoute({
   getParentRoute: () => settingsGroup,
   path: "/admin-access",
@@ -475,6 +492,7 @@ const routeTree = rootRoute.addChildren([
     storageSettingsRoute,
     backupsSettingsRoute,
     cronsSettingsRoute,
+    aiAssistantSettingsRoute,
     adminAccessSettingsRoute,
     environmentsSecretsSettingsRoute,
     observabilitySettingsRoute,

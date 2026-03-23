@@ -50,6 +50,7 @@ export const settingsNavItems: SettingsNavItem[] = [
   { id: "storage", to: "/storage", label: "File Storage", section: "storage" },
   { id: "backups", to: "/backups", label: "Backups", section: "backups" },
   { id: "crons", to: "/crons", label: "Crons", section: "crons" },
+  { id: "ai-assistant", to: "/ai-assistant", label: "AI Assistant", section: "aiAssistant" },
   { id: "admin-access", to: "/admin-access", label: "Admin Access", section: "adminAccess" },
   { id: "environments-secrets", to: "/environments-secrets", label: "Environments & Secrets", section: "environmentsSecrets" },
   { id: "observability", to: "/observability", label: "Observability", section: "observability" },
@@ -413,6 +414,19 @@ const apiFields: SettingsField[] = [
   { key: "allowClientApiPreview", label: "Allow client API preview", kind: "boolean" },
 ];
 
+const aiAssistantFields: SettingsField[] = [
+  { key: "enabled", label: "Enable AI assistant", kind: "boolean" },
+  {
+    key: "provider",
+    label: "Provider",
+    kind: "select",
+    options: [{ value: "openai-compatible", label: "OpenAI-compatible" }],
+  },
+  { key: "baseUrl", label: "Base URL", kind: "url" },
+  { key: "model", label: "Model", kind: "text" },
+  { key: "apiKeyEnvVar", label: "API key env var", kind: "text" },
+];
+
 const adminAccessFields: SettingsField[] = [
   { key: "defaultRole", label: "Default role", kind: "text" },
   { key: "adminRoles", label: "Admin roles", kind: "list" },
@@ -485,6 +499,13 @@ export const ApiSettingsPage = createSettingsSectionPage(
   "API",
   "Defaults for pagination, rate limiting, OpenAPI exposure, and client-facing API behavior.",
   apiFields,
+);
+
+export const AiAssistantSettingsPage = createSettingsSectionPage(
+  "aiAssistant",
+  "AI Assistant",
+  "Configure the OpenAI-compatible provider used by the superadmin assistant. The API key stays in your environment file.",
+  aiAssistantFields,
 );
 
 export const AdminAccessSettingsPage = createSettingsSectionPage(

@@ -23,6 +23,7 @@ Full product and architecture documentation lives in [docs/ARCHITECTURE.md](./do
 - Migration history and audit logging
 - API contract preview with OpenAPI and SDK-aligned resource metadata
 - Project settings pages for file storage, backups, crons, email, domains, and platform policy
+- Superadmin-only AI assistant with preview-and-confirm action batches for schema, plugins, API config, and data CRUD
 
 ## Quick start
 
@@ -43,6 +44,7 @@ ADMIN_URL=http://localhost:7001
 BETTER_AUTH_SECRET=replace-with-a-long-random-secret
 SUPERADMIN_EMAIL=admin@example.com
 SUPERADMIN_PASSWORD=ChangeMe123!
+OPENAI_API_KEY=
 ```
 
 4. Install dependencies, bootstrap, and start the stack.
@@ -101,6 +103,7 @@ v1 intentionally blocks destructive operations:
 - `ALL /api/auth/*`
 - `GET /api/setup/status`
 - `GET|POST /api/admin/plugins/*`
+- `GET|POST /api/admin/ai/*`
 - `GET|POST /api/admin/schema/*`
 - `GET|POST /api/admin/migrations/*`
 - `GET /api/admin/audit`
@@ -108,6 +111,30 @@ v1 intentionally blocks destructive operations:
 - `GET|POST|PATCH|DELETE /api/data/:table`
 
 Admin and data routes require a Better Auth session and a seeded superadmin record.
+
+## AI assistant
+
+Authend includes a superadmin-only AI assistant in the admin shell. It uses the official `openai` SDK on the API server and talks to an OpenAI-compatible endpoint you configure under `Settings > AI Assistant`.
+
+Important guardrails:
+
+- preview + confirm only, never direct apply
+- limited to schema, plugins, API config, and data CRUD
+- cannot edit env vars, run backups, manage crons, use raw SQL, or invoke danger-zone operations
+- every approved run is executed through the same service layer as the dashboard and written to the audit log
+
+Minimum local setup:
+
+```env
+OPENAI_API_KEY=your-provider-key
+```
+
+Then in the admin:
+
+1. Open `Settings > AI Assistant`
+2. Enable the assistant
+3. Set your provider base URL and model
+4. Keep the API key env var name aligned with your `.env`
 
 ## SDK generation
 

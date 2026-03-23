@@ -572,6 +572,227 @@ export const sdkSchemaManifestSchema = z.object({
 
 export type SdkSchemaManifest = z.infer<typeof sdkSchemaManifestSchema>;
 
+export const aiActionTypeSchema = z.enum([
+  "create_table",
+  "update_table",
+  "delete_table",
+  "create_relation",
+  "update_relation",
+  "delete_relation",
+  "set_table_api_config",
+  "enable_plugin",
+  "disable_plugin",
+  "update_plugin_config",
+  "create_record",
+  "update_record",
+  "delete_record",
+  "bulk_update_records",
+  "bulk_delete_records",
+]);
+
+export type AiActionType = z.infer<typeof aiActionTypeSchema>;
+
+const aiBulkFilterSchema = z.object({
+  filterField: z.string().min(1).nullish(),
+  filterValue: z.string().min(1),
+});
+
+export type AiBulkFilter = z.infer<typeof aiBulkFilterSchema>;
+
+export const aiActionSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("create_table"),
+    table: tableBlueprintSchema,
+  }),
+  z.object({
+    type: z.literal("update_table"),
+    tableName: z.string().min(1),
+    table: tableBlueprintSchema,
+  }),
+  z.object({
+    type: z.literal("delete_table"),
+    tableName: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("create_relation"),
+    relation: relationBlueprintSchema,
+  }),
+  z.object({
+    type: z.literal("update_relation"),
+    current: relationBlueprintSchema,
+    relation: relationBlueprintSchema,
+  }),
+  z.object({
+    type: z.literal("delete_relation"),
+    relation: relationBlueprintSchema,
+  }),
+  z.object({
+    type: z.literal("set_table_api_config"),
+    tableName: z.string().min(1),
+    config: tableApiConfigSchema,
+  }),
+  z.object({
+    type: z.literal("enable_plugin"),
+    pluginId: pluginIdSchema,
+  }),
+  z.object({
+    type: z.literal("disable_plugin"),
+    pluginId: pluginIdSchema,
+  }),
+  z.object({
+    type: z.literal("update_plugin_config"),
+    pluginId: pluginIdSchema,
+    update: pluginConfigUpdateSchema,
+  }),
+  z.object({
+    type: z.literal("create_record"),
+    table: z.string().min(1),
+    payload: z.record(z.string(), z.unknown()).default({}),
+  }),
+  z.object({
+    type: z.literal("update_record"),
+    table: z.string().min(1),
+    id: z.string().min(1),
+    payload: z.record(z.string(), z.unknown()).default({}),
+  }),
+  z.object({
+    type: z.literal("delete_record"),
+    table: z.string().min(1),
+    id: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("bulk_update_records"),
+    table: z.string().min(1),
+    match: aiBulkFilterSchema,
+    changes: z.record(z.string(), z.unknown()).default({}),
+  }),
+  z.object({
+    type: z.literal("bulk_delete_records"),
+    table: z.string().min(1),
+    match: aiBulkFilterSchema,
+  }),
+]);
+
+export type AiAction = z.infer<typeof aiActionSchema>;
+
+export const aiActionPreviewSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+  details: z.array(z.string()).default([]),
+  sqlPreview: z.array(z.string()).default([]),
+  warnings: z.array(z.string()).default([]),
+  affectedCount: z.number().int().nonnegative().nullish(),
+  sampleRecords: z.array(dataRecordSchema).default([]),
+});
+
+export type AiActionPreview = z.infer<typeof aiActionPreviewSchema>;
+
+export const aiActionBatchSchema = z.object({
+  summary: z.string(),
+  rationale: z.string(),
+  actions: z.array(aiActionSchema).default([]),
+  warnings: z.array(z.string()).default([]),
+});
+
+export type AiActionBatch = z.infer<typeof aiActionBatchSchema>;
+
+export const aiRunStatusSchema = z.enum(["pending", "approved", "running", "completed", "failed", "rejected"]);
+
+export type AiRunStatus = z.infer<typeof aiRunStatusSchema>;
+
+export const aiContextSchema = z.object({
+  route: z.string(),
+  pageTitle: z.string().nullish(),
+  selectedTable: z.string().nullish(),
+  selectedPluginId: pluginIdSchema.nullish(),
+  selectedResource: z.string().nullish(),
+});
+
+export type AiContext = z.infer<typeof aiContextSchema>;
+
+export const aiMessageRoleSchema = z.enum(["user", "assistant"]);
+
+export type AiMessageRole = z.infer<typeof aiMessageRoleSchema>;
+
+export const aiMessageSchema = z.object({
+  id: z.string(),
+  threadId: z.string(),
+  role: aiMessageRoleSchema,
+  content: z.string(),
+  context: aiContextSchema.nullish(),
+  runId: z.string().nullish(),
+  createdAt: z.string(),
+});
+
+export type AiMessage = z.infer<typeof aiMessageSchema>;
+
+export const aiRunStepResultSchema = z.object({
+  actionIndex: z.number().int().nonnegative(),
+  actionType: aiActionTypeSchema,
+  status: z.enum(["completed", "failed", "skipped"]),
+  target: z.string().nullish(),
+  message: z.string(),
+});
+
+export type AiRunStepResult = z.infer<typeof aiRunStepResultSchema>;
+
+export const aiRunSchema = z.object({
+  id: z.string(),
+  threadId: z.string(),
+  userMessageId: z.string(),
+  assistantMessageId: z.string().nullish(),
+  status: aiRunStatusSchema,
+  summary: z.string(),
+  rationale: z.string(),
+  actionBatch: aiActionBatchSchema,
+  previews: z.array(aiActionPreviewSchema).default([]),
+  results: z.array(aiRunStepResultSchema).default([]),
+  error: z.string().nullish(),
+  actorUserId: z.string().nullish(),
+  approvedByUserId: z.string().nullish(),
+  createdAt: z.string(),
+  approvedAt: z.string().nullish(),
+  completedAt: z.string().nullish(),
+});
+
+export type AiRun = z.infer<typeof aiRunSchema>;
+
+export const aiThreadSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  actorUserId: z.string(),
+  latestRunStatus: aiRunStatusSchema.nullish(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type AiThread = z.infer<typeof aiThreadSchema>;
+
+export const aiThreadDetailSchema = z.object({
+  thread: aiThreadSchema,
+  messages: z.array(aiMessageSchema).default([]),
+  runs: z.array(aiRunSchema).default([]),
+});
+
+export type AiThreadDetail = z.infer<typeof aiThreadDetailSchema>;
+
+export const aiAssistantSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  provider: z.enum(["openai-compatible"]).default("openai-compatible"),
+  baseUrl: z.string().url().default("https://api.openai.com/v1"),
+  model: z.string().default("gpt-5-mini"),
+  apiKeyEnvVar: z.string().min(1).default("OPENAI_API_KEY"),
+});
+
+export type AiAssistantSettings = z.infer<typeof aiAssistantSettingsSchema>;
+
+export const aiMessageCreateSchema = z.object({
+  content: z.string().min(1),
+  context: aiContextSchema,
+});
+
+export type AiMessageCreate = z.infer<typeof aiMessageCreateSchema>;
+
 export const settingsSectionIdSchema = z.enum([
   "general",
   "authentication",
@@ -582,6 +803,7 @@ export const settingsSectionIdSchema = z.enum([
   "storage",
   "backups",
   "crons",
+  "aiAssistant",
   "adminAccess",
   "environmentsSecrets",
   "observability",
@@ -593,8 +815,8 @@ export type SettingsSectionId = z.infer<typeof settingsSectionIdSchema>;
 export const generalSettingsSchema = z.object({
   projectLabel: z.string().default("Authend Project"),
   appName: z.string().default("Authend"),
-  appUrl: z.string().url().default("http://localhost:3000"),
-  adminUrl: z.string().url().default("http://localhost:3000/admin"),
+  appUrl: z.string().url().default("http://localhost:7002"),
+  adminUrl: z.string().url().default("http://localhost:7001"),
   timezone: z.string().default("Africa/Lagos"),
   locale: z.string().default("en-US"),
 });
@@ -770,6 +992,7 @@ export const settingsSectionSchemas = {
   storage: storageSettingsSchema,
   backups: backupSettingsSchema,
   crons: cronsSettingsSchema,
+  aiAssistant: aiAssistantSettingsSchema,
   adminAccess: adminAccessSettingsSchema,
   environmentsSecrets: environmentsSecretsSettingsSchema,
   observability: observabilitySettingsSchema,
@@ -786,6 +1009,7 @@ export type SettingsSectionConfigMap = {
   storage: StorageSettings;
   backups: BackupSettings;
   crons: CronsSettings;
+  aiAssistant: AiAssistantSettings;
   adminAccess: AdminAccessSettings;
   environmentsSecrets: EnvironmentsSecretsSettings;
   observability: ObservabilitySettings;
