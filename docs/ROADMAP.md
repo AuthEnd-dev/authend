@@ -82,8 +82,8 @@ Goal: move from superadmin-operated CRUD to a true BaaS runtime.
 - [ ] Split app-facing data access from admin-only management routes cleanly.
 - [x] Enforce `authMode` and access policy consistently in runtime, not just preview metadata.
 - [x] Ensure relation includes respect access rules and hidden fields.
-- [ ] Ensure filters and sorts cannot bypass visibility constraints.
-- [ ] Add rate limiting for anonymous and API-key traffic.
+- [x] Ensure filters and sorts cannot bypass visibility constraints.
+- [x] Add rate limiting for anonymous and API-key traffic.
 
 ### Admin UX
 

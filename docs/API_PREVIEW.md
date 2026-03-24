@@ -140,6 +140,8 @@ Specifically:
 - generated tables now enforce runtime actor/access policy on that router
 - signed-in callers inherit `public` routes, and owner-scoped routes enforce `ownershipField` at runtime
 - relation includes now respect the target table's `get` access policy and target hidden-field redaction
+- filter and sort allowlists now derive from readable fields even in direct service-level callers, so hidden fields cannot be queried by bypassing the preview layer
+- `/api/data/*` now rate-limits anonymous callers by client IP and API-key callers by key id using the API settings defaults
 - the admin schema editor now exposes preset-based policy authoring for `public`, `session`, and `apiKey` use cases
 - the schema editor now warns on risky policy combinations such as public writes, sensitive public filters, and broad public includes
 - built-in auth/system tables are default-deny there unless explicitly allowlisted

@@ -685,6 +685,7 @@ export async function listRecords(table: string, query: URLSearchParams, options
   const resource = await resolveTableResource(table);
   assertDataApiReadable(resource);
   const { descriptor } = resource;
+  const readableFieldNames = readableFields(descriptor, resource.config).map((field) => field.name);
   const pagination = options.pagination ?? {
     enabled: true,
     defaultPageSize: 20,
@@ -692,13 +693,13 @@ export async function listRecords(table: string, query: URLSearchParams, options
   };
   const sorting = options.sorting ?? {
     enabled: true,
-    fields: descriptor.fields.map((field) => field.name),
-    defaultField: descriptor.primaryKey,
+    fields: readableFieldNames,
+    defaultField: readableFieldNames.includes(descriptor.primaryKey) ? descriptor.primaryKey : readableFieldNames[0] ?? descriptor.primaryKey,
     defaultOrder: "desc",
   };
   const filtering = options.filtering ?? {
     enabled: true,
-    fields: descriptor.fields.map((field) => field.name),
+    fields: readableFieldNames,
   };
   const includesConfig = options.includes ?? {
     enabled: true,

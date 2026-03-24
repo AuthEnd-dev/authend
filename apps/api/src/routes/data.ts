@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { resolveRequestActor, type RequestActor } from "../middleware/auth";
 import { HttpError } from "../lib/http";
 import { apiKeyPermissionName, buildApiResource, listApiResources } from "../services/api-design-service";
+import { rateLimitDataRequest } from "../services/rate-limit-service";
 import {
   createRecord,
   deleteRecord,
@@ -105,9 +106,50 @@ async function authoriseDataOperation(tableInput: string, actor: RequestActor, o
   };
 }
 
+function readClientIp(c: Parameters<typeof resolveRequestActor>[0]) {
+  const forwarded = c.req.header("x-forwarded-for");
+  if (forwarded) {
+    const [first] = forwarded.split(",");
+    if (first?.trim()) {
+      return first.trim();
+    }
+  }
+
+  const realIp = c.req.header("x-real-ip") ?? c.req.header("cf-connecting-ip");
+  if (realIp?.trim()) {
+    return realIp.trim();
+  }
+
+  return "unknown";
+}
+
+async function applyDataRateLimit(c: Parameters<typeof resolveRequestActor>[0], actor: RequestActor) {
+  if (actor.kind !== "public" && actor.kind !== "apiKey") {
+    return;
+  }
+
+  const identifier = actor.kind === "apiKey" ? actor.keyId : readClientIp(c);
+  const decision = await rateLimitDataRequest(actor, identifier);
+  if (!decision) {
+    return;
+  }
+
+  c.header("x-ratelimit-limit", String(decision.limit));
+  c.header("x-ratelimit-remaining", String(decision.remaining));
+  c.header("x-ratelimit-reset", String(Math.ceil(decision.resetAt / 1000)));
+
+  if (decision.limited) {
+    c.header("retry-after", String(decision.retryAfterSeconds));
+    throw new HttpError(429, "Rate limit exceeded", {
+      retryAfterSeconds: decision.retryAfterSeconds,
+    });
+  }
+}
+
 export const dataRouter = new Hono()
   .get("/", async (c) => {
     const actor = await resolveRequestActor(c);
+    await applyDataRateLimit(c, actor);
     const resources = await listApiResources();
     return c.json({
       tables: resources.filter((resource) => canAccessOperation(resource, actor, "list")).map((resource) => resource.table),
@@ -115,6 +157,7 @@ export const dataRouter = new Hono()
   })
   .get("/meta/:table", async (c) => {
     const actor = await resolveRequestActor(c);
+    await applyDataRateLimit(c, actor);
     const table = c.req.param("table");
     const resource = await buildApiResource(table);
     const visible = (["list", "get", "create", "update", "delete"] as const).some((operation) => canAccessOperation(resource, actor, operation));
@@ -129,6 +172,7 @@ export const dataRouter = new Hono()
   .get("/:table", async (c) => {
     const table = c.req.param("table");
     const actor = await resolveRequestActor(c);
+    await applyDataRateLimit(c, actor);
     const { resource, access } = await authoriseDataOperation(table, actor, "list");
     return c.json(
       await listRecords(table, new URL(c.req.url).searchParams, {
@@ -143,21 +187,25 @@ export const dataRouter = new Hono()
   .post("/:table", async (c) => {
     const table = c.req.param("table");
     const actor = await resolveRequestActor(c);
+    await applyDataRateLimit(c, actor);
     const { access } = await authoriseDataOperation(table, actor, "create");
     return c.json(await createRecord(table, await c.req.json(), { access }));
   })
   .get("/:table/:id", async (c) => {
     const actor = await resolveRequestActor(c);
+    await applyDataRateLimit(c, actor);
     const { access } = await authoriseDataOperation(c.req.param("table"), actor, "get");
     return c.json(await getRecord(c.req.param("table"), c.req.param("id"), { access }));
   })
   .patch("/:table/:id", async (c) => {
     const actor = await resolveRequestActor(c);
+    await applyDataRateLimit(c, actor);
     const { access } = await authoriseDataOperation(c.req.param("table"), actor, "update");
     return c.json(await updateRecord(c.req.param("table"), c.req.param("id"), await c.req.json(), { access }));
   })
   .delete("/:table/:id", async (c) => {
     const actor = await resolveRequestActor(c);
+    await applyDataRateLimit(c, actor);
     const { access } = await authoriseDataOperation(c.req.param("table"), actor, "delete");
     await deleteRecord(c.req.param("table"), c.req.param("id"), { access });
     return c.body(null, 204);

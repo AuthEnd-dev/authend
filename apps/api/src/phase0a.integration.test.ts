@@ -8,6 +8,8 @@ type CrudModule = typeof import("./services/crud-service");
 type PluginModule = typeof import("./services/plugin-service");
 type DbModule = typeof import("./db/client");
 type MigrationModule = typeof import("./services/migration-service");
+type SettingsStoreModule = typeof import("./services/settings-store");
+type RateLimitModule = typeof import("./services/rate-limit-service");
 
 const sourceDatabaseUrl =
   process.env.TEST_DATABASE_URL ??
@@ -74,6 +76,8 @@ describe("Phase 0A integration hardening", () => {
   let pluginModule: PluginModule;
   let dbModule: DbModule;
   let migrationModule: MigrationModule;
+  let settingsStoreModule: SettingsStoreModule;
+  let rateLimitModule: RateLimitModule;
   let app: ReturnType<AppModule["createApp"]>;
   let cookieJar: CookieJar;
 
@@ -96,7 +100,7 @@ describe("Phase 0A integration hardening", () => {
     process.env.SUPERADMIN_PASSWORD = "ChangeMe123!";
     process.env.SUPERADMIN_NAME = "Authend Admin";
 
-    [appModule, bootstrapModule, schemaModule, crudModule, pluginModule, dbModule, migrationModule] = await Promise.all([
+    [appModule, bootstrapModule, schemaModule, crudModule, pluginModule, dbModule, migrationModule, settingsStoreModule, rateLimitModule] = await Promise.all([
       import("./app"),
       import("./services/bootstrap-service"),
       import("./services/schema-service"),
@@ -104,6 +108,8 @@ describe("Phase 0A integration hardening", () => {
       import("./services/plugin-service"),
       import("./db/client"),
       import("./services/migration-service"),
+      import("./services/settings-store"),
+      import("./services/rate-limit-service"),
     ]);
 
     await migrationModule.ensureCoreSchema();
@@ -617,6 +623,25 @@ describe("Phase 0A integration hardening", () => {
     };
   }
 
+  async function withApiRateLimitSettings(
+    settings: { defaultRateLimitPerMinute: number; maxRateLimitPerMinute: number },
+    run: () => Promise<void>,
+  ) {
+    const previous = (await settingsStoreModule.readSettingsSection("api")).config;
+    rateLimitModule.clearRateLimitBuckets();
+    await settingsStoreModule.writeSettingsSection("api", {
+      ...previous,
+      ...settings,
+    });
+
+    try {
+      await run();
+    } finally {
+      rateLimitModule.clearRateLimitBuckets();
+      await settingsStoreModule.writeSettingsSection("api", previous);
+    }
+  }
+
   test("bootstrap creates a healthy setup status", async () => {
     const response = await appRequest("/api/setup/status");
     expect(response.status).toBe(200);
@@ -867,6 +892,70 @@ describe("Phase 0A integration hardening", () => {
     expect(privateResponse.status).toBe(401);
   });
 
+  test("hidden fields cannot be filtered or sorted through the public data API", async () => {
+    const hiddenFilterResponse = await app.request(`${appUrl}/api/data/articles?filterField=internal_notes&filterValue=draft`, {
+      headers: {
+        origin: appUrl,
+      },
+    });
+    expect(hiddenFilterResponse.status).toBe(400);
+
+    const hiddenSortResponse = await app.request(`${appUrl}/api/data/articles?sort=internal_notes&order=asc`, {
+      headers: {
+        origin: appUrl,
+      },
+    });
+    expect(hiddenSortResponse.status).toBe(400);
+  });
+
+  test("public data traffic is rate limited by client ip", async () => {
+    await withApiRateLimitSettings(
+      {
+        defaultRateLimitPerMinute: 2,
+        maxRateLimitPerMinute: 5,
+      },
+      async () => {
+        const firstResponse = await app.request(`${appUrl}/api/data/articles`, {
+          headers: {
+            origin: appUrl,
+            "x-forwarded-for": "203.0.113.10",
+          },
+        });
+        expect(firstResponse.status).toBe(200);
+        expect(firstResponse.headers.get("x-ratelimit-limit")).toBe("2");
+        expect(firstResponse.headers.get("x-ratelimit-remaining")).toBe("1");
+
+        const secondResponse = await app.request(`${appUrl}/api/data/articles`, {
+          headers: {
+            origin: appUrl,
+            "x-forwarded-for": "203.0.113.10",
+          },
+        });
+        expect(secondResponse.status).toBe(200);
+        expect(secondResponse.headers.get("x-ratelimit-remaining")).toBe("0");
+
+        const limitedResponse = await app.request(`${appUrl}/api/data/articles`, {
+          headers: {
+            origin: appUrl,
+            "x-forwarded-for": "203.0.113.10",
+          },
+        });
+        expect(limitedResponse.status).toBe(429);
+        expect(limitedResponse.headers.get("retry-after")).toBeTruthy();
+        const limitedBody = await limitedResponse.json();
+        expect(limitedBody.error).toBe("Rate limit exceeded");
+
+        const differentIpResponse = await app.request(`${appUrl}/api/data/articles`, {
+          headers: {
+            origin: appUrl,
+            "x-forwarded-for": "203.0.113.11",
+          },
+        });
+        expect(differentIpResponse.status).toBe(200);
+      },
+    );
+  });
+
   test("signed-in users inherit public access and owner scope is enforced", async () => {
     const userOne = await createUserSession("user.one@authend.test", "User One");
     const userTwo = await createUserSession("user.two@authend.test", "User Two");
@@ -994,6 +1083,22 @@ describe("Phase 0A integration hardening", () => {
     expect(otherBody.items[0].profile_idRelation).toBeNull();
   });
 
+  test("listRecords defaults do not allow hidden-field filtering or sorting", async () => {
+    await expect(
+      crudModule.listRecords("articles", new URLSearchParams({
+        filterField: "internal_notes",
+        filterValue: "draft",
+      })),
+    ).rejects.toThrow("Unknown filter field internal_notes");
+
+    await expect(
+      crudModule.listRecords("articles", new URLSearchParams({
+        sort: "internal_notes",
+        order: "asc",
+      })),
+    ).rejects.toThrow("Unknown sort field internal_notes");
+  });
+
   test("api keys can use permitted routes and are blocked elsewhere", async () => {
     const user = await createUserSession("api.key.owner@authend.test", "API Key Owner");
 
@@ -1063,5 +1168,63 @@ describe("Phase 0A integration hardening", () => {
       }),
     });
     expect(updateTaskResponse.status).toBe(403);
+  });
+
+  test("api key data traffic is rate limited by key id", async () => {
+    const user = await createUserSession("api.key.ratelimit@authend.test", "API Key Rate Limit");
+
+    const createKeyResponse = await app.request(`${appUrl}/api/auth/api-key/create`, {
+      method: "POST",
+      headers: jsonHeaders(user.jar),
+      body: JSON.stringify({
+        name: "Rate Limited Key",
+      }),
+    });
+    expect(createKeyResponse.status).toBe(200);
+    const keyBody = await createKeyResponse.json();
+
+    await dbModule.sql.unsafe(
+      `update "apikey"
+       set "permissions" = $2
+       where "id" = $1`,
+      [keyBody.id, JSON.stringify({ "resource:server_tasks": ["list"] })] as never[],
+    );
+
+    await withApiRateLimitSettings(
+      {
+        defaultRateLimitPerMinute: 10,
+        maxRateLimitPerMinute: 2,
+      },
+      async () => {
+        const firstResponse = await app.request(`${appUrl}/api/data/server_tasks`, {
+          headers: {
+            origin: appUrl,
+            "x-api-key": keyBody.key,
+          },
+        });
+        expect(firstResponse.status).toBe(200);
+        expect(firstResponse.headers.get("x-ratelimit-limit")).toBe("2");
+        expect(firstResponse.headers.get("x-ratelimit-remaining")).toBe("1");
+
+        const secondResponse = await app.request(`${appUrl}/api/data/server_tasks`, {
+          headers: {
+            origin: appUrl,
+            "x-api-key": keyBody.key,
+          },
+        });
+        expect(secondResponse.status).toBe(200);
+        expect(secondResponse.headers.get("x-ratelimit-remaining")).toBe("0");
+
+        const limitedResponse = await app.request(`${appUrl}/api/data/server_tasks`, {
+          headers: {
+            origin: appUrl,
+            "x-api-key": keyBody.key,
+          },
+        });
+        expect(limitedResponse.status).toBe(429);
+        const limitedBody = await limitedResponse.json();
+        expect(limitedBody.error).toBe("Rate limit exceeded");
+      },
+    );
   });
 });

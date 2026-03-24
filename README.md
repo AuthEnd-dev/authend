@@ -121,6 +121,8 @@ Admin routes require a Better Auth session and a seeded superadmin record. Data 
 - The current allowlisted built-in views are intentionally narrow and read-only.
 - Sensitive fields on allowlisted built-in tables are redacted before metadata or record payloads are returned.
 - Relation includes are filtered through the target table's own read policy, and hidden fields stay redacted inside included records.
+- Hidden fields are also excluded from filter and sort allowlists, including direct service-level callers that do not pass explicit query capability config.
+- `/api/data/*` now applies per-minute rate limiting for anonymous traffic by client IP and for API-key traffic by key id, using the API settings defaults.
 
 ## App-facing policy presets
 
