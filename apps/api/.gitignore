@@ -9,5 +9,9 @@ build
 coverage
 .turbo
 *.log
-generated
 var/storage/*
+
+## Always remove this after creating a new app
+generated
+
+

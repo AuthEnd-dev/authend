@@ -1,218 +1,37 @@
-# Authend
+# AuthEnd
 
-Authend is a self-hosted backend template built on Bun, Better Auth, Drizzle, and Postgres. The goal is simple: fork the repo, set a handful of environment variables, run bootstrap, and get a working backend plus admin dashboard for auth, plugins, schema management, and generated CRUD APIs.
+**AuthEnd** is a **self-hosted backend-as-a-service** that brings together auth, data, and day-to-day operations, so you spend less time wiring everything yourself. The goal is **less application code**: an **admin UI** configures nearly the whole platform, and a **fully typed TypeScript SDK** keeps your TypeScript clients aligned with the API.
 
-Full product and architecture documentation lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md). The API contract and preview layer is documented in [docs/API_PREVIEW.md](./docs/API_PREVIEW.md). The execution roadmap and delivery checklist live in [docs/ROADMAP.md](./docs/ROADMAP.md).
-SDK integration guides for React, Next.js, Expo, and Node are in [docs/examples/README.md](./docs/examples/README.md).
+The stack is **TypeScript**, the **Bun** runtime, **Better Auth**, **Drizzle**, **Hono**, and **Postgres**.
 
-## What ships in v1
-
-- Bun API server with Hono routes and Better Auth mounted at `/api/auth/*`
-- Postgres-backed auth tables plus system metadata tables
-- React admin dashboard served at `/admin`
-- Curated Better Auth plugin catalog:
-  - `username`
-  - `jwt`
-  - `organization`
-  - `twoFactor`
-  - `apiKey`
-  - `magicLink`
-  - `admin`
-- Schema draft preview and apply flow
-- App-facing CRUD endpoints at `/api/data/:table`
-- Typed SDK in [`packages/sdk`](./packages/sdk)
-- Migration history and audit logging
-- API contract preview with OpenAPI and SDK-aligned resource metadata
-- Project settings pages for file storage, backups, crons, email, domains, and platform policy
-- Superadmin-only AI assistant with preview-and-confirm action batches for schema, plugins, API config, and data CRUD
+For architecture, API details, and client examples, see [`docs/`](./docs/) (start with [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)).
 
 ## Quick start
 
-1. Install Bun and start Postgres.
-2. Copy the environment template.
-
-```bash
-cp .env.example .env
-docker compose up -d
-```
-
-3. Set the required variables in `.env`.
-
-```env
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/authend
-APP_URL=http://localhost:7002
-ADMIN_URL=http://localhost:7001
-BETTER_AUTH_SECRET=replace-with-a-long-random-secret
-SUPERADMIN_EMAIL=admin@example.com
-SUPERADMIN_PASSWORD=ChangeMe123!
-OPENAI_API_KEY=
-```
-
-4. Install dependencies, bootstrap, and start the stack.
+1. Install [Bun](https://bun.sh) and run Postgres (e.g. `docker compose up -d`).
+2. Copy `.env.example` → `.env` and set at least `DATABASE_URL`, `APP_URL`, `ADMIN_URL`, `BETTER_AUTH_SECRET`, and superadmin credentials.
+3. From the repo root:
 
 ```bash
 bun install
 bun run bootstrap
-bun run dev:api
+bun run dev
 ```
 
-5. In another terminal, run the admin frontend during development.
+
+Sign in at the admin URL using the superadmin you configured.
+
+## Client SDK
+
+Install the runtime package, point the generator at your API, and pull types from `GET /api/system/sdk-schema`:
 
 ```bash
-bun run dev:admin
+bun add @authend/sdk
+bunx @authend/sdk init    # writes authend.config.json
+bunx @authend/sdk generate
 ```
 
-Open [http://localhost:7001](http://localhost:7001). Sign in with the seeded superadmin credentials from `.env`.
-
-## Workspace layout
-
-- [`apps/api`](./apps/api): Bun API, Better Auth, Drizzle metadata, migrations, and runtime schema generation
-- [`apps/admin`](./apps/admin): React dashboard for plugins, schema, migrations, and records
-- [`packages/shared`](./packages/shared): shared contracts and schema helper utilities
-- [`packages/sdk`](./packages/sdk): typed fetch client plus Better Auth client wiring
-
-## Bootstrap behavior
-
-`bun run bootstrap` will:
-
-- create the core Postgres tables if they do not exist
-- seed the curated plugin registry into `plugin_configs`
-- apply any pending SQL migrations from `apps/api/src/db/migrations`
-- create or promote the configured superadmin user
-- exit with actionable hints when required env vars are missing or bootstrap hits a database/migration failure
-
-## Plugin model
-
-Plugins are curated rather than dynamically installed. The template ships the code and exposes enable/disable toggles from the dashboard. Some plugins add SQL-managed tables on first enable. Email-driven flows such as magic links, password reset, and email verification use SMTP if configured; otherwise the API logs the generated links for local development.
-
-## Schema model
-
-Dashboard-authored tables are stored in metadata tables, emitted into [`apps/api/generated/schema/generated.ts`](./apps/api/generated/schema/generated.ts), written as SQL migrations under [`apps/api/generated/migrations`](./apps/api/generated/migrations), and executed against Postgres.
-
-The admin API also exposes `GET /api/admin/schema/drift` so operators can compare metadata, generated artifacts, and live database state before assuming a schema is clean.
-
-v1 intentionally blocks destructive operations:
-
-- dropping tables
-- removing fields
-- auto-migrating incompatible field shape changes
-- disabling certain stateful plugins after provisioning
-
-## API surface
-
-- `GET /health`
-- `GET /ready`
-- `GET /api/openapi.json`
-- `GET /api/system/sdk-schema`
-- `ALL /api/auth/*`
-- `GET /api/setup/status`
-- `GET|POST /api/admin/plugins/*`
-- `GET|POST /api/admin/ai/*`
-- `GET|POST /api/admin/schema/*`
-- `GET|POST /api/admin/migrations/*`
-- `GET /api/admin/audit`
-- `GET|POST /api/admin/api-preview/*`
-- `GET|POST|PATCH|DELETE /api/data/:table`
-- `GET|POST|PATCH|DELETE /api/admin/data/:table`
-- `POST /api/storage/upload`
-- `GET /api/storage/files`
-- `GET /api/storage/files/:id`
-
-Admin routes require a Better Auth session and a seeded superadmin record. App-facing data routes enforce per-table access policy, and built-in auth/system tables are default-deny unless explicitly allowlisted for read-only admin use. The admin dashboard SDK talks to `/api/admin/data/*`, while external clients default to `/api/data/*`.
-
-## Security defaults
-
-- Generated app tables stay on the table-level API policy you define, which defaults to superadmin-only in fresh drafts.
-- App-facing actors are `public`, `session`, `apiKey`, and `superadmin`.
-- Public access applies to anonymous callers and authenticated callers; superadmins bypass app-facing policy checks.
-- Per-field read, create, and update visibility can now be restricted per actor in the schema editor.
-- Built-in auth and system tables are blocked from `/api/data/*` by default.
-- `/api/admin/data/*` is reserved for superadmin-only management flows.
-- The current allowlisted built-in views are intentionally narrow and read-only.
-- Sensitive fields on allowlisted built-in tables are redacted before metadata or record payloads are returned.
-- Relation includes are filtered through the target table's own read policy, and hidden fields stay redacted inside included records.
-- Hidden fields are also excluded from filter and sort allowlists, including direct service-level callers that do not pass explicit query capability config.
-- `/api/data/*` now applies per-minute rate limiting for anonymous traffic by client IP and for API-key traffic by key id, using the API settings defaults.
-
-## App-facing policy presets
-
-The schema editor now exposes first-class policy presets for the common access patterns:
-
-- public read-only content
-- signed-in user private records
-- user can read all but write own
-- API-key server-to-server access
-
-Owner-scoped presets guide you toward an ownership field such as `owner_id` or `user_id`, and runtime enforcement is covered by integration tests for public, session, and API-key callers.
-The schema editor also supports field-level visibility for read/create/update and flags risky combinations such as public writes, public filtering on sensitive field names, and broad public relation includes.
-The API Preview panel now includes an actor-aware policy simulator so you can verify allowed operations, visible fields, and query surface for `public`, `session`, and `apiKey` callers before shipping the table.
-
-## AI assistant
-
-Authend includes a superadmin-only AI assistant in the admin shell. It uses the official `openai` SDK on the API server and talks to an OpenAI-compatible endpoint you configure under `Settings > AI Assistant`.
-
-Important guardrails:
-
-- preview + confirm only, never direct apply
-- limited to schema, plugins, API config, and data CRUD
-- cannot edit env vars, run backups, manage crons, use raw SQL, or invoke danger-zone operations
-- every approved run is executed through the same service layer as the dashboard and written to the audit log
-
-Minimum local setup:
-
-```env
-OPENAI_API_KEY=your-provider-key
-```
-
-Then in the admin:
-
-1. Open `Settings > AI Assistant`
-2. Enable the assistant
-3. Set your provider base URL and model
-4. Keep the API key env var name aligned with your `.env`
-
-## SDK generation
-
-Authend now exposes a dedicated SDK schema manifest at `/api/system/sdk-schema`.
-
-In the client app:
-
-```bash
-npm install @authend/sdk
-```
-
-In another app, create `authend.config.json`:
-
-```json
-{
-  "apiUrl": "http://localhost:7002",
-  "output": "./src/generated/authend.ts"
-}
-```
-
-Then generate local types:
-
-```bash
-npx authend-gen generate
-```
-
-Or watch for schema changes during development:
-
-```bash
-npx authend-gen watch --interval 2000
-```
-
-Or via `package.json`:
-
-```json
-{
-  "scripts": {
-    "authend:generate": "authend-gen generate"
-  }
-}
-```
-
-Use the generated schema with the runtime client:
+Use the client with the generated schema module:
 
 ```ts
 import { createAuthendClient } from "@authend/sdk";
@@ -223,59 +42,24 @@ const client = createAuthendClient<AuthendSchema>({
   schema: authendSchema,
 });
 
-await client.data.post.list();
+const rows = await client.data.yourTable.list();
 ```
 
-Keep Better Auth as the auth client in your app and use the Authend SDK for typed `data` access.
+More detail lives in [`packages/sdk/README.md`](./packages/sdk/README.md) and [`docs/examples/`](./docs/examples/).
 
-Framework-specific setup guides:
+## Generated schema and migrations in Git
 
-- [React example](./docs/examples/react.md)
-- [Next.js example](./docs/examples/nextjs.md)
-- [Expo example](./docs/examples/expo.md)
-- [Node backend example](./docs/examples/node.md)
-- [Quick-start templates](./docs/examples/quick-start-templates.md)
+The API emits Drizzle schema and SQL migrations under [`apps/api/generated/`](./apps/api/generated/). By default that path is ignored via the `generated` line in [`apps/api/.gitignore`](./apps/api/.gitignore). **Remove that line** (or replace it with narrower rules) if you want to **commit** generated schema and migrations—for example so deploys and teammates share the same migration history.
 
-## Runtime-verified plugin config
+## Repo layout
 
-Phase 0A verifies that saved runtime config is consumed for the shipped plugin surfaces exercised by tests:
+| Path | Role |
+|------|------|
+| `apps/api` | HTTP API, auth, database, migrations |
+| `apps/admin` | Operator dashboard |
+| `packages/sdk` | Typed client for your schema |
+| `packages/shared` | Shared types and helpers |
 
-- `username`
-- `magicLink`
-- `apiKey`
-- `admin`
-- `jwt`
-- `organization`
-- `twoFactor`
-- `socialAuth`
+## Production-ish run
 
-Config that depends on custom extension handlers or provider credentials still requires those handlers/env vars to be present at runtime. Plugin manifests remain the source of truth for those dependencies.
-
-## Production notes
-
-- Build the admin app before starting the Bun server in production:
-
-```bash
-bun run build
-bun run start
-```
-
-- The admin bundle is served under `/admin/`, so reverse proxies should preserve that path.
-- Generated schema and migration files are regular workspace files. Commit them if you want schema history tracked in git.
-
-## Tests
-
-The repo now includes Postgres-backed integration coverage for bootstrap, auth flows, plugin flows, schema apply/drift, and data-policy enforcement.
-
-```bash
-bun test
-```
-
-## Current limitations
-
-- Multi-tenancy is out of scope for v1.
-- Storage upload and signed URL endpoints are available with file metadata records and optional attachment references (`attachmentTable`, `attachmentRecordId`, `attachmentField`), but admin file browser workflows are still pending.
-- Generated app tables can now be exposed through the data router with runtime policy enforcement and preset-based policy editing, but the admin UX is still operator-grade rather than polished end-user product tooling.
-- The SDK generator now uses the dedicated `/api/system/sdk-schema` manifest rather than full OpenAPI codegen. OpenAPI remains available for broader ecosystem tooling.
-- The generated SDK now emits exact per-resource record/create/update/query types, include metadata, and schema checksum/version constants, but richer doc comments still need field-level descriptions in the schema model.
-- Curated plugin runtime composition is covered by tests for the shipped surfaces, but provider-specific credentials and custom extension handlers still need environment-specific validation.
+Build the admin, then start the API (see root `package.json` for `build` / `start`). Run `bun test` when you change server behavior.
