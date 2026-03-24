@@ -269,6 +269,22 @@ Optional flags for `watch`:
 - `--schema-output`
 - `--interval` (milliseconds, default `2000`)
 
+## Validation commands
+
+If you are maintaining an integration in CI, these root-level commands validate the generated SDK contract end-to-end:
+
+```bash
+bun run test:sdk
+bun run typecheck:sdk
+bun run ci:sdk-dist-clean
+```
+
+Or run everything together:
+
+```bash
+bun run ci:sdk
+```
+
 ## Notes
 
 - The SDK is for external consumers.
