@@ -90,7 +90,7 @@ export function AuthGate(props: { children: ReactNode }) {
                     if (result.error) {
                       setError(result.error.message ?? 'Authentication failed');
                     }
-                  } catch (err) {
+                  } catch {
                     setError('An unexpected connection error occurred.');
                   } finally {
                     setPending(false);

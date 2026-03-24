@@ -52,6 +52,29 @@ async function adminShell() {
 export function createApp() {
   const app = new Hono();
 
+  app.use(async (c, next) => {
+    const started = performance.now();
+    try {
+      await next();
+    } finally {
+      const url = new URL(c.req.url);
+      const search = url.search;
+      const query =
+        search.length === 0 ? undefined : search.length <= 512 ? search.slice(1) : `${search.slice(1, 509)}…`;
+      const userAgent = c.req.header('user-agent');
+      logger.info('request', {
+        method: c.req.method,
+        path: c.req.path,
+        ...(query ? { query } : {}),
+        status: c.res.status,
+        durationMs: Math.round(performance.now() - started),
+        ...(userAgent ? { userAgent: userAgent.length <= 400 ? userAgent : `${userAgent.slice(0, 397)}…` } : {}),
+        ...(c.req.header('x-forwarded-for') ? { forwardedFor: c.req.header('x-forwarded-for') } : {}),
+        ...(c.req.header('referer') ? { referer: c.req.header('referer') } : {}),
+      });
+    }
+  });
+
   app.use(
     '/api/*',
     cors({

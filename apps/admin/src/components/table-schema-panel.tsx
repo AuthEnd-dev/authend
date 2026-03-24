@@ -12,7 +12,6 @@ import type {
   ApiAccessActor,
   ApiFieldVisibilityRule,
   ApiPreviewOperation,
-  DataRecord,
   FieldBlueprint,
   RelationBlueprint,
   SchemaDraft,
@@ -56,25 +55,6 @@ async function invalidateSchemaQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: ["records"] }),
     queryClient.invalidateQueries({ queryKey: ["table-catalog"] }),
   ]);
-}
-
-async function listAllRecords(table: string) {
-  const items: DataRecord[] = [];
-  let page = 1;
-  let total = 0;
-
-  do {
-    const searchParams = new URLSearchParams({
-      page: String(page),
-      pageSize: "100",
-    });
-    const response = await client.data.list(table, searchParams);
-    items.push(...(response.items as DataRecord[]));
-    total = response.total;
-    page += 1;
-  } while (items.length < total);
-
-  return items;
 }
 
 function emptyField(): EditableField {
@@ -869,7 +849,6 @@ export function TableSchemaPanel({
     try {
       setIsSaving(true);
       const previousDraft = schemaData;
-      const previousRows = isEditing && tableName ? await listAllRecords(tableName) : [];
       const newTable = buildTableDraft();
       const newRelations = buildRelationDraft();
       const baseDraft: SchemaDraft = schemaData;
@@ -904,19 +883,13 @@ export function TableSchemaPanel({
 
       showNotice({
         title: isEditing ? `Saved ${name}` : `Created ${name}`,
-        description: "Undo is available for the next 30 seconds.",
+        description:
+          "Undo reapplies the previous schema draft only (no full-table row snapshot). Use backups for large or critical data.",
         variant: "success",
         durationMs: 30000,
         actionLabel: "Undo",
         onAction: async () => {
           await client.system.schema.apply(previousDraft);
-          for (const row of previousRows) {
-            const rowId = typeof row.id === "string" ? row.id : null;
-            if (!rowId) {
-              continue;
-            }
-            await client.data.update(name, rowId, row);
-          }
           await invalidateSchemaQueries(queryClient);
           onSuccess?.();
           void navigate({ to: "/data", search: { table: tableName ?? "user", page: undefined, pageSize: undefined } });
@@ -940,7 +913,8 @@ export function TableSchemaPanel({
 
     const confirmed = await confirm({
       title: `Delete ${tableName}?`,
-      description: "This removes the table and its outgoing or incoming joins immediately. You will be able to undo it for 30 seconds.",
+      description:
+        "This drops the table and related joins. Undo restores the previous schema only; dropped row data is not reloaded from the client.",
       confirmLabel: "Delete table",
       cancelLabel: "Cancel",
       variant: "destructive",
@@ -952,7 +926,6 @@ export function TableSchemaPanel({
     try {
       setIsDeleting(true);
       const previousDraft = schemaData;
-      const deletedRows = await listAllRecords(tableName);
       const baseDraft: SchemaDraft = schemaData;
 
       await client.system.schema.apply({
@@ -970,15 +943,13 @@ export function TableSchemaPanel({
 
       showNotice({
         title: `Deleted ${tableName}`,
-        description: "Undo is available for the next 30 seconds.",
+        description:
+          "Undo reapplies the previous schema draft only. Recreated tables will be empty unless you restore from a backup.",
         variant: "success",
         durationMs: 30000,
         actionLabel: "Undo",
         onAction: async () => {
           await client.system.schema.apply(previousDraft);
-          for (const row of deletedRows) {
-            await client.data.create(tableName, row);
-          }
           await invalidateSchemaQueries(queryClient);
           onSuccess?.();
           void navigate({ to: "/data", search: { table: tableName, page: undefined, pageSize: undefined } });

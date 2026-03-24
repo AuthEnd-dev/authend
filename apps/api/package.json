@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --watch src/index.ts",
+    "dev": "bun --hot src/index.ts",
     "start": "NODE_ENV=production bun src/index.ts",
     "bootstrap": "bun src/scripts/bootstrap.ts",
     "generate:openapi": "bun src/scripts/generate-sdk.ts"
@@ -22,8 +22,6 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@types/nodemailer": "^7.0.11",
-    "drizzle-kit": "^0.30.4",
-    "nodemon": "^3.1.14"
+    "drizzle-kit": "^0.30.4"
   }
 }

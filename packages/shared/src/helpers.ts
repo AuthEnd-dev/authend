@@ -13,6 +13,7 @@ import type {
   TableBlueprint,
 } from "./contracts";
 
+/** Tables exposed as builtin data resources; relation targets may point here without being in the draft. */
 const builtinRelationTables = new Set([
   "user",
   "session",
@@ -21,6 +22,14 @@ const builtinRelationTables = new Set([
   "plugin_configs",
   "migration_runs",
   "audit_logs",
+  "system_settings",
+  "backup_runs",
+  "cron_jobs",
+  "cron_runs",
+  "ai_threads",
+  "ai_messages",
+  "ai_runs",
+  "storage_files",
 ]);
 
 const reservedIdentifiers = new Set([

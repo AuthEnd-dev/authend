@@ -1,1 +1,0 @@
-alter table "entry" add column if not exists "amount" numeric;
