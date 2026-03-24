@@ -3,6 +3,7 @@ import { HttpError } from "../lib/http";
 import { resolveRequestActor } from "../middleware/auth";
 import {
   createFolder,
+  readLocalStoredFile,
   createSignedDownloadUrl,
   createSignedUploadUrl,
   getStorageFileRecordById,
@@ -10,6 +11,7 @@ import {
   listStorageFileRecords,
   removeStoredFile,
   uploadFile,
+  verifyLocalSignedDownload,
 } from "../services/storage-service";
 
 function parseOptionalString(value: unknown) {
@@ -114,6 +116,28 @@ export const storageRouter = new Hono().post("/upload", async (c) => {
         expiresIn: typeof body.expiresIn === "number" ? body.expiresIn : undefined,
       }),
     );
+  })
+  .get("/download", async (c) => {
+    const key = parseOptionalString(c.req.query("key"));
+    const expiresRaw = parseOptionalString(c.req.query("expires"));
+    const signature = parseOptionalString(c.req.query("sig"));
+    if (!key || !expiresRaw || !signature) {
+      throw new HttpError(400, "key, expires and sig are required");
+    }
+    const expiresAtUnix = Number(expiresRaw);
+    if (!Number.isFinite(expiresAtUnix)) {
+      throw new HttpError(400, "expires must be a unix timestamp in seconds");
+    }
+    const valid = verifyLocalSignedDownload({
+      key,
+      expiresAtUnix,
+      signature,
+    });
+    if (!valid) {
+      throw new HttpError(401, "Invalid or expired signed download URL");
+    }
+    const file = await readLocalStoredFile(key);
+    return new Response(file);
   })
   .get("/head/*", async (c) => {
     const actor = await resolveRequestActor(c);

@@ -5,8 +5,30 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { getErrorMessage, useFeedback } from '../components/ui/feedback';
 import { client } from '../lib/client';
+import { cn } from '../lib/utils';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-import { ChevronRight, FolderPlus, HardDrive, RefreshCw, Search, Upload, X } from 'lucide-react';
+import {
+  ChevronRight,
+  Copy,
+  Download,
+  ExternalLink,
+  Folder,
+  FolderPlus,
+  HardDrive,
+  MoreVertical,
+  RefreshCw,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 
 type StorageFileRecord = {
   key?: string;
@@ -40,6 +62,61 @@ function immediateRelative(value: string, prefix: string) {
   if (value === prefix) return '';
   if (!value.startsWith(`${prefix}/`)) return '';
   return value.slice(prefix.length + 1);
+}
+
+function formatBytes(bytes: number, decimals = 2) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+function StorageItemActions({
+  item,
+  onOpen,
+  onDownload,
+  onCopyKey,
+  onDelete,
+}: {
+  item: StorageFileRecord & { isFolder: boolean };
+  onOpen: () => void;
+  onDownload: () => void;
+  onCopyKey: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="h-8 w-8 p-0"><MoreVertical className="h-4 w-4" /></Button>} />
+      <DropdownMenuContent side="bottom" align="end">
+        <DropdownMenuItem onClick={onOpen}>
+          <ExternalLink className="mr-2 h-3.5 w-3.5 opacity-60" />
+          Open
+        </DropdownMenuItem>
+        {!item.isFolder && (
+          <>
+            <DropdownMenuItem onClick={onDownload}>
+              <Download className="mr-2 h-3.5 w-3.5 opacity-60" />
+              Download
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onCopyKey}>
+              <Copy className="mr-2 h-3.5 w-3.5 opacity-60" />
+              Copy key
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+              onClick={onDelete}
+            >
+              <Trash2 className="mr-2 h-3.5 w-3.5" />
+              Delete
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 export function StorageFilesPage() {
@@ -90,28 +167,40 @@ export function StorageFilesPage() {
     });
   }, [records, currentPath, searchValue]);
 
-  const folders = useMemo(() => {
-    const set = new Set<string>();
+  const combinedItems = useMemo(() => {
+    const folderSet = new Set<string>();
+    const fileRecords: StorageFileRecord[] = [];
+
     for (const record of filteredRecords) {
       const key = String(record.key ?? '');
       const relative = immediateRelative(key, currentPath);
       if (!relative) continue;
-      const [first] = relative.split('/');
-      if (relative.includes('/') && first) {
-        set.add(first);
+
+      const segments = relative.split('/');
+      if (segments.length > 1) {
+        folderSet.add(segments[0]);
+      } else {
+        fileRecords.push(record);
       }
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [filteredRecords, currentPath]);
 
-  const filesInCurrentPath = useMemo(() => {
-    return filteredRecords
-      .filter((record) => {
-        const key = String(record.key ?? '');
-        const relative = immediateRelative(key, currentPath);
-        return relative.length > 0 && !relative.includes('/');
-      })
-      .sort((left, right) => String(left.key ?? '').localeCompare(String(right.key ?? '')));
+    const folderItems = Array.from(folderSet)
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => ({
+        name,
+        isFolder: true,
+        key: normalisePath([currentPath, name].join('/')),
+      }));
+
+    const fileItems = fileRecords
+      .sort((left, right) => String(left.key ?? '').localeCompare(String(right.key ?? '')))
+      .map((record) => ({
+        ...record,
+        name: immediateRelative(String(record.key ?? ''), currentPath),
+        isFolder: false,
+      }));
+
+    return [...folderItems, ...fileItems];
   }, [filteredRecords, currentPath]);
 
   const uploadMutation = useMutation({
@@ -230,8 +319,8 @@ export function StorageFilesPage() {
             <p className="mt-2 text-2xl font-semibold text-foreground">{totalFiles}</p>
           </div>
           <div className="rounded-xl bg-muted/20 p-4">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">Stored bytes</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{totalBytes.toLocaleString()}</p>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">Total size</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{formatBytes(totalBytes)}</p>
           </div>
           <div className="rounded-xl bg-muted/20 p-4">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">Private objects</p>
@@ -255,7 +344,10 @@ export function StorageFilesPage() {
             {breadcrumbItems.map((item) => (
               <div key={item.path} className="flex items-center gap-2">
                 <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-                <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setCurrentPath(item.path)}>
+                <button
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setCurrentPath(item.path)}
+                >
                   {item.label}
                 </button>
               </div>
@@ -300,81 +392,79 @@ export function StorageFilesPage() {
               </Button>
             </div>
           </div>
-
-          {folders.length > 0 ? (
-            <div className="rounded-lg bg-muted/10 p-3">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Folders</p>
-              <div className="flex flex-wrap gap-2">
-                {folders.map((folder) => (
-                  <Button
-                    key={folder}
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setCurrentPath(normalisePath([currentPath, folder].filter(Boolean).join('/')))}
-                  >
-                    <HardDrive className="mr-2 h-3.5 w-3.5" />
-                    {folder}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          ) : null}
         </section>
 
-        <section className="space-y-2">
-          <div className="overflow-auto">
-            <Table>
-              <TableHeader className="bg-muted/30">
-                <TableRow>
-                  <TableHead>Key</TableHead>
-                  <TableHead>Driver</TableHead>
-                  <TableHead>Size</TableHead>
-                  <TableHead>Attachment</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filesInCurrentPath.map((file, index) => {
-                  const key = String(file.key ?? '');
-                  const attachmentTable = file.attachmentTable ? String(file.attachmentTable) : '—';
-                  const attachmentRecordId = file.attachmentRecordId ? String(file.attachmentRecordId) : '—';
-                  const attachmentField = file.attachmentField ? String(file.attachmentField) : '—';
-                  return (
-                    <TableRow key={`${key}-${index}`}>
-                      <TableCell className="font-mono text-xs">{key}</TableCell>
-                      <TableCell>{String(file.driver ?? '—')}</TableCell>
-                      <TableCell>{typeof file.sizeBytes === 'number' ? `${file.sizeBytes} B` : '—'}</TableCell>
-                      <TableCell className="text-xs">
-                        {attachmentTable}/{attachmentRecordId}/{attachmentField}
-                      </TableCell>
-                      <TableCell className="text-xs">{String(file.createdAt ?? '—')}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button size="sm" variant="outline" onClick={() => openSignedDownloadMutation.mutate(key)}>
-                            Open
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => void navigator.clipboard.writeText(key)}>
-                            Copy key
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => deleteFileMutation.mutate(key)}>
-                            Delete
-                          </Button>
+        <section className="rounded-xl border border-border bg-card overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent border-border">
+                <TableHead className="w-[45%] pl-4">Name</TableHead>
+                <TableHead>Driver</TableHead>
+                <TableHead>Size</TableHead>
+                <TableHead>Attachment</TableHead>
+                <TableHead>Created at</TableHead>
+                <TableHead className="w-[50px] pr-4"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {combinedItems.map((item, index) => {
+                const isFolder = item.isFolder;
+                const name = item.name;
+                const key = String(item.key ?? '');
+                const file = !isFolder ? (item as StorageFileRecord) : null;
+                const attachmentTable = file?.attachmentTable ? String(file.attachmentTable) : '—';
+                const attachmentRecordId = file?.attachmentRecordId ? String(file.attachmentRecordId) : '—';
+                const attachmentField = file?.attachmentField ? String(file.attachmentField) : '—';
+
+                return (
+                  <TableRow key={`${key}-${index}`} className="group border-border hover:bg-muted/30">
+                    <TableCell className="pl-4">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={cn(
+                            'flex h-8 w-8 items-center justify-center rounded-lg',
+                            isFolder ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
+                          )}
+                        >
+                          {isFolder ? <Folder className="h-4 w-4" /> : <HardDrive className="h-4 w-4" />}
                         </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-                {filesInCurrentPath.length === 0 ? (
-                  <TableRow>
-                    <TableCell className="px-3 py-5 text-muted-foreground" colSpan={6}>
-                      No uploaded file records found.
+                        <button
+                          className="text-sm font-medium hover:underline text-foreground text-left"
+                          onClick={() => (isFolder ? setCurrentPath(key) : openSignedDownloadMutation.mutate(key))}
+                        >
+                          {name}
+                        </button>
+                      </div>
+                    </TableCell>
+                    <TableCell>{isFolder ? '—' : String(file?.driver ?? '—')}</TableCell>
+                    <TableCell>
+                      {isFolder ? '' : typeof file?.sizeBytes === 'number' ? formatBytes(file.sizeBytes) : '—'}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {isFolder ? '—' : `${attachmentTable}/${attachmentRecordId}/${attachmentField}`}
+                    </TableCell>
+                    <TableCell className="text-xs">{isFolder ? '—' : String(file?.createdAt ?? '—')}</TableCell>
+                    <TableCell>
+                      <StorageItemActions
+                        item={{ ...item, isFolder } as StorageFileRecord & { isFolder: boolean }}
+                        onOpen={() => (isFolder ? setCurrentPath(key) : openSignedDownloadMutation.mutate(key))}
+                        onDownload={() => openSignedDownloadMutation.mutate(key)}
+                        onCopyKey={() => void navigator.clipboard.writeText(key)}
+                        onDelete={() => deleteFileMutation.mutate(key)}
+                      />
                     </TableCell>
                   </TableRow>
-                ) : null}
-              </TableBody>
-            </Table>
-          </div>
+                );
+              })}
+              {combinedItems.length === 0 ? (
+                <TableRow>
+                  <TableCell className="px-3 py-5 text-muted-foreground" colSpan={6}>
+                    No files or folder found.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
         </section>
 
         {directoryDialogOpen ? (

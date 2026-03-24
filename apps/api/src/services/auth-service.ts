@@ -68,7 +68,7 @@ async function createAuth() {
 
   return betterAuth({
     appName: generalSettings.appName || env.APP_NAME,
-    baseURL: generalSettings.appUrl || env.APP_URL,
+    baseURL: (generalSettings.appUrl || env.APP_URL) + "/api/auth",
     secret: env.BETTER_AUTH_SECRET,
     trustedOrigins,
     database: drizzleAdapter(db, {

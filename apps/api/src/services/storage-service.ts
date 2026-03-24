@@ -1,8 +1,9 @@
 import { mkdir, stat, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { StorageSettings } from '@authend/shared';
 import { HttpError } from '../lib/http';
+import { env } from '../config/env';
 import { readSettingsSection } from './settings-store';
 import { sql } from '../db/client';
 
@@ -93,6 +94,29 @@ function buildPublicUrl(baseUrl: string | null | undefined, key: string) {
     return null;
   }
   return `${baseUrl.replace(/\/+$/, '')}/${key}`;
+}
+
+function createLocalDownloadSignature(secret: string, key: string, expiresAtUnix: number) {
+  return createHmac('sha256', secret).update(`${key}:${expiresAtUnix}`).digest('hex');
+}
+
+export function verifyLocalSignedDownload(input: {
+  key: string;
+  expiresAtUnix: number;
+  signature: string;
+}) {
+  const nowUnix = Math.floor(Date.now() / 1000);
+  if (input.expiresAtUnix < nowUnix) {
+    return false;
+  }
+
+  const expected = createLocalDownloadSignature(env.BETTER_AUTH_SECRET, input.key, input.expiresAtUnix);
+  const expectedBuffer = Buffer.from(expected, 'hex');
+  const providedBuffer = Buffer.from(input.signature, 'hex');
+  if (expectedBuffer.length !== providedBuffer.length) {
+    return false;
+  }
+  return timingSafeEqual(expectedBuffer, providedBuffer);
 }
 
 async function upsertStorageFileRecord(input: {
@@ -189,7 +213,7 @@ export async function uploadFile(input: UploadInput): Promise<UploadResult> {
     throw new HttpError(415, `MIME type not allowed: ${mimeType}`);
   }
 
-  const objectName = `${randomUUID()}-${sanitizeFileName(input.file.name)}`;
+  const objectName = sanitizeFileName(input.file.name);
   const key = joinKey(input.prefix, objectName);
   const body = Buffer.from(await input.file.arrayBuffer());
 
@@ -311,14 +335,17 @@ export async function createSignedDownloadUrl(input: SignedDownloadInput) {
   const config = await getStorageConfig();
   const expiresIn = Math.max(30, Math.min(input.expiresIn ?? config.signedUrlTtlSeconds, 604800));
   const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+  const expiresAtUnix = Math.floor(new Date(expiresAt).getTime() / 1000);
 
   if (config.driver === 'local') {
-    const publicUrl = buildPublicUrl(config.publicBaseUrl, input.key);
-    if (!publicUrl) {
-      throw new HttpError(400, 'Local signed download requires storage.publicBaseUrl');
-    }
+    const baseUrl = config.publicBaseUrl || env.APP_URL;
+    const signature = createLocalDownloadSignature(env.BETTER_AUTH_SECRET, input.key, expiresAtUnix);
+    const url = new URL('/api/storage/download', baseUrl);
+    url.searchParams.set('key', input.key);
+    url.searchParams.set('expires', String(expiresAtUnix));
+    url.searchParams.set('sig', signature);
     return {
-      url: publicUrl,
+      url: url.toString(),
       method: 'GET' as const,
       key: input.key,
       expiresAt,
@@ -338,6 +365,20 @@ export async function createSignedDownloadUrl(input: SignedDownloadInput) {
     key: input.key,
     expiresAt,
   };
+}
+
+export async function readLocalStoredFile(key: string) {
+  const config = await getStorageConfig();
+  if (config.driver !== 'local') {
+    throw new HttpError(400, 'Local file download is only supported for local storage driver');
+  }
+  const absolutePath = resolve(process.cwd(), config.rootPath, key);
+  const file = Bun.file(absolutePath);
+  const exists = await file.exists();
+  if (!exists) {
+    throw new HttpError(404, 'Storage file not found');
+  }
+  return file;
 }
 
 export async function headStoredFile(key: string): Promise<StorageHeadResult> {

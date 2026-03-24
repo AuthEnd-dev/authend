@@ -55,10 +55,14 @@ export function createApp() {
   app.use(
     '/api/*',
     cors({
-      origin: env.CORS_ORIGIN ?? env.ADMIN_DEV_URL,
-      allowHeaders: ['Content-Type', 'Authorization'],
+      origin: (origin) => {
+        const allowed = env.CORS_ORIGIN ?? env.ADMIN_DEV_URL;
+        return origin === allowed ? origin : allowed;
+      },
+      allowHeaders: ['Content-Type', 'Authorization', 'x-better-auth-session'],
       allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
       credentials: true,
+      exposeHeaders: ['set-cookie'],
     }),
   );
 
