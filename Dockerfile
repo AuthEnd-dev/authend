@@ -1,5 +1,5 @@
 # Full-stack image: Vite admin → apps/admin/dist, bundled API → apps/api/dist (serves /admin + /api)
-FROM oven/bun:1.2.5 AS builder
+FROM oven/bun:1.3.11 AS builder
 WORKDIR /app
 
 # Baked at build time. Default empty = browser-relative URLs (same host as /admin). Override: docker build --build-arg VITE_API_URL=https://api.example.com .
@@ -14,13 +14,9 @@ COPY apps ./apps
 
 RUN bun install --frozen-lockfile
 
-RUN bun run --cwd apps/admin build
+RUN bun run build
 
-RUN bun run --cwd apps/api build \
-  && mkdir -p apps/api/db/migrations \
-  && cp -r apps/api/src/db/migrations/core apps/api/db/migrations/
-
-FROM oven/bun:1.2.5
+FROM oven/bun:1.3.11
 WORKDIR /app
 
 ENV NODE_ENV=production
