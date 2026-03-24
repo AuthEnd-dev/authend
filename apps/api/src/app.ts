@@ -10,7 +10,6 @@ import { setupRouter } from './routes/setup';
 import { authRouter } from './routes/auth';
 import { adminRouter } from './routes/admin';
 import { adminDataRouter, dataRouter } from './routes/data';
-import { openApiRouter } from './routes/openapi';
 import { systemRouter } from './routes/system';
 import { storageRouter } from './routes/storage';
 
@@ -102,7 +101,6 @@ export function createApp() {
   app.route('/api/system', systemRouter);
   app.route('/api/data', dataRouter);
   app.route('/api/storage', storageRouter);
-  app.route('/api', openApiRouter);
 
   app.get('/', (c) => c.redirect('/admin'));
   app.get('/admin', () => adminShell());

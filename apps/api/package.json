@@ -6,8 +6,7 @@
   "scripts": {
     "dev": "bun --hot src/index.ts",
     "start": "NODE_ENV=production bun src/index.ts",
-    "bootstrap": "bun src/scripts/bootstrap.ts",
-    "generate:openapi": "bun src/scripts/generate-sdk.ts"
+    "bootstrap": "bun src/scripts/bootstrap.ts"
   },
   "dependencies": {
     "@authend/shared": "workspace:*",
