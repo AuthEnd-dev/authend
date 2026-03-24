@@ -3,6 +3,7 @@
 Authend is a self-hosted backend template built on Bun, Better Auth, Drizzle, and Postgres. The goal is simple: fork the repo, set a handful of environment variables, run bootstrap, and get a working backend plus admin dashboard for auth, plugins, schema management, and generated CRUD APIs.
 
 Full product and architecture documentation lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md). The API contract and preview layer is documented in [docs/API_PREVIEW.md](./docs/API_PREVIEW.md). The execution roadmap and delivery checklist live in [docs/ROADMAP.md](./docs/ROADMAP.md).
+SDK integration guides for React, Next.js, Expo, and Node are in [docs/examples/README.md](./docs/examples/README.md).
 
 ## What ships in v1
 
@@ -217,6 +218,13 @@ await client.data.post.list();
 ```
 
 Keep Better Auth as the auth client in your app and use the Authend SDK for typed `data` access.
+
+Framework-specific setup guides:
+
+- [React example](./docs/examples/react.md)
+- [Next.js example](./docs/examples/nextjs.md)
+- [Expo example](./docs/examples/expo.md)
+- [Node backend example](./docs/examples/node.md)
 
 ## Runtime-verified plugin config
 

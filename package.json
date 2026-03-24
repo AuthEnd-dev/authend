@@ -11,7 +11,7 @@
     "dev:api": "bun run --cwd apps/api dev",
     "dev:admin": "bun run --cwd apps/admin dev",
     "dev": "bun run dev:api & bun run dev:admin",
-    "build": "bun run --cwd apps/admin build && bun run generate:sdk",
+    "build": "bun run --cwd apps/admin build && bun run generate:openapi",
     "build:sdk-package": "bun run --cwd packages/sdk build",
     "bootstrap": "bun run --cwd apps/api bootstrap",
     "start": "bun run --cwd apps/api start",
@@ -19,7 +19,11 @@
     "postinstall": "bun run scripts/repair-bun-links.mjs",
     "repair:links": "bun run scripts/repair-bun-links.mjs",
     "typecheck": "bunx tsc -b",
-    "generate:sdk": "bun run --cwd apps/api generate:sdk"
+    "generate:openapi": "bun run --cwd apps/api generate:openapi",
+    "test:sdk": "bun test packages/sdk",
+    "release:sdk:patch": "bun run test:sdk && npm --prefix packages/sdk version patch && npm --prefix packages/sdk run build && npm publish ./packages/sdk --access public",
+    "release:sdk:minor": "bun run test:sdk && npm --prefix packages/sdk version minor && npm --prefix packages/sdk run build && npm publish ./packages/sdk --access public",
+    "release:sdk:major": "bun run test:sdk && npm --prefix packages/sdk version major && npm --prefix packages/sdk run build && npm publish ./packages/sdk --access public"
   },
   "devDependencies": {
     "@types/bun": "^1.3.11",

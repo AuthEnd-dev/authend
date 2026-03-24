@@ -15,6 +15,17 @@ It does not expose the admin control-plane surface.
 npm install @authend/sdk
 ```
 
+## Quick start
+
+Initialize config once, then generate types:
+
+```bash
+npx authend-gen init
+npx authend-gen generate
+```
+
+Use `init` for first-time setup in a client project. After that, run `generate` whenever your backend schema changes.
+
 ## How it works
 
 The SDK uses two pieces:
@@ -62,6 +73,15 @@ To create the config file automatically:
 ```bash
 npx authend-gen init
 ```
+
+## Framework examples
+
+See end-to-end setup guides:
+
+- React: `docs/examples/react.md`
+- Next.js: `docs/examples/nextjs.md`
+- Expo: `docs/examples/expo.md`
+- Node backend: `docs/examples/node.md`
 
 ## Usage
 
@@ -118,6 +138,62 @@ const client = createAuthendClient<AuthendSchema>({
 ```
 
 This is the recommended pattern for mobile apps like Expo projects.
+
+## Environment-safe usage
+
+Use different client setup patterns for browser and server runtimes.
+
+### Browser-safe client
+
+Only use a public base URL in browser bundles.
+
+```ts
+import { createAuthendClient } from "@authend/sdk";
+import { authendSchema, type AuthendSchema } from "./generated/authend";
+
+const client = createAuthendClient<AuthendSchema>({
+  baseURL: import.meta.env.VITE_AUTHEND_API_URL,
+  schema: authendSchema,
+});
+```
+
+Do not configure `apiKey` in browser code.
+
+### Server client (Node/SSR/API routes)
+
+Use a server-only API key from non-public environment variables.
+
+```ts
+import { createAuthendClient } from "@authend/sdk";
+import { authendSchema, type AuthendSchema } from "./generated/authend";
+
+const client = createAuthendClient<AuthendSchema>({
+  baseURL: process.env.AUTHEND_API_URL!,
+  schema: authendSchema,
+  apiKey: process.env.AUTHEND_API_KEY!,
+});
+```
+
+### SSR and edge notes
+
+- Keep server client factories in server-only modules.
+- In frameworks like Next.js, separate client/browser factories to prevent leaking server env vars.
+- You can pass a custom `fetch` implementation with `fetch` option if your runtime needs one.
+
+### Anti-patterns
+
+- Putting `AUTHEND_API_KEY` in `NEXT_PUBLIC_*`, `VITE_*`, or `EXPO_PUBLIC_*` variables.
+- Reusing a server factory in client-rendered components.
+- Assuming authenticated browser sessions and API-key server access are interchangeable.
+
+## Framework guides
+
+See framework-specific integration guides in the Authend repo docs:
+
+- React: `docs/examples/react.md`
+- Next.js: `docs/examples/nextjs.md`
+- Expo: `docs/examples/expo.md`
+- Node backend: `docs/examples/node.md`
 
 ## Runtime shape
 
