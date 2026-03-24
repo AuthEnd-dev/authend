@@ -53,6 +53,39 @@ function renderDocBlock(lines) {
   ];
 }
 
+function docLinesFromText(value) {
+  if (!value) {
+    return [];
+  }
+
+  return String(value)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function fieldDocLines(field) {
+  const lines = [
+    ...docLinesFromText(field.description),
+    `Type: ${field.type}.`,
+    field.nullable ? "Nullable field." : "Required field.",
+  ];
+
+  if (field.default !== null && field.default !== undefined && String(field.default).trim().length > 0) {
+    lines.push(`Default: ${String(field.default).trim()}.`);
+  }
+
+  if (Array.isArray(field.enumValues) && field.enumValues.length > 0) {
+    lines.push(`Allowed values: ${field.enumValues.map((value) => JSON.stringify(value)).join(", ")}.`);
+  }
+
+  if (field.references) {
+    lines.push(`References ${field.references.table}.${field.references.column}.`);
+  }
+
+  return lines;
+}
+
 function renderFieldsShape(fields, { partial = false } = {}) {
   if (!fields.length) {
     return null;
@@ -63,11 +96,7 @@ function renderFieldsShape(fields, { partial = false } = {}) {
     ...fields.flatMap((field) => {
       const optional = partial || field.nullable || (field.default !== null && field.default !== undefined);
       return [
-        ...renderDocBlock([
-          `${field.name} (${field.type})`,
-          field.nullable ? "Nullable field." : "Required field.",
-          ...(field.references ? [`References ${field.references.table}.${field.references.column}.`] : []),
-        ]),
+        ...renderDocBlock(fieldDocLines(field)),
         `  ${field.name}${optional ? "?" : ""}: ${typeForField(field)};`,
       ];
     }),
@@ -115,11 +144,18 @@ export function generateSource(manifest, apiUrl) {
     const sortUnion = renderUnion(resource.sortFields);
     const filterUnion = renderUnion(resource.filterFields);
 
-    blocks.push(...renderDocBlock([resource.description || `${resource.displayName} resource.`]));
+    blocks.push(...renderDocBlock([
+      ...docLinesFromText(resource.description),
+      `Table: ${resource.table}.`,
+      `Route segment: ${resource.routeSegment}.`,
+      `Auth mode: ${resource.authMode}.`,
+    ]));
     blocks.push(`export interface ${typeBase}Record ${recordShape ?? "{}"}`);
     blocks.push("");
+    blocks.push(...renderDocBlock([`Input payload for creating ${resource.displayName} records.`]));
     blocks.push(`export type ${typeBase}CreateInput = ${createShape ?? "never"};`);
     blocks.push("");
+    blocks.push(...renderDocBlock([`Input payload for updating ${resource.displayName} records.`]));
     blocks.push(`export type ${typeBase}UpdateInput = ${updateShape ?? "never"};`);
     blocks.push("");
     blocks.push(`export type ${typeBase}SortField = ${sortUnion};`);
@@ -129,9 +165,11 @@ export function generateSource(manifest, apiUrl) {
     blocks.push(`export type ${typeBase}IncludeKey = ${includeKeyUnion};`);
     blocks.push("");
     if (resource.includeRelations.length > 0) {
+      blocks.push(...renderDocBlock([`Available include relations for ${resource.displayName}.`]));
       blocks.push(`export interface ${typeBase}Includes {`);
       for (const relation of resource.includeRelations) {
         const targetBase = pascalCase(relation.targetKey);
+        blocks.push(...renderDocBlock([`Include ${relation.key} from ${relation.targetTable}.`]).map((line) => `  ${line}`));
         blocks.push(
           `  ${relation.key}: AuthendIncludeDefinition<${targetBase}Record, ${JSON.stringify(relation.resultKey)}>;`,
         );

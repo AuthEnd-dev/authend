@@ -108,7 +108,7 @@ Goal: remove generic-client friction and make Authend feel native to TS apps.
 - [x] Generate strongly typed clients like `client.posts.list()` and `client.posts.create()`.
 - [x] Reflect disabled operations in generated client types.
 - [x] Generate relation include typing and typed filter/sort fields.
-- [ ] Emit rich JSDoc from table and field descriptions.
+- [x] Emit rich JSDoc from table and field descriptions.
 - [x] Add schema checksum/version metadata to generated artifacts.
 
 ### Client Ergonomics
