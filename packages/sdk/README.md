@@ -112,6 +112,16 @@ const posts = await client.data.post.list({
 });
 ```
 
+## Generated vs generic client
+
+For common CRUD flows, generated resource access is preferred:
+
+- `client.data.post.list()` gives table-specific record typing and narrowed query fields.
+- `client.data.post.create(...)` enforces typed create payloads.
+- Disabled operations become `never` at compile time.
+
+The generic fallback (`client.data.resource("post")`) remains available for dynamic cases, but it intentionally falls back to `DataRecord` typing.
+
 ## Auth
 
 `client.auth` uses Better Auth client plugins.

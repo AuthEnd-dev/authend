@@ -1,5 +1,6 @@
 import type { AuthendIncludeDefinition, AuthendSchemaResource, ListResponse } from "./client";
 import { createAuthendClient, defineAuthendSchema } from "./client";
+import type { DataRecord } from "./types";
 
 type Equal<Left, Right> = (<T>() => T extends Left ? 1 : 2) extends <T>() => T extends Right ? 1 : 2 ? true : false;
 type Assert<T extends true> = T;
@@ -96,3 +97,7 @@ type _postGet = Assert<Equal<PostGet, PostRecord>>;
 type PostList = Awaited<ReturnType<typeof client.data.posts.list>>;
 declare const postListResult: PostList;
 const _postListAssignable: ListResponse<PostRecord> = postListResult;
+
+const dynamicResourceClient = client.data.resource("posts");
+type DynamicPostGet = Awaited<ReturnType<typeof dynamicResourceClient.get>>;
+type _dynamicPathFallsBackToDataRecord = Assert<Equal<DynamicPostGet, DataRecord>>;

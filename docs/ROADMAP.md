@@ -129,8 +129,8 @@ Goal: remove generic-client friction and make Authend feel native to TS apps.
 ### Exit Criteria
 
 - [x] Developers can generate a client and get end-to-end inferred types with no manual patching.
-- [ ] Generated clients cover the common CRUD path better than the generic runtime client.
-- [ ] SDK docs are enough for a new TS user to integrate without reading backend source.
+- [x] Generated clients cover the common CRUD path better than the generic runtime client.
+- [x] SDK docs are enough for a new TS user to integrate without reading backend source.
 
 ## Phase 3: Complete The Core BaaS Feature Set
 
