@@ -653,6 +653,7 @@ export const sdkSchemaResourceSchema = z.object({
   key: z.string().min(1),
   table: z.string().min(1),
   displayName: z.string(),
+  description: z.string().min(1),
   routeSegment: z.string().min(1),
   primaryKey: z.string().min(1),
   authMode: apiAuthModeSchema,
@@ -663,12 +664,24 @@ export const sdkSchemaResourceSchema = z.object({
   filterFields: z.array(z.string().min(1)).default([]),
   sortFields: z.array(z.string().min(1)).default([]),
   includeFields: z.array(z.string().min(1)).default([]),
+  includeRelations: z
+    .array(
+      z.object({
+        key: z.string().min(1),
+        resultKey: z.string().min(1),
+        targetKey: z.string().min(1),
+        targetTable: z.string().min(1),
+      }),
+    )
+    .default([]),
 });
 
 export type SdkSchemaResource = z.infer<typeof sdkSchemaResourceSchema>;
 
 export const sdkSchemaManifestSchema = z.object({
+  version: z.literal("2"),
   generatedAt: z.string(),
+  schemaChecksum: z.string().min(1),
   resources: z.array(sdkSchemaResourceSchema).default([]),
 });
 

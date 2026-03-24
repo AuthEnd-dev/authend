@@ -12,14 +12,18 @@ import type { DataRecord, PluginId, PluginManifest, TableApiOperations, TableDes
 
 export type AuthendAuthClient = ReturnType<typeof createAuthClient>;
 
-export type ResourceListParams = {
+export type ResourceListParams<
+  TSort extends string = string,
+  TFilter extends string = string,
+  TInclude extends string = string,
+> = {
   page?: number;
   pageSize?: number;
-  sort?: string;
+  sort?: TSort;
   order?: 'asc' | 'desc';
-  filterField?: string;
+  filterField?: TFilter;
   filterValue?: string;
-  include?: string | string[];
+  include?: TInclude | TInclude[];
 };
 
 export type ListResponse<TRecord> = {
@@ -33,7 +37,9 @@ export type AuthendSchemaResource<
   TRecord extends DataRecord = DataRecord,
   TCreate = Record<string, unknown>,
   TUpdate = Partial<TCreate>,
-  TListParams extends ResourceListParams = ResourceListParams,
+  TSort extends string = string,
+  TFilter extends string = string,
+  TIncludes extends Record<string, AuthendIncludeDefinition<any, any>> = {},
   TOperations extends TableApiOperations = TableApiOperations,
 > = {
   routeSegment: string;
@@ -41,11 +47,21 @@ export type AuthendSchemaResource<
   __record?: TRecord;
   __create?: TCreate;
   __update?: TUpdate;
-  __listParams?: TListParams;
+  __sort?: TSort;
+  __filter?: TFilter;
+  __includes?: TIncludes;
+};
+
+export type AuthendIncludeDefinition<
+  TRecord extends DataRecord = DataRecord,
+  TResultKey extends string = string,
+> = {
+  resultKey: TResultKey;
+  __record?: TRecord;
 };
 
 export type AuthendSchemaShape = {
-  resources: Record<string, AuthendSchemaResource<DataRecord, unknown, unknown, ResourceListParams, TableApiOperations>>;
+  resources: Record<string, AuthendSchemaResource<DataRecord, unknown, unknown, string, string, {}, TableApiOperations>>;
 };
 
 export type AuthendSchemaRuntime<TSchema extends AuthendSchemaShape> = {
@@ -59,7 +75,7 @@ export function defineAuthendSchema<TSchema extends AuthendSchemaShape>(schema: 
 }
 
 /** Loose bound so indexed schema resources (e.g. `TSchema['resources'][K]`) still satisfy the constraint. */
-type AnyAuthendSchemaResource = AuthendSchemaResource<any, any, any, any, any>;
+type AnyAuthendSchemaResource = AuthendSchemaResource<any, any, any, any, any, any, any>;
 
 type InferRecord<TResource extends AnyAuthendSchemaResource> = TResource extends { __record?: infer TRecord }
   ? TRecord
@@ -70,12 +86,46 @@ type InferCreate<TResource extends AnyAuthendSchemaResource> = TResource extends
 type InferUpdate<TResource extends AnyAuthendSchemaResource> = TResource extends { __update?: infer TUpdate }
   ? TUpdate
   : Partial<Record<string, unknown>>;
-type InferListParams<TResource extends AnyAuthendSchemaResource> = TResource extends { __listParams?: infer TParams }
-  ? TParams
-  : ResourceListParams;
+type InferSort<TResource extends AnyAuthendSchemaResource> = TResource extends { __sort?: infer TSort }
+  ? Extract<TSort, string>
+  : string;
+type InferFilter<TResource extends AnyAuthendSchemaResource> = TResource extends { __filter?: infer TFilter }
+  ? Extract<TFilter, string>
+  : string;
+type InferIncludes<TResource extends AnyAuthendSchemaResource> = TResource extends { __includes?: infer TIncludes }
+  ? TIncludes
+  : {};
+type InferListParams<TResource extends AnyAuthendSchemaResource> = ResourceListParams<
+  InferSort<TResource>,
+  InferFilter<TResource>,
+  Extract<keyof InferIncludes<TResource>, string>
+>;
 /** `operations` is always `TableApiOperations`-shaped; indexing with API method keys is valid. */
 type InferOperations<TResource extends AnyAuthendSchemaResource> = TResource['operations'];
 type EnabledMethod<TEnabled, TMethod> = TEnabled extends false ? never : TMethod;
+type IncludeKeysFromParam<TParam> = TParam extends readonly (infer TKey)[] ? Extract<TKey, string> : Extract<TParam, string>;
+type SelectedIncludeKeys<TParams> = TParams extends { include?: infer TInclude } ? IncludeKeysFromParam<Exclude<TInclude, undefined>> : never;
+type InferIncludeRecord<TInclude> = TInclude extends { __record?: infer TRecord } ? TRecord : DataRecord;
+type InferIncludeResultKey<TInclude> = TInclude extends { resultKey: infer TResultKey } ? Extract<TResultKey, string> : never;
+type UnionToIntersection<T> = (
+  T extends unknown ? (value: T) => void : never
+) extends ((value: infer TResult) => void)
+  ? TResult
+  : never;
+type MergeIncludedRecord<
+  TRecord,
+  TIncludeMap,
+  TSelected extends string,
+> = TRecord &
+  UnionToIntersection<
+    {
+      [K in TSelected]: K extends keyof TIncludeMap
+        ? {
+            [P in InferIncludeResultKey<TIncludeMap[K]>]: InferIncludeRecord<TIncludeMap[K]> | null;
+          }
+        : {};
+    }[TSelected]
+  >;
 
 export type ResourceClient<
   TRecord = DataRecord,
@@ -93,7 +143,9 @@ export type ResourceClient<
 export type ResourceClientFromDefinition<TResource extends AnyAuthendSchemaResource = AuthendSchemaResource> = {
   list: EnabledMethod<
     InferOperations<TResource>['list'],
-    (params?: InferListParams<TResource>) => Promise<ListResponse<InferRecord<TResource>>>
+    <TParams extends InferListParams<TResource> | undefined = undefined>(
+      params?: TParams,
+    ) => Promise<ListResponse<MergeIncludedRecord<InferRecord<TResource>, InferIncludes<TResource>, SelectedIncludeKeys<TParams>>>>
   >;
   get: EnabledMethod<InferOperations<TResource>['get'], (id: string) => Promise<InferRecord<TResource>>>;
   create: EnabledMethod<

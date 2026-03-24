@@ -259,4 +259,5 @@ bun test
 - File upload/browser workflows are not yet exposed beyond storage configuration and diagnostics.
 - Generated app tables can now be exposed through the data router with runtime policy enforcement and preset-based policy editing, but the admin UX is still operator-grade rather than polished end-user product tooling.
 - The SDK generator now uses the dedicated `/api/system/sdk-schema` manifest rather than full OpenAPI codegen. OpenAPI remains available for broader ecosystem tooling.
+- The generated SDK now emits exact per-resource record/create/update/query types, include metadata, and schema checksum/version constants, but richer doc comments still need field-level descriptions in the schema model.
 - Curated plugin runtime composition is covered by tests for the shipped surfaces, but provider-specific credentials and custom extension handlers still need environment-specific validation.

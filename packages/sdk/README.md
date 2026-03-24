@@ -82,6 +82,16 @@ await client.data.post.create({
 });
 ```
 
+Generated resources now also carry typed filter, sort, and include unions. If `post` exposes an `author` include and `title` sort field, TypeScript narrows those inputs automatically:
+
+```ts
+const posts = await client.data.post.list({
+  sort: "title",
+  filterField: "title",
+  include: "author",
+});
+```
+
 ## Auth
 
 `client.auth` uses Better Auth client plugins.
@@ -140,7 +150,9 @@ The generator emits:
 - create input types
 - update input types
 - list param types
+- include metadata types
 - runtime schema metadata used for typed dot-notation
+- schema checksum and schema version constants
 
 Example generated output:
 
@@ -153,6 +165,9 @@ export interface PostRecord {
 export type PostCreateInput = {
   title: string;
 };
+
+export const authendSchemaVersion = "2";
+export const authendSchemaChecksum = "...";
 ```
 
 ## CLI
