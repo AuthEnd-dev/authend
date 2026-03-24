@@ -148,6 +148,22 @@ export const tableApiAccessSchema = z.object({
 
 export type TableApiAccess = z.infer<typeof tableApiAccessSchema>;
 
+function defaultFieldActors() {
+  return ["public", "session", "apiKey"] as ApiAccessActor[];
+}
+
+export const apiFieldVisibilityRuleSchema = z.object({
+  read: z.array(apiAccessActorSchema).default(() => defaultFieldActors()),
+  create: z.array(apiAccessActorSchema).default(() => defaultFieldActors()),
+  update: z.array(apiAccessActorSchema).default(() => defaultFieldActors()),
+});
+
+export type ApiFieldVisibilityRule = z.infer<typeof apiFieldVisibilityRuleSchema>;
+
+export const tableApiFieldVisibilitySchema = z.record(z.string().min(1), apiFieldVisibilityRuleSchema);
+
+export type TableApiFieldVisibility = z.infer<typeof tableApiFieldVisibilitySchema>;
+
 export const apiPaginationSchema = z.object({
   enabled: z.boolean().default(true),
   defaultPageSize: z.number().int().positive().max(100).default(20),
@@ -213,6 +229,7 @@ function defaultTableApiConfig() {
       fields: [] as string[],
     },
     hiddenFields: [] as string[],
+    fieldVisibility: {} as TableApiFieldVisibility,
   };
 }
 
@@ -229,6 +246,7 @@ export const tableApiConfigSchema = z.object({
   sorting: apiSortingSchema.default(() => defaultTableApiConfig().sorting),
   includes: apiFieldAccessSchema.default(() => defaultTableApiConfig().includes),
   hiddenFields: z.array(z.string().min(1)).default([]),
+  fieldVisibility: tableApiFieldVisibilitySchema.default(() => defaultTableApiConfig().fieldVisibility),
 });
 
 export type TableApiConfig = z.infer<typeof tableApiConfigSchema>;
@@ -569,6 +587,34 @@ export const apiSecuritySchema = z.object({
 
 export type ApiSecurity = z.infer<typeof apiSecuritySchema>;
 
+export const apiPolicyActorOperationSchema = z.object({
+  key: z.enum(["list", "get", "create", "update", "delete"]),
+  enabled: z.boolean(),
+  allowed: z.boolean(),
+  scope: apiAccessScopeSchema,
+});
+
+export type ApiPolicyActorOperation = z.infer<typeof apiPolicyActorOperationSchema>;
+
+export const apiPolicyActorPreviewSchema = z.object({
+  actor: apiAccessActorSchema,
+  readableFields: z.array(z.string().min(1)).default([]),
+  createFields: z.array(z.string().min(1)).default([]),
+  updateFields: z.array(z.string().min(1)).default([]),
+  filterFields: z.array(z.string().min(1)).default([]),
+  sortFields: z.array(z.string().min(1)).default([]),
+  includeFields: z.array(z.string().min(1)).default([]),
+  operations: z.array(apiPolicyActorOperationSchema).default([]),
+});
+
+export type ApiPolicyActorPreview = z.infer<typeof apiPolicyActorPreviewSchema>;
+
+export const apiPolicyPreviewSchema = z.object({
+  actors: z.array(apiPolicyActorPreviewSchema).default([]),
+});
+
+export type ApiPolicyPreview = z.infer<typeof apiPolicyPreviewSchema>;
+
 export const apiResourceSchema = z.object({
   table: z.string(),
   displayName: z.string(),
@@ -581,6 +627,7 @@ export const apiResourceSchema = z.object({
   security: apiSecuritySchema,
   query: apiQueryCapabilitiesSchema,
   operations: z.array(apiPreviewOperationSchema),
+  policy: apiPolicyPreviewSchema,
 });
 
 export type ApiResource = z.infer<typeof apiResourceSchema>;

@@ -10,6 +10,7 @@ import {
 } from "@authend/shared";
 import type {
   ApiAccessActor,
+  ApiFieldVisibilityRule,
   ApiPreviewOperation,
   DataRecord,
   FieldBlueprint,
@@ -41,6 +42,7 @@ const tableEditorTabs = [
 ] as const;
 
 const accessActors: ApiAccessActor[] = ["public", "session", "apiKey", "superadmin"];
+const appFacingFieldActors: ApiAccessActor[] = ["public", "session", "apiKey"];
 const operationKeys: ApiPreviewOperation["key"][] = ["list", "get", "create", "update", "delete"];
 const queryCapabilityKeys = ["hiddenFields", "pagination", "filtering", "sorting", "includes"] as const;
 
@@ -119,6 +121,7 @@ function defaultTableApiConfig(): TableApiConfig {
       fields: [],
     },
     hiddenFields: [],
+    fieldVisibility: {},
     routeSegment: null,
     sdkName: null,
     tag: null,
@@ -204,6 +207,14 @@ function describeAccess(access: TableApiAccess) {
 
 function toggleListValue(values: string[], value: string) {
   return values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value];
+}
+
+function defaultFieldVisibilityRule(): ApiFieldVisibilityRule {
+  return {
+    read: [...appFacingFieldActors],
+    create: [...appFacingFieldActors],
+    update: [...appFacingFieldActors],
+  };
 }
 
 function FieldToggleList({
@@ -678,6 +689,10 @@ export function TableSchemaPanel({
   );
 
   const availableSortFields = apiConfig.sorting.fields;
+  const visibleFieldOptions = useMemo(
+    () => ["id", ...availableFieldNames].filter((field, index, collection) => collection.indexOf(field) === index),
+    [availableFieldNames],
+  );
   const hasOwnScopedOperation = operationKeys.some((operation) => apiConfig.access[operation].scope === "own");
   const routeSegment = apiConfig.routeSegment || name;
   const accessSummary = describeAccess(apiConfig.access);
@@ -806,6 +821,27 @@ export function TableSchemaPanel({
           ...current.sorting,
           fields: nextSortFields,
           defaultField: nextSortFields.includes(current.sorting.defaultField ?? "") ? current.sorting.defaultField : nextSortFields[0] ?? "",
+        },
+      };
+    });
+  };
+
+  const fieldVisibilityActors = (field: string, operation: keyof ApiFieldVisibilityRule) =>
+    apiConfig.fieldVisibility[field]?.[operation] ?? defaultFieldVisibilityRule()[operation];
+
+  const toggleFieldVisibilityActor = (field: string, operation: keyof ApiFieldVisibilityRule, actor: ApiAccessActor) => {
+    setApiConfig((current) => {
+      const existing = current.fieldVisibility[field] ?? defaultFieldVisibilityRule();
+      const nextActors = toggleListValue(existing[operation], actor) as ApiAccessActor[];
+
+      return {
+        ...current,
+        fieldVisibility: {
+          ...current.fieldVisibility,
+          [field]: {
+            ...existing,
+            [operation]: nextActors,
+          },
         },
       };
     });
@@ -1671,6 +1707,62 @@ export function TableSchemaPanel({
                     </div>
                   </div>
                 ))}
+              </div>
+            </section>
+
+            <section className="grid gap-4 rounded-2xl border border-border/60 bg-background p-4">
+              <div className="flex items-center justify-between border-b border-border/50 pb-3">
+                <h3 className="flex items-center gap-2 text-sm font-bold">
+                  <Lock className="h-4 w-4 text-muted-foreground" />
+                  Field Visibility
+                </h3>
+                <span className="text-[11px] text-muted-foreground">Unchecked means admin-only on the app-facing API</span>
+              </div>
+
+              <div className="grid gap-2">
+                {visibleFieldOptions.map((field) => (
+                  <div key={field} className="rounded-xl border border-border/60 bg-muted/20 px-3 py-3">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="font-mono text-xs text-foreground">{field}</div>
+                      {apiConfig.hiddenFields.includes(field) ? (
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Hidden in responses</span>
+                      ) : null}
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {(["read", "create", "update"] as const).map((operation) => (
+                        <div key={`${field}-${operation}`} className="grid gap-2 rounded-lg border border-border/60 bg-background px-3 py-2">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{operation}</div>
+                          <div className="grid gap-1">
+                            {appFacingFieldActors.map((actor) => {
+                              const checked = fieldVisibilityActors(field, operation).includes(actor);
+                              const disabled = field === "id" && operation !== "read";
+                              return (
+                                <label
+                                  key={`${field}-${operation}-${actor}`}
+                                  className={`flex items-center justify-between gap-2 text-xs ${disabled ? "opacity-50" : "cursor-pointer"}`}
+                                >
+                                  <span>{actorLabel(actor)}</span>
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={disabled}
+                                    onChange={() => toggleFieldVisibilityActor(field, operation, actor)}
+                                    className="h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
+                                  />
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {visibleFieldOptions.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border/70 px-3 py-4 text-sm text-muted-foreground">
+                    Add fields first to configure field-level read and write visibility.
+                  </div>
+                ) : null}
               </div>
             </section>
 

@@ -1,5 +1,6 @@
 import type {
   ApiAccessActor,
+  ApiFieldVisibilityRule,
   ApiPreview,
   ApiPreviewOperation,
   ApiResource,
@@ -10,7 +11,7 @@ import type {
   TableApiConfig,
   TableBlueprint,
 } from "@authend/shared";
-import { apiPreviewSchema, apiResourceSchema, tableApiConfigSchema } from "@authend/shared";
+import { apiPreviewSchema, apiResourceSchema, buildTablePolicyPreview, tableApiConfigSchema } from "@authend/shared";
 import { applyDraft, getSchemaDraft } from "./schema-service";
 import { HttpError } from "../lib/http";
 import { getTableDescriptor, listBrowsableTables } from "./crud-service";
@@ -32,6 +33,7 @@ const generatedOperations = {
 } as const;
 
 const operationKeys = ["list", "get", "create", "update", "delete"] as const;
+const fieldVisibilityKeys = ["read", "create", "update"] as const;
 
 function defaultTableAccess(): TableApiAccess {
   return {
@@ -132,6 +134,48 @@ function visibleFields(allFields: string[], hiddenFields: string[]) {
   return allFields.filter((field) => !hiddenFields.includes(field));
 }
 
+function normaliseFieldVisibility(
+  config: TableApiConfig,
+  allFields: string[],
+): TableApiConfig["fieldVisibility"] {
+  return Object.fromEntries(
+    Object.entries(config.fieldVisibility ?? {})
+      .filter(([field]) => allFields.includes(field))
+      .map(([field, rules]) => [
+        field,
+        fieldVisibilityKeys.reduce<ApiFieldVisibilityRule>(
+          (acc, key) => {
+            acc[key] = sortActors(rules[key]);
+            return acc;
+          },
+          {
+            read: [],
+            create: [],
+            update: [],
+          },
+        ),
+      ]),
+  );
+}
+
+function fieldReadableForAnyActor(field: string, hiddenFields: string[], fieldVisibility: TableApiConfig["fieldVisibility"]) {
+  if (hiddenFields.includes(field)) {
+    return false;
+  }
+
+  const visibility = fieldVisibility[field];
+  return !visibility || visibility.read.length > 0;
+}
+
+function fieldWritableForAnyActor(
+  field: string,
+  operation: "create" | "update",
+  fieldVisibility: TableApiConfig["fieldVisibility"],
+) {
+  const visibility = fieldVisibility[field];
+  return !visibility || visibility[operation].length > 0;
+}
+
 function derivedAuthMode(access: TableApiAccess): TableApiConfig["authMode"] {
   const actors = new Set<ApiAccessActor>(operationKeys.flatMap((key) => access[key].actors));
   if (actors.has("public")) {
@@ -224,7 +268,8 @@ export function normaliseTableApiConfig(
   const parsed = tableApiConfigSchema.parse(rawConfig ?? {});
   const allFields = fieldNames(table);
   const hiddenFields = parsed.hiddenFields.filter((field) => allFields.includes(field));
-  const readableFields = visibleFields(allFields, hiddenFields);
+  const fieldVisibility = normaliseFieldVisibility(parsed, allFields);
+  const readableFields = visibleFields(allFields, hiddenFields).filter((field) => fieldReadableForAnyActor(field, hiddenFields, fieldVisibility));
   const relationFields = relationIncludeNames(table, draft);
   const operations = editable
     ? { ...generatedOperations, ...parsed.operations }
@@ -279,6 +324,7 @@ export function normaliseTableApiConfig(
       fields: includeFields,
     },
     hiddenFields,
+    fieldVisibility,
   };
 }
 
@@ -324,9 +370,20 @@ function operationId(sdkName: string, key: ApiPreviewOperation["key"]) {
 
 function buildOperations(table: TableBlueprint, config: TableApiConfig): ApiPreviewOperation[] {
   const routeBase = `/api/data/${config.routeSegment}`;
-  const readableFields = table.fields.filter((field) => !config.hiddenFields.includes(field.name));
+  const readableFields = table.fields.filter((field) => fieldReadableForAnyActor(field.name, config.hiddenFields, config.fieldVisibility));
   const recordExample = exampleRecord(readableFields);
-  const createExample = requestExample(table);
+  const createExample = Object.fromEntries(
+    table.fields
+      .filter((field) => field.name !== table.primaryKey)
+      .filter((field) => fieldWritableForAnyActor(field.name, "create", config.fieldVisibility))
+      .map((field) => [field.name, exampleValueForField(field)]),
+  );
+  const updateExample = Object.fromEntries(
+    table.fields
+      .filter((field) => field.name !== table.primaryKey)
+      .filter((field) => fieldWritableForAnyActor(field.name, "update", config.fieldVisibility))
+      .map((field) => [field.name, exampleValueForField(field)]),
+  );
   const primaryKeyExample = String(recordExample[table.primaryKey] ?? "record_id");
   const listQueryParams: ApiPreviewOperation["queryParams"] = [];
 
@@ -420,7 +477,7 @@ function buildOperations(table: TableBlueprint, config: TableApiConfig): ApiPrev
       enabled: config.operations.update,
       operationId: operationId(config.sdkName ?? table.name, "update"),
       queryParams: [],
-      requestExample: createExample,
+      requestExample: updateExample,
       responseExample: recordExample,
     },
     {
@@ -515,8 +572,9 @@ async function tableFromDescriptor(input: string): Promise<{ table: TableBluepri
         },
         filtering: {
           enabled: true,
-          fields: [],
-        },
+      fields: [],
+          fieldVisibility: {},
+      },
         sorting: {
           enabled: true,
           fields: [],
@@ -538,9 +596,9 @@ export async function resolvePreviewTable(input: string) {
   return tableFromDescriptor(input);
 }
 
-function buildResource(resolved: { table: TableBlueprint; editable: boolean; draft?: SchemaDraft | null }): ApiResource {
+export function buildResource(resolved: { table: TableBlueprint; editable: boolean; draft?: SchemaDraft | null }): ApiResource {
   const config = normaliseTableApiConfig(resolved.table.api, resolved.table, resolved.draft, resolved.editable);
-  const readableFields = resolved.table.fields.filter((field) => !config.hiddenFields.includes(field.name));
+  const readableFields = resolved.table.fields.filter((field) => fieldReadableForAnyActor(field.name, config.hiddenFields, config.fieldVisibility));
   return apiResourceSchema.parse({
     table: resolved.table.name,
     displayName: resolved.table.displayName,
@@ -561,6 +619,7 @@ function buildResource(resolved: { table: TableBlueprint; editable: boolean; dra
       includes: config.includes,
     },
     operations: buildOperations(resolved.table, config),
+    policy: buildTablePolicyPreview(resolved.table.fields, config),
   });
 }
 

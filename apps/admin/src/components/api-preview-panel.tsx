@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { detectTableApiAccessPreset, tableApiPolicyPresets } from '@authend/shared';
 import { Braces, Code2, Eye, Lock, Route, SlidersHorizontal } from 'lucide-react';
 import { client } from '../lib/client';
@@ -7,6 +8,7 @@ import { SidePanel } from './ui/side-panel';
 import { CodeBlock } from './ui/code-block';
 
 export function ApiPreviewPanel({ tableName, isOpen, onClose }: { tableName: string; isOpen: boolean; onClose: () => void }) {
+  const [selectedActor, setSelectedActor] = useState<'public' | 'session' | 'apiKey'>('public');
   const { data, isLoading } = useQuery({
     queryKey: ['api-preview', tableName],
     queryFn: () => client.system.api.preview(tableName),
@@ -14,6 +16,18 @@ export function ApiPreviewPanel({ tableName, isOpen, onClose }: { tableName: str
   });
   const selectedPreset = data ? detectTableApiAccessPreset(data.resource.config.access) : 'custom';
   const presetDefinition = selectedPreset === 'custom' ? null : tableApiPolicyPresets.find((preset) => preset.id === selectedPreset);
+  const actorPreview = data?.resource.policy.actors.find((entry) => entry.actor === selectedActor) ?? data?.resource.policy.actors[0];
+
+  useEffect(() => {
+    if (!data) {
+      return;
+    }
+
+    const firstActor = data.resource.policy.actors[0]?.actor;
+    if (firstActor === 'public' || firstActor === 'session' || firstActor === 'apiKey') {
+      setSelectedActor(firstActor);
+    }
+  }, [data]);
 
   return (
     <SidePanel
@@ -72,6 +86,65 @@ export function ApiPreviewPanel({ tableName, isOpen, onClose }: { tableName: str
               </div>
               <div className="rounded-lg border border-border/60 px-3 py-2 text-sm text-muted-foreground">{data.resource.security.description}</div>
             </section>
+
+            {actorPreview && (
+              <section className="grid gap-4 rounded-2xl border border-border/60 bg-background p-5">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <Eye className="h-4 w-4 text-muted-foreground" />
+                  Policy Simulator
+                </div>
+                <div className="rounded-lg border border-border/60 px-3 py-2 text-sm text-muted-foreground">
+                  Test the app-facing contract by actor. Admin routes still bypass these rules for superadmin sessions.
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {data.resource.policy.actors.map((entry) => (
+                    <button
+                      key={entry.actor}
+                      type="button"
+                      onClick={() => setSelectedActor(entry.actor as 'public' | 'session' | 'apiKey')}
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                        selectedActor === entry.actor ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground'
+                      }`}
+                    >
+                      {entry.actor === 'public' ? 'Public' : entry.actor === 'session' ? 'Session' : 'API Key'}
+                    </button>
+                  ))}
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  {actorPreview.operations.map((operation) => (
+                    <div key={operation.key} className="rounded-lg border border-border/60 px-3 py-3 text-sm">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{operation.key}</div>
+                      <div className="mt-2 font-semibold text-foreground">
+                        {!operation.enabled ? 'Disabled' : operation.allowed ? 'Allowed' : 'Blocked'}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        Scope: {operation.scope === 'own' ? 'Owner only' : 'All matching records'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-lg border border-border/60 px-3 py-3 text-sm text-muted-foreground">
+                    Readable fields: {actorPreview.readableFields.join(', ') || 'none'}
+                  </div>
+                  <div className="rounded-lg border border-border/60 px-3 py-3 text-sm text-muted-foreground">
+                    Create fields: {actorPreview.createFields.join(', ') || 'none'}
+                  </div>
+                  <div className="rounded-lg border border-border/60 px-3 py-3 text-sm text-muted-foreground">
+                    Update fields: {actorPreview.updateFields.join(', ') || 'none'}
+                  </div>
+                  <div className="rounded-lg border border-border/60 px-3 py-3 text-sm text-muted-foreground">
+                    Filter fields: {actorPreview.filterFields.join(', ') || 'disabled'}
+                  </div>
+                  <div className="rounded-lg border border-border/60 px-3 py-3 text-sm text-muted-foreground">
+                    Sort fields: {actorPreview.sortFields.join(', ') || 'disabled'}
+                  </div>
+                  <div className="rounded-lg border border-border/60 px-3 py-3 text-sm text-muted-foreground">
+                    Includes: {actorPreview.includeFields.join(', ') || 'disabled'}
+                  </div>
+                </div>
+              </section>
+            )}
 
             <section className="grid gap-4 rounded-2xl border border-border/60 bg-background p-5">
               <div className="flex items-center gap-2 text-sm font-semibold">

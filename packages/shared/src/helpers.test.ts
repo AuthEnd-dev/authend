@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   analyseTableApiPolicyWarnings,
   buildTableApiAccessPreset,
+  buildTablePolicyPreview,
   detectTableApiAccessPreset,
   suggestOwnershipField,
   validateDraft,
@@ -233,6 +234,7 @@ describe("validateDraft", () => {
                 fields: [],
               },
               hiddenFields: [],
+              fieldVisibility: {},
             },
           },
         ],
@@ -303,6 +305,7 @@ describe("validateDraft", () => {
                 fields: [],
               },
               hiddenFields: ["password"],
+              fieldVisibility: {},
             },
           },
         ],
@@ -373,6 +376,7 @@ describe("validateDraft", () => {
                 fields: [],
               },
               hiddenFields: ["id"],
+              fieldVisibility: {},
             },
           },
         ],
@@ -443,6 +447,7 @@ describe("validateDraft", () => {
                 fields: [],
               },
               hiddenFields: ["owner_id"],
+              fieldVisibility: {},
             },
           },
         ],
@@ -579,5 +584,80 @@ describe("table API policy presets", () => {
   test("suggests an ownership field using common conventions", () => {
     expect(suggestOwnershipField(["title", "user_id", "created_at"])).toBe("user_id");
     expect(suggestOwnershipField(["title", "created_at"])).toBeNull();
+  });
+});
+
+describe("buildTablePolicyPreview", () => {
+  test("derives actor-specific operations and field visibility", () => {
+    const preview = buildTablePolicyPreview(
+      [
+        { name: "id" },
+        { name: "title" },
+        { name: "member_excerpt" },
+        { name: "internal_notes" },
+      ],
+      {
+        access: {
+          ownershipField: null,
+          list: { actors: ["public", "session", "apiKey"], scope: "all" },
+          get: { actors: ["public", "session", "apiKey"], scope: "all" },
+          create: { actors: ["session"], scope: "all" },
+          update: { actors: ["session"], scope: "own" },
+          delete: { actors: [], scope: "all" },
+        },
+        operations: {
+          list: true,
+          get: true,
+          create: true,
+          update: true,
+          delete: false,
+        },
+        hiddenFields: ["internal_notes"],
+        fieldVisibility: {
+          member_excerpt: {
+            read: ["session", "apiKey"],
+            create: [],
+            update: [],
+          },
+        },
+        filtering: {
+          enabled: true,
+          fields: ["title", "member_excerpt", "internal_notes"],
+        },
+        sorting: {
+          enabled: true,
+          fields: ["id", "title", "member_excerpt"],
+          defaultField: "id",
+          defaultOrder: "desc",
+        },
+        includes: {
+          enabled: true,
+          fields: ["author"],
+        },
+      },
+    );
+
+    const publicPreview = preview.actors.find((entry) => entry.actor === "public");
+    const sessionPreview = preview.actors.find((entry) => entry.actor === "session");
+
+    expect(publicPreview?.readableFields).toEqual(["id", "title"]);
+    expect(publicPreview?.createFields).toEqual([]);
+    expect(publicPreview?.filterFields).toEqual(["title"]);
+    expect(publicPreview?.operations.find((entry) => entry.key === "create")).toEqual({
+      key: "create",
+      enabled: true,
+      allowed: false,
+      scope: "all",
+    });
+
+    expect(sessionPreview?.readableFields).toEqual(["id", "title", "member_excerpt"]);
+    expect(sessionPreview?.createFields).toEqual(["title", "internal_notes"]);
+    expect(sessionPreview?.updateFields).toEqual(["title", "internal_notes"]);
+    expect(sessionPreview?.operations.find((entry) => entry.key === "update")).toEqual({
+      key: "update",
+      enabled: true,
+      allowed: true,
+      scope: "own",
+    });
   });
 });

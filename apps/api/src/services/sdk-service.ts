@@ -19,8 +19,15 @@ function operationFlags(resourceOperations: Array<{ key: keyof TableApiOperation
   );
 }
 
-function writableFields(fields: FieldBlueprint[], primaryKey: string) {
-  return fields.filter((field) => field.name !== primaryKey);
+function writableFields(resource: { config: { fieldVisibility?: Record<string, { create: string[]; update: string[] }> } }, fields: FieldBlueprint[], primaryKey: string, operation: "create" | "update") {
+  return fields.filter((field) => {
+    if (field.name === primaryKey) {
+      return false;
+    }
+
+    const visibility = resource.config.fieldVisibility?.[field.name];
+    return !visibility || visibility[operation].length > 0;
+  });
 }
 
 export async function buildSdkSchemaManifest(): Promise<SdkSchemaManifest> {
@@ -39,8 +46,8 @@ export async function buildSdkSchemaManifest(): Promise<SdkSchemaManifest> {
         authMode: resource.security.authMode,
         operations: operationFlags(resource.operations.map((operation) => ({ key: operation.key, enabled: operation.enabled }))),
         fields: resource.fields,
-        createFields: resource.config.operations.create ? writableFields(descriptor.fields, resource.primaryKey) : [],
-        updateFields: resource.config.operations.update ? writableFields(descriptor.fields, resource.primaryKey) : [],
+        createFields: resource.config.operations.create ? writableFields(resource, descriptor.fields, resource.primaryKey, "create") : [],
+        updateFields: resource.config.operations.update ? writableFields(resource, descriptor.fields, resource.primaryKey, "update") : [],
         filterFields: resource.query.filtering.fields,
         sortFields: resource.query.sorting.fields,
         includeFields: resource.query.includes.fields,

@@ -13,6 +13,17 @@ async function getNormaliseTableApiConfig() {
   return module.normaliseTableApiConfig;
 }
 
+async function getBuildResource() {
+  process.env.APP_URL ??= "http://localhost:7002";
+  process.env.DATABASE_URL ??= "postgres://postgres:postgres@localhost:5432/authend";
+  process.env.BETTER_AUTH_SECRET ??= "test-secret-value-with-24-chars";
+  process.env.SUPERADMIN_EMAIL ??= "admin@example.com";
+  process.env.SUPERADMIN_PASSWORD ??= "password123";
+
+  const module = await import("./api-design-service");
+  return module.buildResource;
+}
+
 const baseTable: TableBlueprint = {
   name: "post",
   displayName: "Post",
@@ -91,6 +102,7 @@ const baseTable: TableBlueprint = {
       fields: [],
     },
     hiddenFields: [],
+    fieldVisibility: {},
   },
 };
 
@@ -119,6 +131,7 @@ describe("normaliseTableApiConfig", () => {
         sorting: baseTable.api.sorting,
         includes: baseTable.api.includes,
         hiddenFields: [],
+        fieldVisibility: {},
       },
       baseTable,
       draft,
@@ -208,6 +221,7 @@ describe("normaliseTableApiConfig", () => {
       {
         ...baseTable.api,
         hiddenFields: ["owner_id"],
+        fieldVisibility: {},
         filtering: {
           enabled: true,
           fields: ["id", "title", "owner_id"],
@@ -228,5 +242,79 @@ describe("normaliseTableApiConfig", () => {
     expect(config.filtering.fields).toEqual(["id", "title"]);
     expect(config.sorting.fields).toEqual(["id"]);
     expect(config.sorting.defaultField).toBe("id");
+  });
+
+  test("drops field visibility rules for unknown fields and sorts actor lists", async () => {
+    const normaliseTableApiConfig = await getNormaliseTableApiConfig();
+    const config = normaliseTableApiConfig(
+      {
+        ...baseTable.api,
+        fieldVisibility: {
+          title: {
+            read: ["session", "public", "apiKey"],
+            create: ["apiKey", "session"],
+            update: ["session"],
+          },
+          missing_field: {
+            read: ["public"],
+            create: ["public"],
+            update: ["public"],
+          },
+        },
+      },
+      baseTable,
+      draft,
+      true,
+    );
+
+    expect(Object.keys(config.fieldVisibility)).toEqual(["title"]);
+    expect(config.fieldVisibility.title.read).toEqual(["public", "session", "apiKey"]);
+    expect(config.fieldVisibility.title.create).toEqual(["session", "apiKey"]);
+    expect(config.fieldVisibility.title.update).toEqual(["session"]);
+  });
+});
+
+describe("buildResource", () => {
+  test("includes an actor policy preview that matches normalized field visibility", async () => {
+    const buildResource = await getBuildResource();
+    const resource = buildResource({
+      table: {
+        ...baseTable,
+        api: {
+          ...baseTable.api,
+          access: buildTableApiAccessPreset("publicReadOnly"),
+          fieldVisibility: {
+            title: {
+              read: ["session", "apiKey"],
+              create: [],
+              update: [],
+            },
+          },
+          filtering: {
+            enabled: true,
+            fields: ["id", "title"],
+          },
+          sorting: {
+            enabled: true,
+            fields: ["id", "title"],
+            defaultField: "id",
+            defaultOrder: "desc",
+          },
+        },
+      },
+      editable: true,
+      draft,
+    });
+
+    const publicPreview = resource.policy.actors.find((entry) => entry.actor === "public");
+    const sessionPreview = resource.policy.actors.find((entry) => entry.actor === "session");
+
+    expect(publicPreview?.readableFields).toEqual(["id", "owner_id", "author_id"]);
+    expect(publicPreview?.filterFields).toEqual(["id"]);
+    expect(publicPreview?.operations.find((entry) => entry.key === "list")?.allowed).toBe(true);
+    expect(publicPreview?.operations.find((entry) => entry.key === "create")?.allowed).toBe(false);
+
+    expect(sessionPreview?.readableFields).toEqual(["id", "title", "owner_id", "author_id"]);
+    expect(sessionPreview?.filterFields).toEqual(["id", "title"]);
   });
 });

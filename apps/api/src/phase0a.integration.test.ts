@@ -186,6 +186,7 @@ describe("Phase 0A integration hardening", () => {
               fields: [],
             },
             hiddenFields: [],
+            fieldVisibility: {},
           },
         },
         {
@@ -254,6 +255,7 @@ describe("Phase 0A integration hardening", () => {
               fields: [],
             },
             hiddenFields: ["email"],
+            fieldVisibility: {},
           },
         },
         {
@@ -285,6 +287,13 @@ describe("Phase 0A integration hardening", () => {
             },
             {
               name: "internal_notes",
+              type: "text",
+              nullable: true,
+              unique: false,
+              indexed: false,
+            },
+            {
+              name: "member_excerpt",
               type: "text",
               nullable: true,
               unique: false,
@@ -342,6 +351,13 @@ describe("Phase 0A integration hardening", () => {
               fields: ["author_id"],
             },
             hiddenFields: ["internal_notes"],
+            fieldVisibility: {
+              member_excerpt: {
+                read: ["session", "apiKey"],
+                create: [],
+                update: [],
+              },
+            },
           },
         },
         {
@@ -368,6 +384,13 @@ describe("Phase 0A integration hardening", () => {
               name: "display_name",
               type: "text",
               nullable: false,
+              unique: false,
+              indexed: false,
+            },
+            {
+              name: "moderation_state",
+              type: "text",
+              nullable: true,
               unique: false,
               indexed: false,
             },
@@ -417,6 +440,13 @@ describe("Phase 0A integration hardening", () => {
               fields: [],
             },
             hiddenFields: ["internal_notes"],
+            fieldVisibility: {
+              moderation_state: {
+                read: ["session", "apiKey"],
+                create: ["apiKey"],
+                update: ["apiKey"],
+              },
+            },
           },
         },
         {
@@ -485,6 +515,7 @@ describe("Phase 0A integration hardening", () => {
               fields: [],
             },
             hiddenFields: [],
+            fieldVisibility: {},
           },
         },
         {
@@ -559,6 +590,7 @@ describe("Phase 0A integration hardening", () => {
               fields: ["profile_id"],
             },
             hiddenFields: [],
+            fieldVisibility: {},
           },
         },
       ],
@@ -574,7 +606,13 @@ describe("Phase 0A integration hardening", () => {
       title: "Ship app-facing policies",
       body: "Make the public data plane safe and easy.",
       internal_notes: "draft-internal",
+      member_excerpt: "Members get the rollout details.",
       author_id: author.id,
+    }, {
+      access: {
+        actorKind: "superadmin",
+        bypassOwnership: true,
+      },
     });
 
     app = appModule.createApp();
@@ -733,6 +771,41 @@ describe("Phase 0A integration hardening", () => {
     expect(deleteResponse.status).toBe(204);
   });
 
+  test("client and admin data routes are split cleanly", async () => {
+    const publicClientResponse = await app.request(`${appUrl}/api/data/articles`, {
+      headers: {
+        origin: appUrl,
+      },
+    });
+    expect(publicClientResponse.status).toBe(200);
+
+    const adminWithoutSession = await app.request(`${appUrl}/api/admin/data`, {
+      headers: {
+        origin: appUrl,
+      },
+    });
+    expect(adminWithoutSession.status).toBe(401);
+
+    const regularUser = await createUserSession("route.split.user@authend.test", "Route Split User");
+    const adminAsUser = await app.request(`${appUrl}/api/admin/data`, {
+      headers: {
+        origin: appUrl,
+        cookie: regularUser.jar.toHeader(),
+      },
+    });
+    expect(adminAsUser.status).toBe(403);
+
+    const adminAsSuperadmin = await appRequest("/api/admin/data", {
+      headers: {
+        origin: appUrl,
+        cookie: cookieJar.toHeader(),
+      },
+    });
+    expect(adminAsSuperadmin.status).toBe(200);
+    const adminBody = await adminAsSuperadmin.json();
+    expect(adminBody.tables).toContain("notes");
+  });
+
   test("blocked built-in tables are hidden from listings and denied directly", async () => {
     const listResponse = await appRequest("/api/data", {
       headers: {
@@ -850,6 +923,15 @@ describe("Phase 0A integration hardening", () => {
   });
 
   test("public callers can read public resources and receive redacted includes", async () => {
+    const publicMetaResponse = await app.request(`${appUrl}/api/data/meta/articles`, {
+      headers: {
+        origin: appUrl,
+      },
+    });
+    expect(publicMetaResponse.status).toBe(200);
+    const publicMetaBody = await publicMetaResponse.json();
+    expect(publicMetaBody.fields.map((field: { name: string }) => field.name)).not.toContain("member_excerpt");
+
     const tablesResponse = await app.request(`${appUrl}/api/data`, {
       headers: {
         origin: appUrl,
@@ -872,6 +954,7 @@ describe("Phase 0A integration hardening", () => {
     expect(listBody.items).toHaveLength(1);
     expect(listBody.items[0].title).toBe("Ship app-facing policies");
     expect(listBody.items[0].internal_notes).toBeUndefined();
+    expect(listBody.items[0].member_excerpt).toBeUndefined();
     expect(listBody.items[0].author_idRelation.display_name).toBe("Phase One Author");
     expect(listBody.items[0].author_idRelation.email).toBeUndefined();
 
@@ -890,6 +973,56 @@ describe("Phase 0A integration hardening", () => {
       },
     });
     expect(privateResponse.status).toBe(401);
+  });
+
+  test("API preview policy simulator matches runtime authorization for public and session callers", async () => {
+    const signInResponse = await appRequest("/api/auth/sign-in/email", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        email: process.env.SUPERADMIN_EMAIL,
+        password: process.env.SUPERADMIN_PASSWORD,
+      }),
+    });
+    expect(signInResponse.status).toBe(200);
+
+    const previewResponse = await appRequest("/api/admin/api-preview/articles", {
+      headers: {
+        origin: appUrl,
+        cookie: cookieJar.toHeader(),
+      },
+    });
+    expect(previewResponse.status).toBe(200);
+    const previewBody = await previewResponse.json();
+
+    const publicPolicy = previewBody.resource.policy.actors.find((entry: { actor: string }) => entry.actor === "public");
+    const sessionPolicy = previewBody.resource.policy.actors.find((entry: { actor: string }) => entry.actor === "session");
+
+    expect(publicPolicy.readableFields).toEqual(["id", "title", "body", "author_id"]);
+    expect(publicPolicy.createFields).toEqual([]);
+    expect(publicPolicy.operations.find((entry: { key: string }) => entry.key === "create").allowed).toBe(false);
+
+    const publicMetaResponse = await app.request(`${appUrl}/api/data/meta/articles`, {
+      headers: {
+        origin: appUrl,
+      },
+    });
+    expect(publicMetaResponse.status).toBe(200);
+    const publicMetaBody = await publicMetaResponse.json();
+    expect(publicMetaBody.fields.map((field: { name: string }) => field.name)).toEqual(publicPolicy.readableFields);
+
+    const regularUser = await createUserSession("preview.policy.user@authend.test", "Preview Policy User");
+    const sessionMetaResponse = await app.request(`${appUrl}/api/data/meta/articles`, {
+      headers: {
+        origin: appUrl,
+        cookie: regularUser.jar.toHeader(),
+      },
+    });
+    expect(sessionMetaResponse.status).toBe(200);
+    const sessionMetaBody = await sessionMetaResponse.json();
+    expect(sessionMetaBody.fields.map((field: { name: string }) => field.name)).toEqual(sessionPolicy.readableFields);
+    expect(sessionPolicy.readableFields).toContain("member_excerpt");
+    expect(sessionPolicy.createFields).toEqual([]);
   });
 
   test("hidden fields cannot be filtered or sorted through the public data API", async () => {
@@ -960,6 +1093,16 @@ describe("Phase 0A integration hardening", () => {
     const userOne = await createUserSession("user.one@authend.test", "User One");
     const userTwo = await createUserSession("user.two@authend.test", "User Two");
 
+    const sessionMetaResponse = await app.request(`${appUrl}/api/data/meta/articles`, {
+      headers: {
+        origin: appUrl,
+        cookie: userOne.jar.toHeader(),
+      },
+    });
+    expect(sessionMetaResponse.status).toBe(200);
+    const sessionMetaBody = await sessionMetaResponse.json();
+    expect(sessionMetaBody.fields.map((field: { name: string }) => field.name)).toContain("member_excerpt");
+
     const tablesResponse = await app.request(`${appUrl}/api/data`, {
       headers: {
         origin: appUrl,
@@ -980,6 +1123,20 @@ describe("Phase 0A integration hardening", () => {
       },
     });
     expect(publicAsSession.status).toBe(200);
+    const publicAsSessionBody = await publicAsSession.json();
+    expect(publicAsSessionBody.items[0].member_excerpt).toBe("Members get the rollout details.");
+
+    const blockedProfileCreateResponse = await app.request(`${appUrl}/api/data/profiles`, {
+      method: "POST",
+      headers: jsonHeaders(userOne.jar),
+      body: JSON.stringify({
+        owner_id: "malicious-override",
+        display_name: "User One Profile",
+        moderation_state: "approved",
+        internal_notes: "do not expose",
+      }),
+    });
+    expect(blockedProfileCreateResponse.status).toBe(403);
 
     const createProfileResponse = await app.request(`${appUrl}/api/data/profiles`, {
       method: "POST",
@@ -994,6 +1151,7 @@ describe("Phase 0A integration hardening", () => {
     const createdProfile = await createProfileResponse.json();
     expect(createdProfile.owner_id).toBe(userOne.userId);
     expect(createdProfile.internal_notes).toBeUndefined();
+    expect(createdProfile.moderation_state).toBeNull();
 
     const ownListResponse = await app.request(`${appUrl}/api/data/profiles`, {
       headers: {
@@ -1032,6 +1190,15 @@ describe("Phase 0A integration hardening", () => {
       }),
     });
     expect(otherUpdateResponse.status).toBe(404);
+
+    const protectedFieldUpdateResponse = await app.request(`${appUrl}/api/data/profiles/${createdProfile.id}`, {
+      method: "PATCH",
+      headers: jsonHeaders(userOne.jar),
+      body: JSON.stringify({
+        moderation_state: "approved",
+      }),
+    });
+    expect(protectedFieldUpdateResponse.status).toBe(403);
   });
 
   test("relation includes respect target-table access rules", async () => {

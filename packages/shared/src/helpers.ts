@@ -3,9 +3,11 @@ import { schemaDraftSchema } from "./contracts";
 import type {
   ApiAccessActor,
   ApiAccessScope,
+  ApiPolicyActorPreview,
   FieldBlueprint,
   FieldType,
   SchemaDraft,
+  TableApiConfig,
   TableApiAccess,
   TableApiPolicyPreset,
   TableBlueprint,
@@ -40,6 +42,7 @@ const reservedIdentifiers = new Set([
 const operationKeys = ["list", "get", "create", "update", "delete"] as const;
 const actorOrder: ApiAccessActor[] = ["public", "session", "apiKey", "superadmin"];
 const sensitiveFieldPattern = /(email|token|secret|password|verification|private|internal|api_?key|key$)/i;
+export const appFacingActors: ApiAccessActor[] = ["public", "session", "apiKey"];
 
 export type TableApiPolicyWarning = {
   id: "publicWrite" | "publicSensitiveFilter" | "wideOpenIncludes";
@@ -87,6 +90,80 @@ export const tableApiPolicyPresets: Array<{
 
 function sortedActors(actors: ApiAccessActor[]) {
   return Array.from(new Set(actors)).sort((left, right) => actorOrder.indexOf(left) - actorOrder.indexOf(right));
+}
+
+export function actorHasTableOperationAccess(access: TableApiAccess, actor: ApiAccessActor, operation: (typeof operationKeys)[number]) {
+  return access[operation].actors.includes(actor);
+}
+
+export function fieldReadableByActor(
+  field: string,
+  actor: ApiAccessActor,
+  config: Pick<TableApiConfig, "hiddenFields" | "fieldVisibility">,
+) {
+  if (config.hiddenFields.includes(field)) {
+    return false;
+  }
+
+  const visibility = config.fieldVisibility[field];
+  return !visibility || visibility.read.includes(actor);
+}
+
+export function fieldWritableByActor(
+  field: string,
+  actor: ApiAccessActor,
+  operation: "create" | "update",
+  config: Pick<TableApiConfig, "fieldVisibility">,
+) {
+  const visibility = config.fieldVisibility[field];
+  return !visibility || visibility[operation].includes(actor);
+}
+
+export function buildActorPolicyPreview(
+  actor: ApiAccessActor,
+  fields: Pick<FieldBlueprint, "name">[],
+  config: Pick<TableApiConfig, "access" | "operations" | "hiddenFields" | "fieldVisibility" | "filtering" | "sorting" | "includes">,
+): ApiPolicyActorPreview {
+  const canCreate = config.operations.create && actorHasTableOperationAccess(config.access, actor, "create");
+  const canUpdate = config.operations.update && actorHasTableOperationAccess(config.access, actor, "update");
+  const readableFields = fields
+    .map((field) => field.name)
+    .filter((field) => fieldReadableByActor(field, actor, config));
+  const createFields = fields
+    .map((field) => field.name)
+    .filter((field) => field !== "id")
+    .filter(() => canCreate)
+    .filter((field) => fieldWritableByActor(field, actor, "create", config));
+  const updateFields = fields
+    .map((field) => field.name)
+    .filter((field) => field !== "id")
+    .filter(() => canUpdate)
+    .filter((field) => fieldWritableByActor(field, actor, "update", config));
+
+  return {
+    actor,
+    readableFields,
+    createFields,
+    updateFields,
+    filterFields: config.filtering.enabled ? config.filtering.fields.filter((field) => readableFields.includes(field)) : [],
+    sortFields: config.sorting.enabled ? config.sorting.fields.filter((field) => readableFields.includes(field)) : [],
+    includeFields: config.includes.enabled ? config.includes.fields : [],
+    operations: operationKeys.map((operation) => ({
+      key: operation,
+      enabled: config.operations[operation],
+      allowed: config.operations[operation] && actorHasTableOperationAccess(config.access, actor, operation),
+      scope: config.access[operation].scope,
+    })),
+  };
+}
+
+export function buildTablePolicyPreview(
+  fields: Pick<FieldBlueprint, "name">[],
+  config: Pick<TableApiConfig, "access" | "operations" | "hiddenFields" | "fieldVisibility" | "filtering" | "sorting" | "includes">,
+) {
+  return {
+    actors: appFacingActors.map((actor) => buildActorPolicyPreview(actor, fields, config)),
+  };
 }
 
 function operationAccess(actors: ApiAccessActor[], scope: ApiAccessScope) {

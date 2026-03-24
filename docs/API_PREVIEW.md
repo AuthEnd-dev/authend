@@ -136,16 +136,19 @@ These settings are contract metadata first. They do not fully change runtime aut
 
 Specifically:
 
-- `/api/data/*` is still the current runtime surface
-- generated tables now enforce runtime actor/access policy on that router
+- `/api/data/*` is the app-facing runtime surface
+- `/api/admin/data/*` is a separate superadmin-only management router
+- generated tables now enforce runtime actor/access policy on the client-facing router
 - signed-in callers inherit `public` routes, and owner-scoped routes enforce `ownershipField` at runtime
+- field-level read, create, and update visibility can now be restricted per actor, and metadata reflects the caller-visible read fields
 - relation includes now respect the target table's `get` access policy and target hidden-field redaction
 - filter and sort allowlists now derive from readable fields even in direct service-level callers, so hidden fields cannot be queried by bypassing the preview layer
 - `/api/data/*` now rate-limits anonymous callers by client IP and API-key callers by key id using the API settings defaults
 - the admin schema editor now exposes preset-based policy authoring for `public`, `session`, and `apiKey` use cases
+- the admin schema editor now exposes field-level actor rules for read/create/update visibility
+- the API Preview panel now exposes an actor-aware policy simulator for `public`, `session`, and `apiKey` callers
 - the schema editor now warns on risky policy combinations such as public writes, sensitive public filters, and broad public includes
-- built-in auth/system tables are default-deny there unless explicitly allowlisted
-- there is still no separate polished client-facing router beyond the current data surface
+- built-in auth/system tables are default-deny on the app-facing router unless explicitly allowlisted
 - the SDK still uses generic record types rather than generated per-resource TypeScript models
 
-That is acceptable for this phase because the goal is to lock down the contract model before we build the client-facing runtime around it.
+That is acceptable for this phase because the goal is to harden the separated client/admin data plane before we replace the generic SDK surface with generated per-resource models.

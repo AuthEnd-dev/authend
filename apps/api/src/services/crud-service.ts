@@ -294,11 +294,39 @@ function selectColumnsSql(descriptor: TableDescriptor) {
   return descriptor.fields.map((field) => quoteIdentifier(field.name)).join(", ");
 }
 
-function readableFields(descriptor: TableDescriptor, config?: TableApiConfig | null) {
+function fieldRuleAllowsActor(ruleActors: ApiAccessActor[] | undefined, actorKind: ApiAccessActor) {
+  if (actorKind === "superadmin") {
+    return true;
+  }
+
+  if (!ruleActors) {
+    return true;
+  }
+
+  return ruleActors.includes("public") || ruleActors.includes(actorKind);
+}
+
+function hiddenFieldSetForActor(
+  descriptor: TableDescriptor,
+  config?: TableApiConfig | null,
+  actorKind: ApiAccessActor = "public",
+) {
   const hiddenFields = new Set([
     ...(config?.hiddenFields ?? []),
     ...(descriptor.source === "builtin" ? builtinTableExposurePolicy(descriptor.table).redactedFields : []),
   ]);
+
+  for (const field of descriptor.fields) {
+    if (!fieldRuleAllowsActor(config?.fieldVisibility?.[field.name]?.read, actorKind)) {
+      hiddenFields.add(field.name);
+    }
+  }
+
+  return hiddenFields;
+}
+
+function readableFields(descriptor: TableDescriptor, config?: TableApiConfig | null) {
+  const hiddenFields = hiddenFieldSetForActor(descriptor, config, "superadmin");
   return descriptor.fields.filter((field) => !hiddenFields.has(field.name));
 }
 
@@ -404,28 +432,20 @@ export async function getTableDescriptor(table: string): Promise<TableDescriptor
   };
 }
 
-export async function getClientTableDescriptor(table: string): Promise<TableDescriptor> {
+export async function getClientTableDescriptor(table: string, access?: RecordAccessContext): Promise<TableDescriptor> {
   const resource = await resolveTableResource(table);
   assertDataApiReadable(resource);
   return {
     ...resource.descriptor,
-    fields: readableFields(resource.descriptor, resource.config),
+    fields: resource.descriptor.fields.filter(
+      (field) => !hiddenFieldSetForActor(resource.descriptor, resource.config, access?.actorKind ?? "public").has(field.name),
+    ),
     pagination: descriptorPagination(resource.config),
   };
 }
 
 function unsafeParams(values: readonly unknown[]) {
   return values as never[];
-}
-
-async function hiddenFieldsForTable(table: string) {
-  if (builtinTables[table]) {
-    return new Set(builtinTableExposurePolicy(table).redactedFields);
-  }
-
-  const draft = await getSchemaDraft();
-  const current = draft.tables.find((entry) => entry.name === table || (entry.api?.routeSegment ?? entry.name) === table);
-  return new Set(current?.api?.hiddenFields ?? []);
 }
 
 function sanitiseRecord(record: Record<string, unknown>, hiddenFields: Set<string>) {
@@ -435,11 +455,13 @@ function sanitiseRecord(record: Record<string, unknown>, hiddenFields: Set<strin
 async function sanitiseRecordForTable(
   table: string,
   record: Record<string, unknown>,
+  access?: RecordAccessContext,
   cache = new Map<string, Set<string>>(),
 ) {
   let hiddenFields = cache.get(table);
   if (!hiddenFields) {
-    hiddenFields = await hiddenFieldsForTable(table);
+    const resource = await resolveTableResource(table);
+    hiddenFields = hiddenFieldSetForActor(resource.descriptor, resource.config, access?.actorKind ?? "public");
     cache.set(table, hiddenFields);
   }
   return sanitiseRecord(record, hiddenFields);
@@ -513,6 +535,24 @@ export type ListRecordsOptions = {
 export type MutationRecordOptions = {
   access?: RecordAccessContext;
 };
+
+function fieldIsWritable(
+  fieldName: string,
+  descriptor: TableDescriptor,
+  config: TableApiConfig | null | undefined,
+  operation: "create" | "update",
+  actorKind: ApiAccessActor = "public",
+) {
+  if (actorKind === "superadmin") {
+    return true;
+  }
+
+  if (!descriptor.fields.some((field) => field.name === fieldName)) {
+    return false;
+  }
+
+  return fieldRuleAllowsActor(config?.fieldVisibility?.[fieldName]?.[operation], actorKind);
+}
 
 function applyOwnershipFilter(
   descriptor: TableDescriptor,
@@ -685,7 +725,10 @@ export async function listRecords(table: string, query: URLSearchParams, options
   const resource = await resolveTableResource(table);
   assertDataApiReadable(resource);
   const { descriptor } = resource;
-  const readableFieldNames = readableFields(descriptor, resource.config).map((field) => field.name);
+  const actorKind = options.access?.actorKind ?? "public";
+  const readableFieldNames = descriptor.fields
+    .filter((field) => !hiddenFieldSetForActor(descriptor, resource.config, actorKind).has(field.name))
+    .map((field) => field.name);
   const pagination = options.pagination ?? {
     enabled: true,
     defaultPageSize: 20,
@@ -705,14 +748,23 @@ export async function listRecords(table: string, query: URLSearchParams, options
     enabled: true,
     fields: [],
   };
+  const effectiveSorting = {
+    ...sorting,
+    fields: sorting.fields.filter((field) => readableFieldNames.includes(field)),
+    defaultField: readableFieldNames.includes(sorting.defaultField ?? "") ? sorting.defaultField : readableFieldNames[0] ?? descriptor.primaryKey,
+  };
+  const effectiveFiltering = {
+    ...filtering,
+    fields: filtering.fields.filter((field) => readableFieldNames.includes(field)),
+  };
   const page = pagination.enabled ? Math.max(1, Number(query.get("page") ?? "1")) : 1;
   const requestedPageSize = pagination.enabled ? Number(query.get("pageSize") ?? String(pagination.defaultPageSize)) : pagination.defaultPageSize;
   const pageSize = Math.min(pagination.maxPageSize, Math.max(1, requestedPageSize));
   const requestedSort = query.get("sort");
-  const sort = sorting.enabled ? requestedSort ?? sorting.defaultField ?? descriptor.primaryKey : sorting.defaultField ?? descriptor.primaryKey;
-  const order = sorting.enabled
-    ? (query.get("order") ?? sorting.defaultOrder).toLowerCase() === "asc" ? "asc" : "desc"
-    : sorting.defaultOrder;
+  const sort = effectiveSorting.enabled ? requestedSort ?? effectiveSorting.defaultField ?? descriptor.primaryKey : effectiveSorting.defaultField ?? descriptor.primaryKey;
+  const order = effectiveSorting.enabled
+    ? (query.get("order") ?? effectiveSorting.defaultOrder).toLowerCase() === "asc" ? "asc" : "desc"
+    : effectiveSorting.defaultOrder;
   const filterField = query.get("filterField");
   const filterValue = query.get("filterValue");
   const includes = (query.get("include") ?? "")
@@ -720,11 +772,11 @@ export async function listRecords(table: string, query: URLSearchParams, options
     .map((value) => value.trim())
     .filter(Boolean);
 
-  if (!sorting.enabled && (query.get("sort") || query.get("order"))) {
+  if (!effectiveSorting.enabled && (query.get("sort") || query.get("order"))) {
     throw new HttpError(400, `Sorting is disabled for ${descriptor.table}`);
   }
 
-  if (requestedSort && !sorting.fields.includes(sort)) {
+  if (requestedSort && !effectiveSorting.fields.includes(sort)) {
     throw new HttpError(400, `Unknown sort field ${sort}`);
   }
 
@@ -732,19 +784,19 @@ export async function listRecords(table: string, query: URLSearchParams, options
   const values: unknown[] = [];
 
   if (filterValue) {
-    if (!filtering.enabled) {
+    if (!effectiveFiltering.enabled) {
       throw new HttpError(400, `Filtering is disabled for ${descriptor.table}`);
     }
 
     values.push(filterValue);
 
     if (filterField) {
-      if (!filtering.fields.includes(filterField)) {
+      if (!effectiveFiltering.fields.includes(filterField)) {
         throw new HttpError(400, `Unknown filter field ${filterField}`);
       }
       whereClauses.push(`${quoteIdentifier(filterField)}::text ilike '%' || $${values.length} || '%'`);
     } else {
-      const searchableFields = filtering.fields.map((field) => `${quoteIdentifier(field)}::text ilike '%' || $${values.length} || '%'`);
+      const searchableFields = effectiveFiltering.fields.map((field) => `${quoteIdentifier(field)}::text ilike '%' || $${values.length} || '%'`);
       if (searchableFields.length > 0) {
         whereClauses.push(`(${searchableFields.join(" or ")})`);
       }
@@ -781,7 +833,7 @@ export async function listRecords(table: string, query: URLSearchParams, options
   if (includes.length > 0) {
     const filteredItems: Record<string, unknown>[] = [];
     const hiddenFieldCache = new Map<string, Set<string>>();
-    const hiddenFields = await hiddenFieldsForTable(descriptor.table);
+    const hiddenFields = hiddenFieldSetForActor(descriptor, resource.config, actorKind);
     hiddenFieldCache.set(descriptor.table, hiddenFields);
 
     for (const item of items as Record<string, unknown>[]) {
@@ -826,7 +878,7 @@ export async function listRecords(table: string, query: URLSearchParams, options
           break;
         }
 
-        sanitisedItem[relation.resultKey] = related ? await sanitiseRecordForTable(relation.targetTable, related, hiddenFieldCache) : null;
+        sanitisedItem[relation.resultKey] = related ? await sanitiseRecordForTable(relation.targetTable, related, relatedReadAccess.access, hiddenFieldCache) : null;
       }
 
       if (shouldKeep) {
@@ -844,7 +896,7 @@ export async function listRecords(table: string, query: URLSearchParams, options
 
   const hiddenFieldCache = new Map<string, Set<string>>();
   return {
-    items: await Promise.all((items as Record<string, unknown>[]).map((item) => sanitiseRecordForTable(descriptor.table, item, hiddenFieldCache))),
+    items: await Promise.all((items as Record<string, unknown>[]).map((item) => sanitiseRecordForTable(descriptor.table, item, options.access, hiddenFieldCache))),
     total: Number(count),
     page,
     pageSize,
@@ -868,7 +920,7 @@ export async function getRecord(table: string, id: string, options: MutationReco
   if (!record) {
     throw new HttpError(404, "Record not found");
   }
-  return sanitiseRecordForTable(descriptor.table, record);
+  return sanitiseRecordForTable(descriptor.table, record, options.access);
 }
 
 export async function createRecord(table: string, payload: Record<string, unknown>, options: MutationRecordOptions = {}) {
@@ -884,7 +936,12 @@ export async function createRecord(table: string, payload: Record<string, unknow
     nextPayload[options.access.ownershipField] = options.access.subjectId;
   }
   const allowedFields = descriptor.fields;
+  const actorKind = options.access?.actorKind ?? "public";
   const columns = Object.keys(nextPayload).filter((column) => allowedFields.some((field) => field.name === column));
+  const blockedColumns = columns.filter((column) => !fieldIsWritable(column, descriptor, resource.config, "create", actorKind));
+  if (blockedColumns.length > 0) {
+    throw new HttpError(403, `Cannot set protected field${blockedColumns.length === 1 ? "" : "s"} ${blockedColumns.join(", ")}`);
+  }
   if (columns.length === 0) {
     throw new HttpError(400, "No writable fields provided");
   }
@@ -898,7 +955,7 @@ export async function createRecord(table: string, payload: Record<string, unknow
      returning *`,
     unsafeParams(values),
   );
-  return sanitiseRecordForTable(descriptor.table, record);
+  return sanitiseRecordForTable(descriptor.table, record, options.access);
 }
 
 export async function updateRecord(table: string, id: string, payload: Record<string, unknown>, options: MutationRecordOptions = {}) {
@@ -910,9 +967,14 @@ export async function updateRecord(table: string, id: string, payload: Record<st
   if (options.access?.ownershipField && !options.access.bypassOwnership) {
     delete nextPayload[options.access.ownershipField];
   }
+  const actorKind = options.access?.actorKind ?? "public";
   const columns = Object.keys(nextPayload).filter(
     (column) => column !== descriptor.primaryKey && descriptor.fields.some((field) => field.name === column),
   );
+  const blockedColumns = columns.filter((column) => !fieldIsWritable(column, descriptor, resource.config, "update", actorKind));
+  if (blockedColumns.length > 0) {
+    throw new HttpError(403, `Cannot update protected field${blockedColumns.length === 1 ? "" : "s"} ${blockedColumns.join(", ")}`);
+  }
   if (columns.length === 0) {
     throw new HttpError(400, "No writable fields provided");
   }
@@ -936,7 +998,7 @@ export async function updateRecord(table: string, id: string, payload: Record<st
   if (!record) {
     throw new HttpError(404, "Record not found");
   }
-  return sanitiseRecordForTable(descriptor.table, record);
+  return sanitiseRecordForTable(descriptor.table, record, options.access);
 }
 
 export async function deleteRecord(table: string, id: string, options: MutationRecordOptions = {}) {

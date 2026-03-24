@@ -1,6 +1,6 @@
 import type { ApiPreviewOperation, ApiResource } from "@authend/shared";
 import { Hono } from "hono";
-import { resolveRequestActor, type RequestActor } from "../middleware/auth";
+import { requireSuperAdmin, resolveRequestActor, type RequestActor } from "../middleware/auth";
 import { HttpError } from "../lib/http";
 import { apiKeyPermissionName, buildApiResource, listApiResources } from "../services/api-design-service";
 import { rateLimitDataRequest } from "../services/rate-limit-service";
@@ -146,67 +146,99 @@ async function applyDataRateLimit(c: Parameters<typeof resolveRequestActor>[0], 
   }
 }
 
-export const dataRouter = new Hono()
-  .get("/", async (c) => {
-    const actor = await resolveRequestActor(c);
-    await applyDataRateLimit(c, actor);
-    const resources = await listApiResources();
-    return c.json({
-      tables: resources.filter((resource) => canAccessOperation(resource, actor, "list")).map((resource) => resource.table),
-    });
-  })
-  .get("/meta/:table", async (c) => {
-    const actor = await resolveRequestActor(c);
-    await applyDataRateLimit(c, actor);
-    const table = c.req.param("table");
-    const resource = await buildApiResource(table);
-    const visible = (["list", "get", "create", "update", "delete"] as const).some((operation) => canAccessOperation(resource, actor, operation));
-    if (!visible) {
-      if (actor.kind === "public") {
-        throw new HttpError(401, "Authentication required");
+function buildDataRouter(options: { adminOnly: boolean; rateLimited: boolean }) {
+  const router = new Hono();
+
+  if (options.adminOnly) {
+    router.use("*", requireSuperAdmin);
+  }
+
+  return router
+    .get("/", async (c) => {
+      const actor = await resolveRequestActor(c);
+      if (options.rateLimited) {
+        await applyDataRateLimit(c, actor);
       }
-      throw new HttpError(403, `Cannot access metadata for ${resource.routeSegment}`);
-    }
-    return c.json(await getClientTableDescriptor(table));
-  })
-  .get("/:table", async (c) => {
-    const table = c.req.param("table");
-    const actor = await resolveRequestActor(c);
-    await applyDataRateLimit(c, actor);
-    const { resource, access } = await authoriseDataOperation(table, actor, "list");
-    return c.json(
-      await listRecords(table, new URL(c.req.url).searchParams, {
-        pagination: resource.query.pagination,
-        filtering: resource.query.filtering,
-        sorting: resource.query.sorting,
-        includes: resource.query.includes,
-        access,
-      }),
-    );
-  })
-  .post("/:table", async (c) => {
-    const table = c.req.param("table");
-    const actor = await resolveRequestActor(c);
-    await applyDataRateLimit(c, actor);
-    const { access } = await authoriseDataOperation(table, actor, "create");
-    return c.json(await createRecord(table, await c.req.json(), { access }));
-  })
-  .get("/:table/:id", async (c) => {
-    const actor = await resolveRequestActor(c);
-    await applyDataRateLimit(c, actor);
-    const { access } = await authoriseDataOperation(c.req.param("table"), actor, "get");
-    return c.json(await getRecord(c.req.param("table"), c.req.param("id"), { access }));
-  })
-  .patch("/:table/:id", async (c) => {
-    const actor = await resolveRequestActor(c);
-    await applyDataRateLimit(c, actor);
-    const { access } = await authoriseDataOperation(c.req.param("table"), actor, "update");
-    return c.json(await updateRecord(c.req.param("table"), c.req.param("id"), await c.req.json(), { access }));
-  })
-  .delete("/:table/:id", async (c) => {
-    const actor = await resolveRequestActor(c);
-    await applyDataRateLimit(c, actor);
-    const { access } = await authoriseDataOperation(c.req.param("table"), actor, "delete");
-    await deleteRecord(c.req.param("table"), c.req.param("id"), { access });
-    return c.body(null, 204);
-  });
+      const resources = await listApiResources();
+      return c.json({
+        tables: resources.filter((resource) => canAccessOperation(resource, actor, "list")).map((resource) => resource.table),
+      });
+    })
+    .get("/meta/:table", async (c) => {
+      const actor = await resolveRequestActor(c);
+      if (options.rateLimited) {
+        await applyDataRateLimit(c, actor);
+      }
+      const table = c.req.param("table");
+      const resource = await buildApiResource(table);
+      const visible = (["list", "get", "create", "update", "delete"] as const).some((operation) => canAccessOperation(resource, actor, operation));
+      if (!visible) {
+        if (actor.kind === "public") {
+          throw new HttpError(401, "Authentication required");
+        }
+        throw new HttpError(403, `Cannot access metadata for ${resource.routeSegment}`);
+      }
+      return c.json(await getClientTableDescriptor(table, { actorKind: actor.kind, subjectId: actor.subjectId, permissions: actor.kind === "apiKey" ? actor.permissions : undefined }));
+    })
+    .get("/:table", async (c) => {
+      const table = c.req.param("table");
+      const actor = await resolveRequestActor(c);
+      if (options.rateLimited) {
+        await applyDataRateLimit(c, actor);
+      }
+      const { resource, access } = await authoriseDataOperation(table, actor, "list");
+      return c.json(
+        await listRecords(table, new URL(c.req.url).searchParams, {
+          pagination: resource.query.pagination,
+          filtering: resource.query.filtering,
+          sorting: resource.query.sorting,
+          includes: resource.query.includes,
+          access,
+        }),
+      );
+    })
+    .post("/:table", async (c) => {
+      const table = c.req.param("table");
+      const actor = await resolveRequestActor(c);
+      if (options.rateLimited) {
+        await applyDataRateLimit(c, actor);
+      }
+      const { access } = await authoriseDataOperation(table, actor, "create");
+      return c.json(await createRecord(table, await c.req.json(), { access }));
+    })
+    .get("/:table/:id", async (c) => {
+      const actor = await resolveRequestActor(c);
+      if (options.rateLimited) {
+        await applyDataRateLimit(c, actor);
+      }
+      const { access } = await authoriseDataOperation(c.req.param("table"), actor, "get");
+      return c.json(await getRecord(c.req.param("table"), c.req.param("id"), { access }));
+    })
+    .patch("/:table/:id", async (c) => {
+      const actor = await resolveRequestActor(c);
+      if (options.rateLimited) {
+        await applyDataRateLimit(c, actor);
+      }
+      const { access } = await authoriseDataOperation(c.req.param("table"), actor, "update");
+      return c.json(await updateRecord(c.req.param("table"), c.req.param("id"), await c.req.json(), { access }));
+    })
+    .delete("/:table/:id", async (c) => {
+      const actor = await resolveRequestActor(c);
+      if (options.rateLimited) {
+        await applyDataRateLimit(c, actor);
+      }
+      const { access } = await authoriseDataOperation(c.req.param("table"), actor, "delete");
+      await deleteRecord(c.req.param("table"), c.req.param("id"), { access });
+      return c.body(null, 204);
+    });
+}
+
+export const dataRouter = buildDataRouter({
+  adminOnly: false,
+  rateLimited: true,
+});
+
+export const adminDataRouter = buildDataRouter({
+  adminOnly: true,
+  rateLimited: false,
+});

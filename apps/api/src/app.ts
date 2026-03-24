@@ -9,7 +9,7 @@ import { healthRouter } from "./routes/health";
 import { setupRouter } from "./routes/setup";
 import { authRouter } from "./routes/auth";
 import { adminRouter } from "./routes/admin";
-import { dataRouter } from "./routes/data";
+import { adminDataRouter, dataRouter } from "./routes/data";
 import { openApiRouter } from "./routes/openapi";
 import { systemRouter } from "./routes/system";
 
@@ -70,6 +70,7 @@ export function createApp() {
   app.route("/api/setup", setupRouter);
   app.route("/api/auth", authRouter);
   app.route("/api/admin", adminRouter);
+  app.route("/api/admin/data", adminDataRouter);
   app.route("/api/system", systemRouter);
   app.route("/api/data", dataRouter);
   app.route("/api", openApiRouter);

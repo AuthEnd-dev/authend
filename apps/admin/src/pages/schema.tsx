@@ -66,6 +66,7 @@ const initialDraft: SchemaDraft = {
           fields: [],
         },
         hiddenFields: [],
+        fieldVisibility: {},
       },
     },
   ],

@@ -69,7 +69,7 @@ Goal: move from superadmin-operated CRUD to a true BaaS runtime.
 - [x] Formalize app-facing actors: `public`, `session`, `apiKey`, `superadmin`.
 - [x] Make table access policy first-class in the product, not only hidden config.
 - [x] Support row ownership policies with clear ownership field setup.
-- [ ] Support field-level read/write visibility rules.
+- [x] Support field-level read/write visibility rules.
 - [x] Support operation-level access per actor for list/get/create/update/delete.
 - [x] Add policy presets for common cases:
 - [x] Public read-only content
@@ -79,7 +79,7 @@ Goal: move from superadmin-operated CRUD to a true BaaS runtime.
 
 ### Runtime Enforcement
 
-- [ ] Split app-facing data access from admin-only management routes cleanly.
+- [x] Split app-facing data access from admin-only management routes cleanly.
 - [x] Enforce `authMode` and access policy consistently in runtime, not just preview metadata.
 - [x] Ensure relation includes respect access rules and hidden fields.
 - [x] Ensure filters and sorts cannot bypass visibility constraints.
@@ -94,9 +94,9 @@ Goal: move from superadmin-operated CRUD to a true BaaS runtime.
 
 ### Exit Criteria
 
-- [ ] A non-admin app user can safely access allowed resources without touching admin routes.
-- [ ] Policy configuration is visible, editable, and testable from the admin UI.
-- [ ] Runtime authorization matches the documented contract.
+- [x] A non-admin app user can safely access allowed resources without touching admin routes.
+- [x] Policy configuration is visible, editable, and testable from the admin UI.
+- [x] Runtime authorization matches the documented contract.
 
 ## Phase 2: Make The TypeScript DX Best-In-Class
 

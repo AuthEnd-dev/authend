@@ -18,7 +18,7 @@ Full product and architecture documentation lives in [docs/ARCHITECTURE.md](./do
   - `magicLink`
   - `admin`
 - Schema draft preview and apply flow
-- Generated CRUD endpoints at `/api/data/:table`
+- App-facing CRUD endpoints at `/api/data/:table`
 - Typed SDK in [`packages/sdk`](./packages/sdk)
 - Migration history and audit logging
 - API contract preview with OpenAPI and SDK-aligned resource metadata
@@ -109,15 +109,18 @@ v1 intentionally blocks destructive operations:
 - `GET /api/admin/audit`
 - `GET|POST /api/admin/api-preview/*`
 - `GET|POST|PATCH|DELETE /api/data/:table`
+- `GET|POST|PATCH|DELETE /api/admin/data/:table`
 
-Admin routes require a Better Auth session and a seeded superadmin record. Data routes enforce per-table access policy, and built-in auth/system tables are default-deny unless explicitly allowlisted for read-only admin use.
+Admin routes require a Better Auth session and a seeded superadmin record. App-facing data routes enforce per-table access policy, and built-in auth/system tables are default-deny unless explicitly allowlisted for read-only admin use. The admin dashboard SDK talks to `/api/admin/data/*`, while external clients default to `/api/data/*`.
 
 ## Security defaults
 
 - Generated app tables stay on the table-level API policy you define, which defaults to superadmin-only in fresh drafts.
 - App-facing actors are `public`, `session`, `apiKey`, and `superadmin`.
 - Public access applies to anonymous callers and authenticated callers; superadmins bypass app-facing policy checks.
+- Per-field read, create, and update visibility can now be restricted per actor in the schema editor.
 - Built-in auth and system tables are blocked from `/api/data/*` by default.
+- `/api/admin/data/*` is reserved for superadmin-only management flows.
 - The current allowlisted built-in views are intentionally narrow and read-only.
 - Sensitive fields on allowlisted built-in tables are redacted before metadata or record payloads are returned.
 - Relation includes are filtered through the target table's own read policy, and hidden fields stay redacted inside included records.
@@ -134,7 +137,8 @@ The schema editor now exposes first-class policy presets for the common access p
 - API-key server-to-server access
 
 Owner-scoped presets guide you toward an ownership field such as `owner_id` or `user_id`, and runtime enforcement is covered by integration tests for public, session, and API-key callers.
-The schema editor also flags risky combinations such as public writes, public filtering on sensitive field names, and broad public relation includes.
+The schema editor also supports field-level visibility for read/create/update and flags risky combinations such as public writes, public filtering on sensitive field names, and broad public relation includes.
+The API Preview panel now includes an actor-aware policy simulator so you can verify allowed operations, visible fields, and query surface for `public`, `session`, and `apiKey` callers before shipping the table.
 
 ## AI assistant
 

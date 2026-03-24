@@ -144,6 +144,7 @@ type AuthendClientBaseOptions = {
   fetch?: typeof fetch;
   enabledPlugins?: PluginId[];
   authClient?: AuthendAuthClient;
+  dataBasePath?: string;
 };
 
 export type AuthendClientOptions<TSchema extends AuthendSchemaShape> = AuthendClientBaseOptions & {
@@ -214,6 +215,7 @@ export function createAuthendClient(
 export function createAuthendClient<TSchema extends AuthendSchemaShape>(
   options: AuthendClientOptions<TSchema> | AuthendClientOptionsWithoutSchema,
 ) {
+  const dataBasePath = options.dataBasePath ?? '/api/data';
   const auth =
     options.authClient ??
     createAuthClient({
@@ -277,21 +279,21 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape>(
       if (typedParams?.include) {
         searchParams.set('include', Array.isArray(typedParams.include) ? typedParams.include.join(',') : typedParams.include);
       }
-      return request<ListResponse<TRecord>>(`/api/data/${table}${searchParams.size > 0 ? `?${searchParams.toString()}` : ''}`);
+      return request<ListResponse<TRecord>>(`${dataBasePath}/${table}${searchParams.size > 0 ? `?${searchParams.toString()}` : ''}`);
     },
-    get: (id: string) => request<TRecord>(`/api/data/${table}/${id}`),
+    get: (id: string) => request<TRecord>(`${dataBasePath}/${table}/${id}`),
     create: (payload: TCreate) =>
-      request<TRecord>(`/api/data/${table}`, {
+      request<TRecord>(`${dataBasePath}/${table}`, {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
     update: (id: string, payload: TUpdate) =>
-      request<TRecord>(`/api/data/${table}/${id}`, {
+      request<TRecord>(`${dataBasePath}/${table}/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(payload),
       }),
     remove: (id: string) =>
-      request<void>(`/api/data/${table}/${id}`, {
+      request<void>(`${dataBasePath}/${table}/${id}`, {
         method: 'DELETE',
       }),
   });
@@ -303,8 +305,8 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape>(
 
   const dataBase: BaseDataClient = {
     resource,
-    tables: () => request<{ tables: string[] }>('/api/data'),
-    meta: (table: string) => request<TableDescriptor>(`/api/data/meta/${table}`),
+    tables: () => request<{ tables: string[] }>(dataBasePath),
+    meta: (table: string) => request<TableDescriptor>(`${dataBasePath}/meta/${table}`),
     list: (table: string, searchParams?: URLSearchParams) =>
       resource(table).list(
         searchParams

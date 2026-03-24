@@ -128,7 +128,7 @@ Main responsibilities:
 - serve health and readiness routes
 - mount Better Auth at `/api/auth/*`
 - expose admin APIs for plugins, schema, migrations, and audit logs
-- expose generic CRUD routes at `/api/data/:table`
+- expose app-facing CRUD routes at `/api/data/:table`
 - serve the OpenAPI document
 - serve the built admin frontend under `/admin`
 
@@ -359,6 +359,12 @@ These are handled by Better Auth directly.
 - `GET /api/data/:table/:id`
 - `PATCH /api/data/:table/:id`
 - `DELETE /api/data/:table/:id`
+- `GET /api/admin/data`
+- `GET /api/admin/data/:table`
+- `POST /api/admin/data/:table`
+- `GET /api/admin/data/:table/:id`
+- `PATCH /api/admin/data/:table/:id`
+- `DELETE /api/admin/data/:table/:id`
 
 ## 10. Shared Contracts
 
@@ -384,10 +390,12 @@ The current intended security model is:
 - Better Auth handles sessions and auth flows
 - only seeded superadmins can access admin routes
 - admin routes are separate from public auth routes
-- generated app data routes are governed by table API policy across `public`, `session`, `apiKey`, and `superadmin` actors
-- built-in auth/system tables are default-deny on the data API unless explicitly allowlisted for read-only admin use
+- app-facing data routes are governed by table API policy across `public`, `session`, `apiKey`, and `superadmin` actors
+- generated table fields can also be restricted per actor for read, create, and update visibility
+- admin-only data management routes are mounted separately and require superadmin access before table policy evaluation
+- built-in auth/system tables are default-deny on the app-facing data API unless explicitly allowlisted for read-only admin use
 
-That last point is important. The runtime now enforces per-table access policy on generated tables, including owner-scoped session routes and API-key permissions, and the admin UI exposes policy presets for the common patterns. The product UX is still operator-grade rather than polished hosted-BaaS-grade tooling.
+That last point is important. The runtime now enforces per-table access policy on generated tables, including owner-scoped session routes and API-key permissions, and the admin UI exposes policy presets plus an actor-aware API Preview simulator for the common patterns. The product UX is still operator-grade rather than polished hosted-BaaS-grade tooling.
 
 ## 12. Current State Of The Repository
 

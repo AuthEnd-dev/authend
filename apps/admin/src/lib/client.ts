@@ -28,7 +28,7 @@ import type {
 
 const baseURL = import.meta.env.VITE_API_URL ?? 'http://localhost:7002';
 
-const sdkClient = createAuthendClient({ baseURL });
+const sdkClient = createAuthendClient({ baseURL, dataBasePath: '/api/admin/data' });
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${baseURL}${path}`, {
