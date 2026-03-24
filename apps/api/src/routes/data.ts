@@ -12,21 +12,14 @@ import {
   updateRecord,
 } from "../services/crud-service";
 
-function canAccessOperation(resource: ApiResource, actor: RequestActor, operation: ApiPreviewOperation["key"]) {
-  if (!resource.config.operations[operation]) {
-    return false;
-  }
+function accessAllowsActor(resource: ApiResource, actor: RequestActor, operation: ApiPreviewOperation["key"]) {
+  const access = resource.config.access[operation];
 
-  if (actor.kind === "superadmin") {
+  if (access.actors.includes("public")) {
     return true;
   }
 
-  const access = resource.config.access[operation];
   if (!access.actors.includes(actor.kind)) {
-    return false;
-  }
-
-  if (access.scope === "own" && actor.subjectId === null) {
     return false;
   }
 
@@ -37,7 +30,29 @@ function canAccessOperation(resource: ApiResource, actor: RequestActor, operatio
   return true;
 }
 
+function canAccessOperation(resource: ApiResource, actor: RequestActor, operation: ApiPreviewOperation["key"]) {
+  if (!resource.config.operations[operation]) {
+    return false;
+  }
+
+  if (actor.kind === "superadmin") {
+    return true;
+  }
+
+  const access = resource.config.access[operation];
+  if (!accessAllowsActor(resource, actor, operation)) {
+    return false;
+  }
+
+  if (access.scope === "own" && actor.subjectId === null) {
+    return false;
+  }
+
+  return true;
+}
+
 async function authoriseDataOperation(tableInput: string, actor: RequestActor, operation: ApiPreviewOperation["key"]) {
+  await getClientTableDescriptor(tableInput);
   const resource = await buildApiResource(tableInput);
 
   if (!resource.config.operations[operation]) {
@@ -48,6 +63,7 @@ async function authoriseDataOperation(tableInput: string, actor: RequestActor, o
     return {
       resource,
       access: {
+        actorKind: actor.kind,
         ownershipField: resource.config.access.ownershipField ?? null,
         subjectId: actor.subjectId,
         bypassOwnership: true,
@@ -56,7 +72,7 @@ async function authoriseDataOperation(tableInput: string, actor: RequestActor, o
   }
 
   const access = resource.config.access[operation];
-  if (!access.actors.includes(actor.kind)) {
+  if (!accessAllowsActor(resource, actor, operation)) {
     if (actor.kind === "public") {
       throw new HttpError(401, "Authentication required");
     }
@@ -70,7 +86,7 @@ async function authoriseDataOperation(tableInput: string, actor: RequestActor, o
     throw new HttpError(403, "Owner-scoped access requires a subject id");
   }
 
-  if (actor.kind === "apiKey") {
+  if (actor.kind === "apiKey" && !access.actors.includes("public")) {
     const permission = apiKeyPermissionName(resource.routeSegment, operation);
     if (!actor.permissions.has(permission)) {
       throw new HttpError(403, `Missing API key permission ${permission}`);
@@ -80,9 +96,11 @@ async function authoriseDataOperation(tableInput: string, actor: RequestActor, o
   return {
     resource,
     access: {
+      actorKind: actor.kind,
       ownershipField: access.scope === "own" ? resource.config.access.ownershipField ?? null : null,
       subjectId: actor.subjectId,
       bypassOwnership: false,
+      permissions: actor.kind === "apiKey" ? actor.permissions : undefined,
     },
   };
 }

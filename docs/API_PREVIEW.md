@@ -9,6 +9,7 @@ The immediate objective is not just to show example requests. It is to define, p
 - route segment
 - stable SDK resource name
 - auth mode
+- actor-based access policy
 - enabled CRUD operations
 - pagination defaults and limits
 - allowed filter fields
@@ -32,6 +33,7 @@ Important fields:
 - `tag`
 - `description`
 - `authMode`
+- `access`
 - `operations`
 - `pagination`
 - `filtering`
@@ -135,8 +137,13 @@ These settings are contract metadata first. They do not fully change runtime aut
 Specifically:
 
 - `/api/data/*` is still the current runtime surface
-- those routes are still protected by `requireSuperAdmin`
-- `authMode` is represented in preview and OpenAPI, but not yet enforced by a dedicated public/client router
+- generated tables now enforce runtime actor/access policy on that router
+- signed-in callers inherit `public` routes, and owner-scoped routes enforce `ownershipField` at runtime
+- relation includes now respect the target table's `get` access policy and target hidden-field redaction
+- the admin schema editor now exposes preset-based policy authoring for `public`, `session`, and `apiKey` use cases
+- the schema editor now warns on risky policy combinations such as public writes, sensitive public filters, and broad public includes
+- built-in auth/system tables are default-deny there unless explicitly allowlisted
+- there is still no separate polished client-facing router beyond the current data surface
 - the SDK still uses generic record types rather than generated per-resource TypeScript models
 
 That is acceptable for this phase because the goal is to lock down the contract model before we build the client-facing runtime around it.

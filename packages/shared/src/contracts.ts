@@ -113,6 +113,16 @@ export const apiAccessScopeSchema = z.enum(["all", "own"]);
 
 export type ApiAccessScope = z.infer<typeof apiAccessScopeSchema>;
 
+export const tableApiPolicyPresetSchema = z.enum([
+  "adminOnly",
+  "publicReadOnly",
+  "sessionPrivate",
+  "sessionReadAllWriteOwn",
+  "apiKeyServer",
+]);
+
+export type TableApiPolicyPreset = z.infer<typeof tableApiPolicyPresetSchema>;
+
 function defaultOperationAccess() {
   return {
     actors: ["superadmin"] as ApiAccessActor[],

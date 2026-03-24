@@ -106,23 +106,23 @@ function normaliseAccess(
   return {
     ownershipField,
     list: {
-      actors: sortActors([...source.list.actors, "superadmin"]),
+      actors: sortActors(source.list.actors),
       scope: ownershipField ? source.list.scope : "all",
     },
     get: {
-      actors: sortActors([...source.get.actors, "superadmin"]),
+      actors: sortActors(source.get.actors),
       scope: ownershipField ? source.get.scope : "all",
     },
     create: {
-      actors: sortActors([...source.create.actors, "superadmin"]),
+      actors: sortActors(source.create.actors),
       scope: ownershipField ? source.create.scope : "all",
     },
     update: {
-      actors: sortActors([...source.update.actors, "superadmin"]),
+      actors: sortActors(source.update.actors),
       scope: ownershipField ? source.update.scope : "all",
     },
     delete: {
-      actors: sortActors([...source.delete.actors, "superadmin"]),
+      actors: sortActors(source.delete.actors),
       scope: ownershipField ? source.delete.scope : "all",
     },
   };

@@ -1,6 +1,15 @@
 import type { z } from "zod";
 import { schemaDraftSchema } from "./contracts";
-import type { FieldBlueprint, FieldType, SchemaDraft, TableBlueprint } from "./contracts";
+import type {
+  ApiAccessActor,
+  ApiAccessScope,
+  FieldBlueprint,
+  FieldType,
+  SchemaDraft,
+  TableApiAccess,
+  TableApiPolicyPreset,
+  TableBlueprint,
+} from "./contracts";
 
 const builtinRelationTables = new Set([
   "user",
@@ -27,6 +36,222 @@ const reservedIdentifiers = new Set([
   "select",
   "table",
 ]);
+
+const operationKeys = ["list", "get", "create", "update", "delete"] as const;
+const actorOrder: ApiAccessActor[] = ["public", "session", "apiKey", "superadmin"];
+const sensitiveFieldPattern = /(email|token|secret|password|verification|private|internal|api_?key|key$)/i;
+
+export type TableApiPolicyWarning = {
+  id: "publicWrite" | "publicSensitiveFilter" | "wideOpenIncludes";
+  title: string;
+  description: string;
+};
+
+export const tableApiPolicyPresets: Array<{
+  id: TableApiPolicyPreset;
+  label: string;
+  description: string;
+  ownershipRequired: boolean;
+}> = [
+  {
+    id: "adminOnly",
+    label: "Admin only",
+    description: "Keep the table off app-facing traffic and reserve it for superadmin sessions.",
+    ownershipRequired: false,
+  },
+  {
+    id: "publicReadOnly",
+    label: "Public read-only content",
+    description: "Anyone can list and fetch records, but writes stay disabled.",
+    ownershipRequired: false,
+  },
+  {
+    id: "sessionPrivate",
+    label: "Signed-in user private records",
+    description: "Each signed-in user can manage only their own records.",
+    ownershipRequired: true,
+  },
+  {
+    id: "sessionReadAllWriteOwn",
+    label: "User can read all but write own",
+    description: "Signed-in users can browse records broadly while writes stay owner-scoped.",
+    ownershipRequired: true,
+  },
+  {
+    id: "apiKeyServer",
+    label: "API-key server-to-server access",
+    description: "Server callers use scoped API key permissions for every operation.",
+    ownershipRequired: false,
+  },
+];
+
+function sortedActors(actors: ApiAccessActor[]) {
+  return Array.from(new Set(actors)).sort((left, right) => actorOrder.indexOf(left) - actorOrder.indexOf(right));
+}
+
+function operationAccess(actors: ApiAccessActor[], scope: ApiAccessScope) {
+  return {
+    actors: sortedActors(actors),
+    scope,
+  };
+}
+
+export function suggestOwnershipField(fieldNames: string[]) {
+  return ["owner_id", "user_id", "author_id", "created_by", "created_by_id"].find((field) => fieldNames.includes(field)) ?? null;
+}
+
+export function buildTableApiAccessPreset(preset: TableApiPolicyPreset, ownershipField: string | null = null): TableApiAccess {
+  switch (preset) {
+    case "publicReadOnly":
+      return {
+        ownershipField: null,
+        list: operationAccess(["public"], "all"),
+        get: operationAccess(["public"], "all"),
+        create: operationAccess([], "all"),
+        update: operationAccess([], "all"),
+        delete: operationAccess([], "all"),
+      };
+    case "sessionPrivate":
+      return {
+        ownershipField,
+        list: operationAccess(["session"], "own"),
+        get: operationAccess(["session"], "own"),
+        create: operationAccess(["session"], "own"),
+        update: operationAccess(["session"], "own"),
+        delete: operationAccess(["session"], "own"),
+      };
+    case "sessionReadAllWriteOwn":
+      return {
+        ownershipField,
+        list: operationAccess(["session"], "all"),
+        get: operationAccess(["session"], "all"),
+        create: operationAccess(["session"], "own"),
+        update: operationAccess(["session"], "own"),
+        delete: operationAccess(["session"], "own"),
+      };
+    case "apiKeyServer":
+      return {
+        ownershipField: null,
+        list: operationAccess(["apiKey"], "all"),
+        get: operationAccess(["apiKey"], "all"),
+        create: operationAccess(["apiKey"], "all"),
+        update: operationAccess(["apiKey"], "all"),
+        delete: operationAccess(["apiKey"], "all"),
+      };
+    case "adminOnly":
+    default:
+      return {
+        ownershipField: null,
+        list: operationAccess([], "all"),
+        get: operationAccess([], "all"),
+        create: operationAccess([], "all"),
+        update: operationAccess([], "all"),
+        delete: operationAccess([], "all"),
+      };
+  }
+}
+
+function sameActors(left: ApiAccessActor[], right: ApiAccessActor[]) {
+  const leftSorted = sortedActors(left.filter((actor) => actor !== "superadmin"));
+  const rightSorted = sortedActors(right.filter((actor) => actor !== "superadmin"));
+  return leftSorted.length === rightSorted.length && leftSorted.every((actor, index) => actor === rightSorted[index]);
+}
+
+function sameOperationAccess(
+  access: TableApiAccess,
+  expected: TableApiAccess,
+  operation: (typeof operationKeys)[number],
+) {
+  return access[operation].scope === expected[operation].scope && sameActors(access[operation].actors, expected[operation].actors);
+}
+
+export function detectTableApiAccessPreset(access: TableApiAccess): TableApiPolicyPreset | "custom" {
+  const ownershipField = access.ownershipField ?? null;
+  return (
+    tableApiPolicyPresets.find((preset) => {
+      if (preset.ownershipRequired && !ownershipField) {
+        return false;
+      }
+
+      const expected = buildTableApiAccessPreset(preset.id, ownershipField);
+      return operationKeys.every((operation) => sameOperationAccess(access, expected, operation));
+    })?.id ?? "custom"
+  );
+}
+
+export function analyseTableApiPolicyWarnings(
+  access: TableApiAccess,
+  options: {
+    filteringEnabled: boolean;
+    filteringFields: string[];
+    includesEnabled: boolean;
+    includeFields: string[];
+    hiddenFields?: string[];
+  },
+) {
+  const warnings: TableApiPolicyWarning[] = [];
+  const hiddenFields = new Set(options.hiddenFields ?? []);
+  const publicReadEnabled = access.list.actors.includes("public") || access.get.actors.includes("public");
+  const publicWriteOperations = operationKeys.filter(
+    (operation) =>
+      ["create", "update", "delete"].includes(operation) &&
+      access[operation].actors.includes("public"),
+  );
+
+  if (publicWriteOperations.length > 0) {
+    warnings.push({
+      id: "publicWrite",
+      title: "Public writes are enabled",
+      description: `Unauthenticated callers can ${joinLabels(publicWriteOperations.map((operation) => operationLabel(operation).toLowerCase()))}. This is rarely safe outside tightly controlled ingest endpoints.`,
+    });
+  }
+
+  if (publicReadEnabled && options.filteringEnabled) {
+    const sensitiveFilters = options.filteringFields.filter((field) => sensitiveFieldPattern.test(field) && !hiddenFields.has(field));
+    if (sensitiveFilters.length > 0) {
+      warnings.push({
+        id: "publicSensitiveFilter",
+        title: "Public filtering targets sensitive fields",
+        description: `Anonymous callers can probe ${joinLabels(sensitiveFilters)} through filtering. Restrict those fields or hide them from the public route.`,
+      });
+    }
+  }
+
+  if (publicReadEnabled && options.includesEnabled && options.includeFields.length > 0) {
+    warnings.push({
+      id: "wideOpenIncludes",
+      title: "Public relation includes are enabled",
+      description: `Anonymous callers can request ${joinLabels(options.includeFields)}. Included records now respect target-table access rules, but broad includes still expand response surface area.`,
+    });
+  }
+
+  return warnings;
+}
+
+function operationLabel(operation: (typeof operationKeys)[number]) {
+  switch (operation) {
+    case "list":
+      return "List";
+    case "get":
+      return "Get";
+    case "create":
+      return "Create";
+    case "update":
+      return "Update";
+    default:
+      return "Delete";
+  }
+}
+
+function joinLabels(values: string[]) {
+  if (values.length <= 1) {
+    return values[0] ?? "";
+  }
+  if (values.length === 2) {
+    return `${values[0]} and ${values[1]}`;
+  }
+  return `${values.slice(0, -1).join(", ")}, and ${values[values.length - 1]}`;
+}
 
 export function assertSafeIdentifier(value: string) {
   if (!/^[a-z][a-z0-9_]*$/.test(value)) {

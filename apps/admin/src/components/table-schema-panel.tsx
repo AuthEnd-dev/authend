@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import {
+  analyseTableApiPolicyWarnings,
+  buildTableApiAccessPreset,
+  detectTableApiAccessPreset,
+  suggestOwnershipField,
+  tableApiPolicyPresets,
+} from "@authend/shared";
 import type {
   ApiAccessActor,
   ApiPreviewOperation,
@@ -10,6 +17,7 @@ import type {
   SchemaDraft,
   TableApiAccess,
   TableApiConfig,
+  TableApiPolicyPreset,
   TableBlueprint,
   TableDescriptor,
 } from "@authend/shared";
@@ -83,14 +91,7 @@ function emptyField(): EditableField {
 function defaultTableApiConfig(): TableApiConfig {
   return {
     authMode: "superadmin",
-    access: {
-      ownershipField: null,
-      list: { actors: ["superadmin"], scope: "all" },
-      get: { actors: ["superadmin"], scope: "all" },
-      create: { actors: ["superadmin"], scope: "all" },
-      update: { actors: ["superadmin"], scope: "all" },
-      delete: { actors: ["superadmin"], scope: "all" },
-    },
+    access: buildTableApiAccessPreset("adminOnly"),
     operations: {
       list: true,
       get: true,
@@ -203,27 +204,6 @@ function describeAccess(access: TableApiAccess) {
 
 function toggleListValue(values: string[], value: string) {
   return values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value];
-}
-
-function ensureSuperadminActors(actors: ApiAccessActor[]) {
-  return actors.includes("superadmin") ? actors : [...actors, "superadmin"] as ApiAccessActor[];
-}
-
-function withRequiredSuperadminAccess(access: TableApiAccess): TableApiAccess {
-  const listActors = ensureSuperadminActors([...access.list.actors]);
-  const getActors = ensureSuperadminActors([...access.get.actors]);
-  const createActors = ensureSuperadminActors([...access.create.actors]);
-  const updateActors = ensureSuperadminActors([...access.update.actors]);
-  const deleteActors = ensureSuperadminActors([...access.delete.actors]);
-
-  return {
-    ...access,
-    list: { ...access.list, actors: listActors as ApiAccessActor[] },
-    get: { ...access.get, actors: getActors as ApiAccessActor[] },
-    create: { ...access.create, actors: createActors as ApiAccessActor[] },
-    update: { ...access.update, actors: updateActors as ApiAccessActor[] },
-    delete: { ...access.delete, actors: deleteActors as ApiAccessActor[] },
-  };
 }
 
 function FieldToggleList({
@@ -450,7 +430,7 @@ export function TableSchemaPanel({
       setApiConfig({
         ...defaultTableApiConfig(),
         ...table.api,
-        access: withRequiredSuperadminAccess(table.api?.access ?? defaultTableApiConfig().access),
+        access: table.api?.access ?? defaultTableApiConfig().access,
         operations: table.api?.operations ?? defaultTableApiConfig().operations,
         pagination: table.api?.pagination ?? defaultTableApiConfig().pagination,
         filtering: table.api?.filtering ?? defaultTableApiConfig().filtering,
@@ -701,6 +681,15 @@ export function TableSchemaPanel({
   const hasOwnScopedOperation = operationKeys.some((operation) => apiConfig.access[operation].scope === "own");
   const routeSegment = apiConfig.routeSegment || name;
   const accessSummary = describeAccess(apiConfig.access);
+  const selectedPolicyPreset = detectTableApiAccessPreset(apiConfig.access);
+  const suggestedOwnershipField = suggestOwnershipField(availableFieldNames);
+  const policyWarnings = analyseTableApiPolicyWarnings(apiConfig.access, {
+    filteringEnabled: apiConfig.filtering.enabled,
+    filteringFields: apiConfig.filtering.fields,
+    includesEnabled: apiConfig.includes.enabled,
+    includeFields: apiConfig.includes.fields,
+    hiddenFields: apiConfig.hiddenFields,
+  });
 
   const updateApiOperationEnabled = (operation: keyof TableApiConfig["operations"], enabled: boolean) => {
     setApiConfig((current) => ({
@@ -714,9 +703,7 @@ export function TableSchemaPanel({
 
   const updateAccessActors = (operation: ApiPreviewOperation["key"], actor: ApiAccessActor, checked: boolean) => {
     setApiConfig((current) => {
-      const nextActors: ApiAccessActor[] = actor === "superadmin"
-        ? ensureSuperadminActors([...current.access[operation].actors])
-        : checked
+      const nextActors: ApiAccessActor[] = checked
         ? Array.from(new Set<ApiAccessActor>([...current.access[operation].actors, actor]))
         : current.access[operation].actors.filter((entry): entry is ApiAccessActor => entry !== actor);
 
@@ -726,7 +713,7 @@ export function TableSchemaPanel({
           ...current.access,
           [operation]: {
             ...current.access[operation],
-            actors: ensureSuperadminActors(nextActors) as ApiAccessActor[],
+            actors: nextActors,
             scope: actor === "public" && checked && current.access[operation].scope === "own" ? "all" : current.access[operation].scope,
           },
         },
@@ -737,16 +724,33 @@ export function TableSchemaPanel({
   const updateAccessScope = (operation: ApiPreviewOperation["key"], scope: "all" | "own") => {
     setApiConfig((current) => ({
       ...current,
-        access: {
-          ...current.access,
-          [operation]: {
-            ...current.access[operation],
-            actors: ensureSuperadminActors(
-              scope === "own" ? current.access[operation].actors.filter((actor) => actor !== "public") : current.access[operation].actors,
-            ),
-            scope,
-          },
+      access: {
+        ...current.access,
+        [operation]: {
+          ...current.access[operation],
+          actors: scope === "own" ? current.access[operation].actors.filter((actor) => actor !== "public") : current.access[operation].actors,
+          scope,
         },
+      },
+    }));
+  };
+
+  const applyPolicyPreset = (preset: TableApiPolicyPreset) => {
+    const presetDefinition = tableApiPolicyPresets.find((entry) => entry.id === preset);
+    const ownershipField = presetDefinition?.ownershipRequired ? apiConfig.access.ownershipField ?? suggestedOwnershipField : null;
+
+    if (presetDefinition?.ownershipRequired && !ownershipField) {
+      showNotice({
+        title: "Owner field required",
+        description: "Add a field like owner_id or user_id first, then apply an owner-scoped policy preset.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setApiConfig((current) => ({
+      ...current,
+      access: buildTableApiAccessPreset(preset, ownershipField),
     }));
   };
 
@@ -1516,31 +1520,72 @@ export function TableSchemaPanel({
                 <Lock className="h-4 w-4 text-muted-foreground" />
                 Access Policy
               </div>
+              <div className="grid gap-2 lg:grid-cols-2">
+                {tableApiPolicyPresets.map((preset) => {
+                  const active = selectedPolicyPreset === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyPolicyPreset(preset.id)}
+                      className={`rounded-xl border px-3 py-3 text-left transition ${
+                        active ? "border-foreground/30 bg-muted/30" : "border-border/70 hover:border-foreground/20 hover:bg-muted/20"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-semibold text-foreground">{preset.label}</div>
+                        {active ? <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Active</span> : null}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">{preset.description}</div>
+                    </button>
+                  );
+                })}
+              </div>
               <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">{accessSummary}</div>
+              <div className="rounded-xl border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
+                App-facing actors are configured here. Superadmin sessions always bypass these rules on admin routes and data requests.
+              </div>
+              {policyWarnings.length > 0 ? (
+                <div className="grid gap-2">
+                  {policyWarnings.map((warning) => (
+                    <div key={warning.id} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-amber-700">Policy warning</div>
+                      <div className="mt-1 text-sm font-semibold text-foreground">{warning.title}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{warning.description}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {hasOwnScopedOperation && (
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Ownership Field</label>
-                  <select
-                    value={apiConfig.access.ownershipField ?? ""}
-                    onChange={(event) =>
-                      setApiConfig((current) => ({
-                        ...current,
-                        access: {
-                          ...current.access,
-                          ownershipField: event.target.value || null,
-                        },
-                      }))
-                    }
-                    className="h-9 rounded-md border border-border bg-background px-3 text-xs"
-                  >
-                    <option value="">Select field</option>
-                    <option value="id">id</option>
-                    {availableFieldNames.map((field) => (
-                      <option key={field} value={field}>
-                        {field}
-                      </option>
-                    ))}
-                  </select>
+                <div className="grid gap-2">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Ownership Field</label>
+                    <select
+                      value={apiConfig.access.ownershipField ?? ""}
+                      onChange={(event) =>
+                        setApiConfig((current) => ({
+                          ...current,
+                          access: {
+                            ...current.access,
+                            ownershipField: event.target.value || null,
+                          },
+                        }))
+                      }
+                      className="h-9 rounded-md border border-border bg-background px-3 text-xs"
+                    >
+                      <option value="">Select field</option>
+                      <option value="id">id</option>
+                      {availableFieldNames.map((field) => (
+                        <option key={field} value={field}>
+                          {field}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Owner-scoped operations compare the current subject id against this field.
+                    {suggestedOwnershipField ? ` Suggested field: ${suggestedOwnershipField}.` : ""}
+                  </div>
                 </div>
               )}
 
@@ -1554,7 +1599,7 @@ export function TableSchemaPanel({
                       </div>
                     </div>
 
-                    <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-5">
+                    <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-4">
                       {accessActors.filter((actor) => actor !== "superadmin").map((actor) => {
                         const checked = apiConfig.access[operation].actors.includes(actor);
                         const isDisabled = apiConfig.access[operation].scope === "own" && actor === "public";
@@ -1623,29 +1668,6 @@ export function TableSchemaPanel({
                           className="h-4 w-4 shrink-0 rounded-sm border-muted-foreground/40 accent-primary"
                         />
                       </label>
-                      {(() => {
-                        const actor = "superadmin" as const;
-                        const checked = apiConfig.access[operation].actors.includes(actor);
-                        return (
-                          <label
-                            key={`${operation}-${actor}`}
-                            title={actorDescription(actor)}
-                            className="flex items-center justify-between gap-2 rounded-md bg-muted/30 px-2 py-1.5 text-xs opacity-60"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className="font-semibold leading-tight text-foreground">{actorLabel(actor)}</div>
-                              <div className="truncate text-[10px] leading-tight text-muted-foreground">{actorDescription(actor)}</div>
-                            </div>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={(event) => updateAccessActors(operation, actor, event.target.checked)}
-                              disabled
-                              className="h-4 w-4 shrink-0 rounded-sm border-muted-foreground/40 accent-primary"
-                            />
-                          </label>
-                        );
-                      })()}
                     </div>
                   </div>
                 ))}

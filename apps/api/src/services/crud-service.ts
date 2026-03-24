@@ -1,8 +1,13 @@
-import type { ApiFieldAccess, ApiPaginationConfig, ApiSortingConfig, FieldBlueprint, TableApiConfig, TableDescriptor } from "@authend/shared";
+import type { ApiAccessActor, ApiFieldAccess, ApiPaginationConfig, ApiSortingConfig, FieldBlueprint, TableApiConfig, TableDescriptor } from "@authend/shared";
 import { getSchemaDraft } from "./schema-service";
 import { HttpError } from "../lib/http";
 import { sql } from "../db/client";
 import { listPluginCapabilityManifests } from "./plugin-service";
+
+type BuiltinTableExposurePolicy = {
+  visibleInDataApi: boolean;
+  redactedFields: string[];
+};
 
 const builtinTables: Record<string, TableDescriptor> = {
   user: {
@@ -255,12 +260,45 @@ const builtinTables: Record<string, TableDescriptor> = {
   },
 };
 
+const defaultBuiltinTableExposurePolicy: BuiltinTableExposurePolicy = {
+  visibleInDataApi: false,
+  redactedFields: [],
+};
+
+const builtinTableExposurePolicies: Partial<Record<keyof typeof builtinTables, BuiltinTableExposurePolicy>> = {
+  user: {
+    visibleInDataApi: true,
+    redactedFields: [],
+  },
+  session: {
+    visibleInDataApi: true,
+    redactedFields: ["ip_address", "user_agent", "impersonated_by"],
+  },
+};
+
+function builtinTableExposurePolicy(table: string): BuiltinTableExposurePolicy {
+  if (!(table in builtinTables)) {
+    return defaultBuiltinTableExposurePolicy;
+  }
+
+  return builtinTableExposurePolicies[table as keyof typeof builtinTables] ?? defaultBuiltinTableExposurePolicy;
+}
+
+function assertDataApiReadable(resource: { descriptor: TableDescriptor }) {
+  if (resource.descriptor.source === "builtin" && !builtinTableExposurePolicy(resource.descriptor.table).visibleInDataApi) {
+    throw new HttpError(403, `Table ${resource.descriptor.table} is not exposed through the data API`);
+  }
+}
+
 function selectColumnsSql(descriptor: TableDescriptor) {
   return descriptor.fields.map((field) => quoteIdentifier(field.name)).join(", ");
 }
 
 function readableFields(descriptor: TableDescriptor, config?: TableApiConfig | null) {
-  const hiddenFields = new Set(config?.hiddenFields ?? []);
+  const hiddenFields = new Set([
+    ...(config?.hiddenFields ?? []),
+    ...(descriptor.source === "builtin" ? builtinTableExposurePolicy(descriptor.table).redactedFields : []),
+  ]);
   return descriptor.fields.filter((field) => !hiddenFields.has(field.name));
 }
 
@@ -368,6 +406,7 @@ export async function getTableDescriptor(table: string): Promise<TableDescriptor
 
 export async function getClientTableDescriptor(table: string): Promise<TableDescriptor> {
   const resource = await resolveTableResource(table);
+  assertDataApiReadable(resource);
   return {
     ...resource.descriptor,
     fields: readableFields(resource.descriptor, resource.config),
@@ -380,6 +419,10 @@ function unsafeParams(values: readonly unknown[]) {
 }
 
 async function hiddenFieldsForTable(table: string) {
+  if (builtinTables[table]) {
+    return new Set(builtinTableExposurePolicy(table).redactedFields);
+  }
+
   const draft = await getSchemaDraft();
   const current = draft.tables.find((entry) => entry.name === table || (entry.api?.routeSegment ?? entry.name) === table);
   return new Set(current?.api?.hiddenFields ?? []);
@@ -452,9 +495,11 @@ type IncludeRelation = {
 };
 
 export type RecordAccessContext = {
+  actorKind?: ApiAccessActor;
   ownershipField?: string | null;
   subjectId?: string | null;
   bypassOwnership?: boolean;
+  permissions?: ReadonlySet<string>;
 };
 
 export type ListRecordsOptions = {
@@ -489,6 +534,102 @@ function applyOwnershipFilter(
 
   values.push(access.subjectId);
   whereClauses.push(`${quoteIdentifier(access.ownershipField)} = $${values.length}`);
+}
+
+function isOperationEnabled(resource: { descriptor: TableDescriptor; config: TableApiConfig | null }, operation: "list" | "get" | "create" | "update" | "delete") {
+  if (!resource.config) {
+    return operation === "list" || operation === "get";
+  }
+  return resource.config.operations[operation];
+}
+
+function routeSegmentForResource(resource: { descriptor: TableDescriptor; config: TableApiConfig | null }) {
+  return resource.config?.routeSegment ?? resource.descriptor.table;
+}
+
+function canAccessResourceOperation(
+  resource: { descriptor: TableDescriptor; config: TableApiConfig | null },
+  operation: "list" | "get" | "create" | "update" | "delete",
+  access?: RecordAccessContext,
+) {
+  if (resource.descriptor.source === "builtin" && !builtinTableExposurePolicy(resource.descriptor.table).visibleInDataApi) {
+    return {
+      allowed: false,
+      reason: "blocked",
+      access: null,
+    } as const;
+  }
+
+  const actorKind = access?.actorKind ?? "public";
+  if (actorKind === "superadmin") {
+    return {
+      allowed: true,
+      reason: "allowed",
+      access: {
+        actorKind,
+        ownershipField: resource.config?.access.ownershipField ?? null,
+        subjectId: access?.subjectId ?? null,
+        bypassOwnership: true,
+        permissions: access?.permissions,
+      },
+    } as const;
+  }
+
+  if (!isOperationEnabled(resource, operation)) {
+    return {
+      allowed: false,
+      reason: "disabled",
+      access: null,
+    } as const;
+  }
+
+  const operationAccess = resource.config?.access[operation];
+  if (!operationAccess) {
+    return {
+      allowed: false,
+      reason: "forbidden",
+      access: null,
+    } as const;
+  }
+
+  if (!operationAccess.actors.includes("public") && !operationAccess.actors.includes(actorKind)) {
+    return {
+      allowed: false,
+      reason: "forbidden",
+      access: null,
+    } as const;
+  }
+
+  if (actorKind === "apiKey" && !operationAccess.actors.includes("public")) {
+    const permission = `resource:${routeSegmentForResource(resource)}:${operation}`;
+    if (!access?.permissions?.has(permission)) {
+      return {
+        allowed: false,
+        reason: "forbidden",
+        access: null,
+      } as const;
+    }
+  }
+
+  if (operationAccess.scope === "own" && !access?.subjectId) {
+    return {
+      allowed: false,
+      reason: "forbidden",
+      access: null,
+    } as const;
+  }
+
+  return {
+    allowed: true,
+    reason: "allowed",
+    access: {
+      actorKind,
+      ownershipField: operationAccess.scope === "own" ? resource.config?.access.ownershipField ?? null : null,
+      subjectId: access?.subjectId ?? null,
+      bypassOwnership: false,
+      permissions: access?.permissions,
+    },
+  } as const;
 }
 
 async function resolveIncludeRelations(descriptor: TableDescriptor, includes: string[]) {
@@ -542,6 +683,7 @@ function buildInnerRelationClauses(descriptor: TableDescriptor, relations: Inclu
 
 export async function listRecords(table: string, query: URLSearchParams, options: ListRecordsOptions = {}) {
   const resource = await resolveTableResource(table);
+  assertDataApiReadable(resource);
   const { descriptor } = resource;
   const pagination = options.pagination ?? {
     enabled: true,
@@ -655,12 +797,27 @@ export async function listRecords(table: string, query: URLSearchParams, options
           continue;
         }
 
-        const relatedDescriptor = await getTableDescriptor(relation.targetTable);
+        const relatedResource = await resolveTableResource(relation.targetTable);
+        const relatedReadAccess = canAccessResourceOperation(relatedResource, "get", options.access);
+        if (!relatedReadAccess.allowed) {
+          if (relation.joinType === "inner") {
+            shouldKeep = false;
+            break;
+          }
+
+          sanitisedItem[relation.resultKey] = null;
+          continue;
+        }
+
+        const relatedDescriptor = relatedResource.descriptor;
+        const relatedWhereClauses = [`${quoteIdentifier(relation.targetField)} = $1`];
+        const relatedValues: unknown[] = [foreignId];
+        applyOwnershipFilter(relatedDescriptor, relatedWhereClauses, relatedValues, relatedReadAccess.access);
         const [related] = await sql.unsafe<Record<string, unknown>[]>(
           `select ${selectColumnsSql(relatedDescriptor)} from ${quoteIdentifier(relation.targetTable)}
-           where ${quoteIdentifier(relation.targetField)} = $1
+           where ${relatedWhereClauses.join(" and ")}
            limit 1`,
-          unsafeParams([foreignId]),
+          unsafeParams(relatedValues),
         );
 
         if (!related && relation.joinType === "inner") {
@@ -695,6 +852,7 @@ export async function listRecords(table: string, query: URLSearchParams, options
 
 export async function getRecord(table: string, id: string, options: MutationRecordOptions = {}) {
   const resource = await resolveTableResource(table);
+  assertDataApiReadable(resource);
   const { descriptor } = resource;
   const selectSql = selectColumnsSql(descriptor);
   const whereClauses = [`${quoteIdentifier(descriptor.primaryKey)} = $1`];
@@ -714,6 +872,7 @@ export async function getRecord(table: string, id: string, options: MutationReco
 
 export async function createRecord(table: string, payload: Record<string, unknown>, options: MutationRecordOptions = {}) {
   const resource = await resolveTableResource(table);
+  assertDataApiReadable(resource);
   const { descriptor } = resource;
   assertWritableDescriptor(descriptor);
   const nextPayload = { ...payload };
@@ -743,6 +902,7 @@ export async function createRecord(table: string, payload: Record<string, unknow
 
 export async function updateRecord(table: string, id: string, payload: Record<string, unknown>, options: MutationRecordOptions = {}) {
   const resource = await resolveTableResource(table);
+  assertDataApiReadable(resource);
   const { descriptor } = resource;
   assertWritableDescriptor(descriptor);
   const nextPayload = { ...payload };
@@ -780,6 +940,7 @@ export async function updateRecord(table: string, id: string, payload: Record<st
 
 export async function deleteRecord(table: string, id: string, options: MutationRecordOptions = {}) {
   const resource = await resolveTableResource(table);
+  assertDataApiReadable(resource);
   const { descriptor } = resource;
   assertWritableDescriptor(descriptor);
   const whereClauses = [`${quoteIdentifier(descriptor.primaryKey)} = $1`];
@@ -800,7 +961,9 @@ export async function deleteRecord(table: string, id: string, options: MutationR
 export async function listBrowsableTables() {
   const draft = await getSchemaDraft();
   const existingTables = await listExistingDatabaseTables();
-  const builtin = Object.keys(builtinTables).filter((key) => existingTables.has(builtinTables[key].table));
+  const builtin = Object.keys(builtinTables).filter(
+    (key) => existingTables.has(builtinTables[key].table) && builtinTableExposurePolicy(key).visibleInDataApi,
+  );
   const pluginTables = (await listPluginCapabilityManifests())
     .filter((manifest) => manifest.installState.enabled)
     .flatMap((manifest) => manifest.models)

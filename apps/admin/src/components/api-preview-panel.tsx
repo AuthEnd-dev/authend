@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { detectTableApiAccessPreset, tableApiPolicyPresets } from '@authend/shared';
 import { Braces, Code2, Eye, Lock, Route, SlidersHorizontal } from 'lucide-react';
 import { client } from '../lib/client';
 import { Button } from './ui/button';
@@ -11,6 +12,8 @@ export function ApiPreviewPanel({ tableName, isOpen, onClose }: { tableName: str
     queryFn: () => client.system.api.preview(tableName),
     enabled: isOpen,
   });
+  const selectedPreset = data ? detectTableApiAccessPreset(data.resource.config.access) : 'custom';
+  const presetDefinition = selectedPreset === 'custom' ? null : tableApiPolicyPresets.find((preset) => preset.id === selectedPreset);
 
   return (
     <SidePanel
@@ -63,6 +66,9 @@ export function ApiPreviewPanel({ tableName, isOpen, onClose }: { tableName: str
               <div className="flex items-center gap-2 text-sm font-semibold">
                 <Lock className="h-4 w-4 text-muted-foreground" />
                 Access Policy
+              </div>
+              <div className="rounded-lg border border-border/60 px-3 py-2 text-sm text-muted-foreground">
+                Preset: {presetDefinition?.label ?? 'Custom policy'}
               </div>
               <div className="rounded-lg border border-border/60 px-3 py-2 text-sm text-muted-foreground">{data.resource.security.description}</div>
             </section>

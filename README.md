@@ -2,7 +2,7 @@
 
 Authend is a self-hosted backend template built on Bun, Better Auth, Drizzle, and Postgres. The goal is simple: fork the repo, set a handful of environment variables, run bootstrap, and get a working backend plus admin dashboard for auth, plugins, schema management, and generated CRUD APIs.
 
-Full product and architecture documentation lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md). The API contract and preview layer is documented in [docs/API_PREVIEW.md](./docs/API_PREVIEW.md).
+Full product and architecture documentation lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md). The API contract and preview layer is documented in [docs/API_PREVIEW.md](./docs/API_PREVIEW.md). The execution roadmap and delivery checklist live in [docs/ROADMAP.md](./docs/ROADMAP.md).
 
 ## What ships in v1
 
@@ -110,7 +110,29 @@ v1 intentionally blocks destructive operations:
 - `GET|POST /api/admin/api-preview/*`
 - `GET|POST|PATCH|DELETE /api/data/:table`
 
-Admin and data routes require a Better Auth session and a seeded superadmin record.
+Admin routes require a Better Auth session and a seeded superadmin record. Data routes enforce per-table access policy, and built-in auth/system tables are default-deny unless explicitly allowlisted for read-only admin use.
+
+## Security defaults
+
+- Generated app tables stay on the table-level API policy you define, which defaults to superadmin-only in fresh drafts.
+- App-facing actors are `public`, `session`, `apiKey`, and `superadmin`.
+- Public access applies to anonymous callers and authenticated callers; superadmins bypass app-facing policy checks.
+- Built-in auth and system tables are blocked from `/api/data/*` by default.
+- The current allowlisted built-in views are intentionally narrow and read-only.
+- Sensitive fields on allowlisted built-in tables are redacted before metadata or record payloads are returned.
+- Relation includes are filtered through the target table's own read policy, and hidden fields stay redacted inside included records.
+
+## App-facing policy presets
+
+The schema editor now exposes first-class policy presets for the common access patterns:
+
+- public read-only content
+- signed-in user private records
+- user can read all but write own
+- API-key server-to-server access
+
+Owner-scoped presets guide you toward an ownership field such as `owner_id` or `user_id`, and runtime enforcement is covered by integration tests for public, session, and API-key callers.
+The schema editor also flags risky combinations such as public writes, public filtering on sensitive field names, and broad public relation includes.
 
 ## AI assistant
 
@@ -187,6 +209,21 @@ await client.data.post.list();
 
 Keep Better Auth as the auth client in your app and use the Authend SDK for typed `data` access.
 
+## Runtime-verified plugin config
+
+Phase 0A verifies that saved runtime config is consumed for the shipped plugin surfaces exercised by tests:
+
+- `username`
+- `magicLink`
+- `apiKey`
+- `admin`
+- `jwt`
+- `organization`
+- `twoFactor`
+- `socialAuth`
+
+Config that depends on custom extension handlers or provider credentials still requires those handlers/env vars to be present at runtime. Plugin manifests remain the source of truth for those dependencies.
+
 ## Production notes
 
 - Build the admin app before starting the Bun server in production:
@@ -211,6 +248,6 @@ bun test
 
 - Multi-tenancy is out of scope for v1.
 - File upload/browser workflows are not yet exposed beyond storage configuration and diagnostics.
-- The API preview layer now defines stable contract metadata, but runtime auth modes other than superadmin are still preview-only until a client-facing router is added.
+- Generated app tables can now be exposed through the data router with runtime policy enforcement and preset-based policy editing, but the admin UX is still operator-grade rather than polished end-user product tooling.
 - The SDK generator now uses the dedicated `/api/system/sdk-schema` manifest rather than full OpenAPI codegen. OpenAPI remains available for broader ecosystem tooling.
 - The plugin migration coverage is best-effort for the curated set and should be validated against the exact Better Auth version you pin in production.

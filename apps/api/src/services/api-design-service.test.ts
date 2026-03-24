@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { buildTableApiAccessPreset, detectTableApiAccessPreset } from "@authend/shared";
 import type { SchemaDraft, TableBlueprint } from "@authend/shared";
 
 async function getNormaliseTableApiConfig() {
@@ -124,12 +125,28 @@ describe("normaliseTableApiConfig", () => {
       true,
     );
 
-    expect(config.access.list.actors).toEqual(["public", "superadmin"]);
-    expect(config.access.get.actors).toEqual(["public", "superadmin"]);
-    expect(config.access.create.actors).toEqual(["public", "superadmin"]);
-    expect(config.access.update.actors).toEqual(["public", "superadmin"]);
-    expect(config.access.delete.actors).toEqual(["public", "superadmin"]);
+    expect(config.access.list.actors).toEqual(["public"]);
+    expect(config.access.get.actors).toEqual(["public"]);
+    expect(config.access.create.actors).toEqual(["public"]);
+    expect(config.access.update.actors).toEqual(["public"]);
+    expect(config.access.delete.actors).toEqual(["public"]);
     expect(config.authMode).toBe("public");
+  });
+
+  test("keeps owner-scoped presets intact during normalization", async () => {
+    const normaliseTableApiConfig = await getNormaliseTableApiConfig();
+    const config = normaliseTableApiConfig(
+      {
+        ...baseTable.api,
+        access: buildTableApiAccessPreset("sessionReadAllWriteOwn", "owner_id"),
+      },
+      baseTable,
+      draft,
+      true,
+    );
+
+    expect(config.access).toEqual(buildTableApiAccessPreset("sessionReadAllWriteOwn", "owner_id"));
+    expect(detectTableApiAccessPreset(config.access)).toBe("sessionReadAllWriteOwn");
   });
 
   test("rejects an invalid ownership field", async () => {

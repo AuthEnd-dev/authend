@@ -384,9 +384,10 @@ The current intended security model is:
 - Better Auth handles sessions and auth flows
 - only seeded superadmins can access admin routes
 - admin routes are separate from public auth routes
-- data routes are currently admin-only
+- generated app data routes are governed by table API policy across `public`, `session`, `apiKey`, and `superadmin` actors
+- built-in auth/system tables are default-deny on the data API unless explicitly allowlisted for read-only admin use
 
-That last point is important. In the current scaffold, generated CRUD is not yet a public app-facing permissions system. It is an admin-controlled data plane until table-level auth and role policy are introduced.
+That last point is important. The runtime now enforces per-table access policy on generated tables, including owner-scoped session routes and API-key permissions, and the admin UI exposes policy presets for the common patterns. The product UX is still operator-grade rather than polished hosted-BaaS-grade tooling.
 
 ## 12. Current State Of The Repository
 
@@ -410,13 +411,13 @@ What it does not yet guarantee is production readiness. Several areas are still 
 
 These are the most important gaps in the current implementation:
 
-### 13.1 Plugin config is not fully wired into auth runtime
+### 13.1 Plugin config coverage is now test-backed, but still bounded by real runtime surfaces
 
-Plugin configuration can be saved, but the runtime auth instance does not yet meaningfully consume stored plugin config values.
+Core saved config paths are now verified against runtime composition for the shipped plugins, but fields that depend on extension handlers, provider credentials, or downstream Better Auth behavior still need plugin-specific validation.
 
-### 13.2 Generic CRUD is too permissive for auth tables
+### 13.2 Built-in table exposure is intentionally narrow
 
-The current generic record browser/data API can expose sensitive auth-related rows unless restricted or redacted.
+The data API now default-denies built-in auth/system tables and redacts sensitive fields on the small allowlisted set. Any expansion of that allowlist should be treated as a security review item.
 
 ### 13.3 Generated Drizzle schema is not yet a perfect reflection of executed SQL
 

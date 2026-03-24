@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { validateDraft } from "./helpers";
+import {
+  analyseTableApiPolicyWarnings,
+  buildTableApiAccessPreset,
+  detectTableApiAccessPreset,
+  suggestOwnershipField,
+  validateDraft,
+} from "./helpers";
 
 describe("validateDraft", () => {
   test("accepts a simple additive draft", () => {
@@ -504,5 +510,74 @@ describe("validateDraft", () => {
         ],
       }),
     ).toThrow("Duplicate relation alias");
+  });
+});
+
+describe("analyseTableApiPolicyWarnings", () => {
+  test("flags unsafe public writes, sensitive public filters, and wide-open includes", () => {
+    const warnings = analyseTableApiPolicyWarnings(
+      {
+        ownershipField: null,
+        list: { actors: ["public"], scope: "all" },
+        get: { actors: ["public"], scope: "all" },
+        create: { actors: ["public"], scope: "all" },
+        update: { actors: [], scope: "all" },
+        delete: { actors: ["public"], scope: "all" },
+      },
+      {
+        filteringEnabled: true,
+        filteringFields: ["display_name", "email"],
+        includesEnabled: true,
+        includeFields: ["author_id"],
+        hiddenFields: [],
+      },
+    );
+
+    expect(warnings.map((warning) => warning.id)).toEqual([
+      "publicWrite",
+      "publicSensitiveFilter",
+      "wideOpenIncludes",
+    ]);
+  });
+
+  test("does not flag hidden sensitive filters or disabled public routes", () => {
+    const warnings = analyseTableApiPolicyWarnings(
+      buildTableApiAccessPreset("sessionPrivate", "owner_id"),
+      {
+        filteringEnabled: true,
+        filteringFields: ["email"],
+        includesEnabled: true,
+        includeFields: ["owner_id"],
+        hiddenFields: ["email"],
+      },
+    );
+
+    expect(warnings).toHaveLength(0);
+  });
+});
+
+describe("table API policy presets", () => {
+  test("builds the public read-only preset", () => {
+    const access = buildTableApiAccessPreset("publicReadOnly");
+
+    expect(access.list).toEqual({ actors: ["public"], scope: "all" });
+    expect(access.get).toEqual({ actors: ["public"], scope: "all" });
+    expect(access.create).toEqual({ actors: [], scope: "all" });
+    expect(access.update).toEqual({ actors: [], scope: "all" });
+    expect(access.delete).toEqual({ actors: [], scope: "all" });
+    expect(detectTableApiAccessPreset(access)).toBe("publicReadOnly");
+  });
+
+  test("detects legacy superadmin noise as a known preset", () => {
+    const access = buildTableApiAccessPreset("sessionReadAllWriteOwn", "owner_id");
+    access.list.actors.push("superadmin");
+    access.get.actors.push("superadmin");
+
+    expect(detectTableApiAccessPreset(access)).toBe("sessionReadAllWriteOwn");
+  });
+
+  test("suggests an ownership field using common conventions", () => {
+    expect(suggestOwnershipField(["title", "user_id", "created_at"])).toBe("user_id");
+    expect(suggestOwnershipField(["title", "created_at"])).toBeNull();
   });
 });
