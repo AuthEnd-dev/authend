@@ -91,7 +91,7 @@ function LogFrequencyChart({ logs }: { logs: AuditLog[] }) {
     const tMax = Math.max(...times);
     const span = Math.max(tMax - tMin, 1);
     const n = 36;
-    const counts = new Array(n).fill(0);
+    const counts = Array.from({ length: n }, () => 0);
     for (const t of times) {
       const i = Math.min(n - 1, Math.floor(((t - tMin) / span) * n));
       counts[i]++;

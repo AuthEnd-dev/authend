@@ -328,6 +328,10 @@ function actionDescription(action: AiAction) {
   }
 }
 
+function stringFromPrimitive(value: unknown, fallback: string) {
+  return typeof value === "string" || typeof value === "number" ? String(value) : fallback;
+}
+
 async function previewRecordMatch(table: string, filterField: string | null | undefined, filterValue: string) {
   const params = new URLSearchParams();
   params.set("page", "1");
@@ -881,7 +885,7 @@ export async function approveAiRun(runId: string, actorUserId: string): Promise<
             actionIndex: index,
             actionType: action.type,
             status: "completed",
-            target: `${action.table}:${String(recordId ?? "new")}`,
+            target: `${action.table}:${stringFromPrimitive(recordId, "new")}`,
             message: `Created a record in ${action.table}.`,
           });
           break;

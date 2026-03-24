@@ -31,7 +31,7 @@ function asObject(value: unknown) {
 
 function mergeConfigDefaults(definition: PluginDefinition, config: PluginConfig): PluginConfig {
   return {
-    ...(definition.defaultConfig ?? {}),
+    ...definition.defaultConfig,
     ...config,
   };
 }
@@ -56,7 +56,7 @@ function requiredEnvKeys(definition: PluginDefinition, state: PluginInstallState
 
 function normalizeCapabilityState(definition: PluginDefinition, input: Record<string, unknown>): Record<string, boolean> {
   const merged = {
-    ...(definition.defaultCapabilityState ?? {}),
+    ...definition.defaultCapabilityState,
   } as Record<string, boolean>;
 
   for (const capability of definition.capabilities) {
@@ -75,7 +75,7 @@ function normalizeCapabilityState(definition: PluginDefinition, input: Record<st
 
 function normalizeExtensionBindings(definition: PluginDefinition, input: Record<string, unknown>): PluginExtensionBindings {
   const merged: PluginExtensionBindings = {
-    ...(definition.defaultExtensionBindings ?? {}),
+    ...definition.defaultExtensionBindings,
   };
 
   for (const slot of definition.extensionSlots) {

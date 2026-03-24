@@ -1079,7 +1079,7 @@ describe('Phase 0A integration hardening', () => {
         ...current.installState.config,
         enabledProviders: 'google',
         providers: {
-          ...((current.installState.config.providers as Record<string, unknown> | undefined) ?? {}),
+          ...(current.installState.config.providers as Record<string, unknown> | undefined),
           google: {
             scope: ['openid', 'email', 'profile'],
             prompt: 'consent',
@@ -1304,7 +1304,7 @@ describe('Phase 0A integration hardening', () => {
   });
 
   test('createRecord still blocks writes to visible built-in tables', async () => {
-    await expect(
+    expect(
       crudModule.createRecord('user', {
         email: 'should-not-work@authend.test',
       }),
@@ -1640,7 +1640,7 @@ describe('Phase 0A integration hardening', () => {
   });
 
   test('listRecords defaults do not allow hidden-field filtering or sorting', async () => {
-    await expect(
+    expect(
       crudModule.listRecords(
         'articles',
         new URLSearchParams({
@@ -1650,7 +1650,7 @@ describe('Phase 0A integration hardening', () => {
       ),
     ).rejects.toThrow('Unknown filter field internal_notes');
 
-    await expect(
+    expect(
       crudModule.listRecords(
         'articles',
         new URLSearchParams({
@@ -1888,6 +1888,7 @@ describe('Phase 0A integration hardening', () => {
     const generatedSchemaPath = resolve(import.meta.dir, '../generated/schema/generated.ts');
     const generatedSchemaText = await Bun.file(generatedSchemaPath).text();
     expect(generatedSchemaText).toContain('pgEnum("release_notes_status_enum"');
+    expect(generatedSchemaText).toContain('(table) => [');
     expect(generatedSchemaText).toContain('index("release_notes_title_status_idx")');
     expect(generatedSchemaText).toContain('references(() => authors.id, { onDelete: "cascade", onUpdate: "cascade" })');
 

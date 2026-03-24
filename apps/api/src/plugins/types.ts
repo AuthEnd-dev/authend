@@ -74,7 +74,7 @@ export type ExtensionHandlerRuntime = {
   }) => Promise<string> | string;
   defaultPermissions?: (referenceId: string, ctx: unknown) => Promise<Record<string, string[]>> | Record<string, string[]>;
   customCreateDefaultTeam?: (organization: Record<string, unknown>, ctx?: unknown) => Promise<Record<string, unknown>>;
-  organizationHook?: (...args: unknown[]) => Promise<unknown> | unknown;
+  organizationHook?: (...args: unknown[]) => unknown;
   ac?: unknown;
   roles?: Record<string, unknown>;
 };

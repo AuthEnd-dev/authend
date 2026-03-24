@@ -26,10 +26,7 @@ export const user = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    emailIndex: uniqueIndex("user_email_idx").on(table.email),
-    usernameIndex: uniqueIndex("user_username_idx").on(table.username),
-  }),
+  (table) => [uniqueIndex("user_email_idx").on(table.email), uniqueIndex("user_username_idx").on(table.username)],
 );
 
 export const session = pgTable(
@@ -47,10 +44,7 @@ export const session = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    sessionTokenIndex: uniqueIndex("session_token_idx").on(table.token),
-    sessionUserIndex: index("session_user_id_idx").on(table.userId),
-  }),
+  (table) => [uniqueIndex("session_token_idx").on(table.token), index("session_user_id_idx").on(table.userId)],
 );
 
 export const account = pgTable(
@@ -70,9 +64,7 @@ export const account = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    providerAccountIndex: uniqueIndex("account_provider_account_idx").on(table.providerId, table.accountId),
-  }),
+  (table) => [uniqueIndex("account_provider_account_idx").on(table.providerId, table.accountId)],
 );
 
 export const verification = pgTable(
@@ -85,9 +77,7 @@ export const verification = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    verificationIdentifierIndex: index("verification_identifier_idx").on(table.identifier),
-  }),
+  (table) => [index("verification_identifier_idx").on(table.identifier)],
 );
 
 export const twoFactor = pgTable(
@@ -98,9 +88,7 @@ export const twoFactor = pgTable(
     secret: text("secret"),
     backupCodes: text("backup_codes"),
   },
-  (table) => ({
-    twoFactorUserIndex: uniqueIndex("two_factor_user_idx").on(table.userId),
-  }),
+  (table) => [uniqueIndex("two_factor_user_idx").on(table.userId)],
 );
 
 export const jwks = pgTable("jwks", {
@@ -121,9 +109,7 @@ export const organization = pgTable(
     metadata: text("metadata"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    organizationSlugIndex: uniqueIndex("organization_slug_idx").on(table.slug),
-  }),
+  (table) => [uniqueIndex("organization_slug_idx").on(table.slug)],
 );
 
 export const member = pgTable(
@@ -135,9 +121,7 @@ export const member = pgTable(
     role: text("role").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    memberIdentityIndex: uniqueIndex("member_user_org_idx").on(table.userId, table.organizationId),
-  }),
+  (table) => [uniqueIndex("member_user_org_idx").on(table.userId, table.organizationId)],
 );
 
 export const invitation = pgTable("invitation", {
@@ -161,9 +145,7 @@ export const team = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }),
   },
-  (table) => ({
-    teamNameIndex: uniqueIndex("team_org_name_idx").on(table.organizationId, table.name),
-  }),
+  (table) => [uniqueIndex("team_org_name_idx").on(table.organizationId, table.name)],
 );
 
 export const teamMember = pgTable(
@@ -174,9 +156,7 @@ export const teamMember = pgTable(
     userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    teamMemberIdentityIndex: uniqueIndex("team_member_team_user_idx").on(table.teamId, table.userId),
-  }),
+  (table) => [uniqueIndex("team_member_team_user_idx").on(table.teamId, table.userId)],
 );
 
 export const organizationRole = pgTable(
@@ -189,9 +169,7 @@ export const organizationRole = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }),
   },
-  (table) => ({
-    organizationRoleIdentityIndex: uniqueIndex("organization_role_org_role_idx").on(table.organizationId, table.role),
-  }),
+  (table) => [uniqueIndex("organization_role_org_role_idx").on(table.organizationId, table.role)],
 );
 
 export const apikey = pgTable(
@@ -220,11 +198,11 @@ export const apikey = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    apiKeyConfigIndex: index("apikey_config_id_idx").on(table.configId),
-    apiKeyReferenceIndex: index("apikey_reference_id_idx").on(table.referenceId),
-    apiKeyValueIndex: index("apikey_key_idx").on(table.key),
-  }),
+  (table) => [
+    index("apikey_config_id_idx").on(table.configId),
+    index("apikey_reference_id_idx").on(table.referenceId),
+    index("apikey_key_idx").on(table.key),
+  ],
 );
 
 export const apiKey = apikey;

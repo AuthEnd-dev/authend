@@ -138,9 +138,9 @@ Goal: fill the most important missing product categories.
 
 ### Storage
 
-- [ ] Add upload endpoints for local and S3-compatible storage.
-- [ ] Add signed upload and signed download URL support.
-- [ ] Add file metadata records and attachment conventions for app tables.
+- [x] Add upload endpoints for local and S3-compatible storage.
+- [x] Add signed upload and signed download URL support.
+- [x] Add file metadata records and attachment conventions for app tables.
 - [ ] Add access rules for private vs public files.
 - [ ] Add admin file browser, search, and deletion flows.
 - [ ] Add image and content-type validation plus upload size limits.

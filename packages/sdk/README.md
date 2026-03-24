@@ -212,7 +212,43 @@ const client = createAuthendClient(...);
 
 client.auth
 client.data
+client.storage
 ```
+
+## Storage
+
+The SDK now exposes a first-class storage client:
+
+```ts
+const uploaded = await client.storage.upload({
+  file,
+  fileName: "avatar.png",
+  visibility: "private",
+  prefix: "avatars",
+});
+
+const signedUpload = await client.storage.createSignedUploadUrl({
+  key: "avatars/user_123.png",
+  contentType: "image/png",
+  expiresIn: 900,
+});
+
+const signedDownload = await client.storage.createSignedDownloadUrl({
+  key: uploaded.key,
+  expiresIn: 900,
+});
+
+const head = await client.storage.head({ key: uploaded.key });
+await client.storage.remove({ key: uploaded.key });
+```
+
+Available methods:
+
+- `upload({ file, fileName?, mimeType?, visibility?, prefix? })`
+- `createSignedUploadUrl({ key, contentType?, visibility?, expiresIn? })`
+- `createSignedDownloadUrl({ key, expiresIn? })`
+- `head({ key })`
+- `remove({ key })`
 
 `client.data` supports:
 

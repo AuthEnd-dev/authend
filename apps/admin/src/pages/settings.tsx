@@ -83,7 +83,10 @@ function renderValue(value: unknown) {
   if (typeof value === "object") {
     return JSON.stringify(value);
   }
-  return String(value);
+  if (typeof value === "string" || typeof value === "number") {
+    return String(value);
+  }
+  return "—";
 }
 
 function serializeEnvValue(value: string) {
@@ -119,30 +122,6 @@ function PageHeader({
         <p className="max-w-3xl text-sm text-muted-foreground">{description}</p>
       </div>
       {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
-    </section>
-  );
-}
-
-function Panel({
-  title,
-  description,
-  children,
-  contentClassName,
-}: {
-  title?: string;
-  description?: string;
-  children: ReactNode;
-  contentClassName?: string;
-}) {
-  return (
-    <section className="overflow-hidden rounded-2xl border border-border/60 bg-background">
-      {title || description ? (
-        <div className="border-b border-border/60 px-4 py-3">
-          {title ? <h3 className="text-sm font-semibold text-foreground">{title}</h3> : null}
-          {description ? <p className="mt-1 text-xs text-muted-foreground">{description}</p> : null}
-        </div>
-      ) : null}
-      <div className={cn("p-4 md:p-5", contentClassName)}>{children}</div>
     </section>
   );
 }
@@ -193,7 +172,7 @@ function SettingsDiagnostics({ diagnostics }: { diagnostics: Record<string, unkn
         {entries.map(([key, value]) => (
           <div key={key} className="grid gap-1 py-3 first:pt-0 last:pb-0 md:grid-cols-[220px_1fr] md:items-start md:gap-4">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{key}</span>
-            <span className="text-sm text-foreground break-words">{renderValue(value)}</span>
+            <span className="text-sm text-foreground wrap-break-word">{renderValue(value)}</span>
           </div>
         ))}
       </div>
@@ -224,7 +203,7 @@ function SettingsFieldInput({
             checked={Boolean(value)}
             onChange={(event) => onChange(event.target.checked)}
           />
-          <span>{Boolean(value) ? "Enabled" : "Disabled"}</span>
+          <span>{value ? "Enabled" : "Disabled"}</span>
         </label>
       </div>
     );

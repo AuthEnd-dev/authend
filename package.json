@@ -27,10 +27,14 @@
     "ci:sdk-dist-clean": "node scripts/check-sdk-dist-clean.mjs",
     "release:sdk:patch": "bun run test:sdk && npm --prefix packages/sdk version patch && npm --prefix packages/sdk run build && npm publish ./packages/sdk --access public",
     "release:sdk:minor": "bun run test:sdk && npm --prefix packages/sdk version minor && npm --prefix packages/sdk run build && npm publish ./packages/sdk --access public",
-    "release:sdk:major": "bun run test:sdk && npm --prefix packages/sdk version major && npm --prefix packages/sdk run build && npm publish ./packages/sdk --access public"
+    "release:sdk:major": "bun run test:sdk && npm --prefix packages/sdk version major && npm --prefix packages/sdk run build && npm publish ./packages/sdk --access public",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix"
   },
   "devDependencies": {
     "@types/bun": "^1.3.11",
+    "oxlint": "^1.57.0",
+    "oxlint-tsgolint": "^0.17.3",
     "typescript": "^6.0.2"
   }
 }

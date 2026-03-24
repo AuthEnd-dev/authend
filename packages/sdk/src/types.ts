@@ -57,3 +57,59 @@ export type PluginManifest = {
     enabled: boolean;
   };
 };
+
+export type AuthendStorageVisibility = 'public' | 'private';
+
+export type AuthendStorageUploadInput = {
+  file: File | Blob | ArrayBuffer | Uint8Array;
+  fileName?: string;
+  mimeType?: string;
+  visibility?: AuthendStorageVisibility;
+  prefix?: string;
+};
+
+export type AuthendStorageUploadResult = {
+  key: string;
+  visibility: AuthendStorageVisibility;
+  driver: 'local' | 's3';
+  sizeBytes: number;
+  mimeType: string;
+  url: string | null;
+};
+
+export type AuthendSignedUploadRequest = {
+  key: string;
+  contentType?: string;
+  visibility?: AuthendStorageVisibility;
+  expiresIn?: number;
+};
+
+export type AuthendSignedUploadResult = {
+  url: string;
+  method: 'PUT';
+  key: string;
+  expiresAt: string;
+  headers?: Record<string, string>;
+};
+
+export type AuthendSignedDownloadRequest = {
+  key: string;
+  expiresIn?: number;
+};
+
+export type AuthendSignedDownloadResult = {
+  url: string;
+  method: 'GET';
+  key: string;
+  expiresAt: string;
+};
+
+export type AuthendStorageHeadResult = {
+  key: string;
+  exists: boolean;
+  sizeBytes: number | null;
+  mimeType: string | null;
+  etag?: string | null;
+  lastModified?: string | null;
+  visibility?: AuthendStorageVisibility | null;
+};

@@ -13,6 +13,27 @@ function staticPaths() {
     "/api/system/sdk-schema": {
       get: { summary: "Get the typed SDK generation schema manifest" },
     },
+    "/api/storage/upload": {
+      post: { summary: "Upload a file using the configured storage driver" },
+    },
+    "/api/storage/signed-upload": {
+      post: { summary: "Create a signed upload URL for storage object writes" },
+    },
+    "/api/storage/signed-download": {
+      post: { summary: "Create a signed download URL for storage object reads" },
+    },
+    "/api/storage/head/{key}": {
+      get: { summary: "Read storage object metadata without downloading content" },
+    },
+    "/api/storage/{key}": {
+      delete: { summary: "Delete a storage object by key" },
+    },
+    "/api/storage/files": {
+      get: { summary: "List storage file metadata records with optional attachment filters" },
+    },
+    "/api/storage/files/{id}": {
+      get: { summary: "Get a storage file metadata record by id" },
+    },
     "/api/admin/plugins": {
       get: { summary: "List plugin catalog" },
     },

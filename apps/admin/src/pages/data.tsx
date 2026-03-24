@@ -49,10 +49,6 @@ import {
   type Table as ReactTableInstance,
 } from '@tanstack/react-table';
 
-function asDataRecord(value: object): DataRecord {
-  return value as DataRecord;
-}
-
 function asInputValue(value: unknown) {
   return typeof value === 'string' || typeof value === 'number' ? value : '';
 }
@@ -61,14 +57,20 @@ function recordIdOf(record: DataRecord) {
   return typeof record.id === 'string' ? record.id : null;
 }
 
+function primitiveText(value: unknown, fallback = '') {
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value);
+  }
+  return fallback;
+}
+
 function DataValue({ value, columnKey }: { value: unknown; columnKey: string }) {
   if (value === null || value === undefined || value === '') {
     return <span className="text-muted-foreground/40 italic text-xs font-semibold">N/A</span>;
   }
 
-  const str = String(value);
-
   if (columnKey === 'id' || columnKey.endsWith('Id') || columnKey.endsWith('_id')) {
+    const str = primitiveText(value, 'N/A');
     return (
       <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-muted/60 text-[11px] font-mono text-muted-foreground whitespace-nowrap border border-border/50">
         {(columnKey === 'id' || columnKey.endsWith('Id')) && <Key className="w-3 h-3 opacity-60" />}
@@ -96,6 +98,8 @@ function DataValue({ value, columnKey }: { value: unknown; columnKey: string }) 
       </span>
     );
   }
+
+  const str = primitiveText(value, '');
 
   if (str.length > 50) {
     return (
@@ -159,10 +163,11 @@ function TypeIcon({ type, columnKey }: { type: string; columnKey: string }) {
 function relationOptionLabel(record: DataRecord) {
   const labelKeys = ['name', 'title', 'email', 'username', 'display_name', 'displayName'];
   const labelKey = labelKeys.find((key) => typeof record[key] === 'string' && String(record[key]).trim().length > 0);
+  const recordId = primitiveText(record.id);
   if (labelKey) {
-    return `${record[labelKey]} (${String(record.id ?? '')})`;
+    return `${primitiveText(record[labelKey])} (${recordId})`;
   }
-  return String(record.id ?? 'Unknown record');
+  return recordId || 'Unknown record';
 }
 
 function RelationPickerModal({
@@ -211,7 +216,7 @@ function RelationPickerModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[160] flex items-center justify-center px-4">
+    <div className="fixed inset-0 z-160 flex items-center justify-center px-4">
       <button
         type="button"
         className="absolute inset-0 h-full w-full cursor-default border-none bg-background/60 backdrop-blur-[2px]"
@@ -273,7 +278,7 @@ function RelationPickerModal({
             {data?.items.map((item) => {
               const record = item as DataRecord;
               const itemId = record[relation.targetField];
-              const selected = String(value ?? '') === String(itemId ?? '');
+              const selected = primitiveText(value) === primitiveText(itemId);
               if (typeof itemId !== 'string' && typeof itemId !== 'number') {
                 return null;
               }
@@ -593,7 +598,7 @@ function DataRecordPanel({
                 <div className="grid gap-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="inline-flex min-h-10 items-center rounded-lg border border-border bg-background px-3 font-mono text-sm text-muted-foreground">
-                      {val == null || val === '' ? 'No related record selected' : String(val)}
+                      {val == null || val === '' ? 'No related record selected' : primitiveText(val, 'N/A')}
                     </div>
                     <Button type="button" variant="outline" onClick={() => setPickerField(field.name)}>
                       Open Picker
@@ -811,8 +816,8 @@ export function DataPage() {
   };
 
   const handleFormSuccess = () => {
-    refetch();
-    refetchMeta();
+    void refetch();
+    void refetchMeta();
   };
 
   useEffect(() => {
@@ -953,7 +958,7 @@ export function DataPage() {
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
             >
               <ArrowRight className="w-4 h-4 text-muted-foreground" />
             </Button>
@@ -995,7 +1000,7 @@ export function DataPage() {
         <div className="flex items-center gap-2.5">
           <h2 className="text-xl font-bold tracking-tight text-foreground/90 flex items-center gap-2">
             <span className="text-muted-foreground/60 font-medium tracking-normal text-lg">Tables</span>
-            <span className="text-muted-foreground/40 font-light translate-y-[1px]">/</span>
+            <span className="text-muted-foreground/40 font-light translate-y-px">/</span>
             {tableName}
           </h2>
           <Button
@@ -1115,7 +1120,7 @@ export function DataPage() {
                     return (
                       <TableHead
                         key={header.id}
-                        className={`sticky top-0 font-semibold text-muted-foreground h-11 px-4 text-[11px] uppercase tracking-wider whitespace-nowrap align-middle select-none border-b border-border/70 bg-background/95 shadow-[0_1px_0_0_hsl(var(--border)_/_0.75),0_10px_18px_-16px_rgba(15,23,42,0.45)] backdrop-blur supports-[backdrop-filter]:bg-background/80 ${isSelect ? 'left-0 z-30 w-12 border-r border-border/30 bg-background shadow-[1px_0_0_0_hsl(var(--border)_/_0.3),0_1px_0_0_hsl(var(--border)_/_0.75),0_10px_18px_-16px_rgba(15,23,42,0.45)]' : isActions ? 'right-0 z-30 w-12 bg-background border-l border-border/30 shadow-[0_1px_0_0_hsl(var(--border)_/_0.75),0_10px_18px_-16px_rgba(15,23,42,0.45)]' : 'z-20'} ${isSelect || isActions ? 'sticky' : ''}`}
+                        className={`sticky top-0 font-semibold text-muted-foreground h-11 px-4 text-[11px] uppercase tracking-wider whitespace-nowrap align-middle select-none border-b border-border/70 bg-background/95 shadow-[0_1px_0_0_hsl(var(--border)/0.75),0_10px_18px_-16px_rgba(15,23,42,0.45)] backdrop-blur supports-backdrop-filter:bg-background/80 ${isSelect ? 'left-0 z-30 w-12 border-r border-border/30 bg-background shadow-[1px_0_0_0_hsl(var(--border)/0.3),0_1px_0_0_hsl(var(--border)/0.75),0_10px_18px_-16px_rgba(15,23,42,0.45)]' : isActions ? 'right-0 z-30 w-12 bg-background border-l border-border/30 shadow-[0_1px_0_0_hsl(var(--border)/0.75),0_10px_18px_-16px_rgba(15,23,42,0.45)]' : 'z-20'} ${isSelect || isActions ? 'sticky' : ''}`}
                       >
                         {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                       </TableHead>
@@ -1145,7 +1150,7 @@ export function DataPage() {
                       return (
                         <TableCell
                           key={cell.id}
-                          className={`py-2 px-4 whitespace-nowrap text-sm h-12 max-w-[300px] truncate ${isSelect ? 'sticky left-0 z-10 bg-card group-hover:bg-muted/50 border-r border-border/30 shadow-[1px_0_0_0_hsl(var(--border)_/_0.3)] transition-colors' : isActions ? 'sticky right-0 z-10 bg-card group-hover:bg-muted/50 border-l border-border/30 transition-colors' : ''}`}
+                          className={`py-2 px-4 whitespace-nowrap text-sm h-12 max-w-[300px] truncate ${isSelect ? 'sticky left-0 z-10 bg-card group-hover:bg-muted/50 border-r border-border/30 shadow-[1px_0_0_0_hsl(var(--border)/0.3)] transition-colors' : isActions ? 'sticky right-0 z-10 bg-card group-hover:bg-muted/50 border-l border-border/30 transition-colors' : ''}`}
                         >
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </TableCell>

@@ -68,7 +68,7 @@ export async function sendEmail(input: {
   const config = await resolveEmailConfig();
   const transporter = await getTransporter();
 
-  if (!transporter) {
+  if (!transporter || typeof transporter !== "object" || !("sendMail" in transporter)) {
     logger.info("email.skipped", {
       to: input.to,
       subject: input.subject,
@@ -77,7 +77,7 @@ export async function sendEmail(input: {
     return;
   }
 
-  await transporter.sendMail({
+  await (transporter as { sendMail: (options: Record<string, unknown>) => Promise<unknown> }).sendMail({
     from: config.from,
     replyTo: config.replyTo,
     to: input.to,

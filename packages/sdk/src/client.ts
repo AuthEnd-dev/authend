@@ -8,7 +8,20 @@ import {
   usernameClient,
 } from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
-import type { DataRecord, PluginId, PluginManifest, TableApiOperations, TableDescriptor } from './types';
+import type {
+  AuthendSignedDownloadRequest,
+  AuthendSignedDownloadResult,
+  AuthendSignedUploadRequest,
+  AuthendSignedUploadResult,
+  AuthendStorageHeadResult,
+  AuthendStorageUploadInput,
+  AuthendStorageUploadResult,
+  DataRecord,
+  PluginId,
+  PluginManifest,
+  TableApiOperations,
+  TableDescriptor,
+} from './types';
 
 export type AuthendAuthClient = ReturnType<typeof createAuthClient>;
 
@@ -210,13 +223,6 @@ export type ResourceClientFromDefinition<TResource extends AnyAuthendSchemaResou
   remove: EnabledMethod<InferOperations<TResource>['delete'], (id: string) => Promise<void>>;
 };
 
-type DynamicResourceClient = ResourceClient<
-  DataRecord,
-  Record<string, unknown>,
-  Partial<Record<string, unknown>>,
-  ResourceListParams
->;
-
 type BaseDataClient = {
   resource: <
     TRecord = DataRecord,
@@ -248,6 +254,7 @@ type AuthendClientBaseOptions = {
   enabledPlugins?: PluginId[];
   authClient?: AuthendAuthClient;
   dataBasePath?: string;
+  storageBasePath?: string;
   apiKey?: AuthendApiKeyProvider;
   apiKeyHeaderName?: string;
 };
@@ -308,17 +315,20 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape>(
 ): {
   auth: AuthendAuthClient;
   data: TypedDataClient<TSchema>;
+  storage: AuthendStorageClient;
 };
 
 export function createAuthendClient(options: AuthendClientOptionsWithoutSchema): {
   auth: AuthendAuthClient;
   data: TypedDataClient<undefined>;
+  storage: AuthendStorageClient;
 };
 
 export function createAuthendClient<TSchema extends AuthendSchemaShape>(
   options: AuthendClientOptions<TSchema> | AuthendClientOptionsWithoutSchema,
 ) {
   const dataBasePath = options.dataBasePath ?? '/api/data';
+  const storageBasePath = options.storageBasePath ?? '/api/storage';
   const apiKeyHeaderName = options.apiKeyHeaderName ?? 'x-api-key';
   const auth =
     options.authClient ??
@@ -390,6 +400,56 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape>(
     }
 
     return (await response.json()) as T;
+  };
+
+  const requestMultipart = async <T>(path: string, formData: FormData): Promise<T> => {
+    const headers = composeHeaders();
+    headers.delete('content-type');
+    const response = await (options.fetch ?? fetch)(`${options.baseURL}${path}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const rawBody = await response.text();
+      let parsedPayload: AuthendApiErrorPayload | null = null;
+      if (rawBody.trim().length > 0) {
+        try {
+          parsedPayload = JSON.parse(rawBody) as AuthendApiErrorPayload;
+        } catch {
+          parsedPayload = null;
+        }
+      }
+      throw new AuthendApiError({
+        status: response.status,
+        path,
+        message: parsedPayload?.message ?? parsedPayload?.error ?? (rawBody || `Request failed: ${response.status}`),
+        code: parsedPayload?.code,
+        details: parsedPayload?.details,
+        rawBody,
+      });
+    }
+
+    return (await response.json()) as T;
+  };
+
+  const toStorageFile = (input: AuthendStorageUploadInput) => {
+    const fileName = input.fileName ?? 'upload.bin';
+    if (input.file instanceof File) {
+      return input.file;
+    }
+    if (input.file instanceof Blob) {
+      return new File([input.file], fileName, { type: input.mimeType ?? (input.file.type || 'application/octet-stream') });
+    }
+    if (input.file instanceof ArrayBuffer) {
+      return new File([new Uint8Array(input.file)], fileName, { type: input.mimeType ?? 'application/octet-stream' });
+    }
+    if (input.file instanceof Uint8Array) {
+      return new File([new Uint8Array(input.file)], fileName, { type: input.mimeType ?? 'application/octet-stream' });
+    }
+    return new File([input.file], fileName, { type: input.mimeType ?? 'application/octet-stream' });
   };
 
   const resource = <
@@ -532,8 +592,47 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape>(
     },
   });
 
+  const storage: AuthendStorageClient = {
+    upload: async (input) => {
+      const formData = new FormData();
+      const file = toStorageFile(input);
+      formData.set('file', file);
+      if (input.visibility) {
+        formData.set('visibility', input.visibility);
+      }
+      if (input.prefix) {
+        formData.set('prefix', input.prefix);
+      }
+      return requestMultipart<AuthendStorageUploadResult>(`${storageBasePath}/upload`, formData);
+    },
+    createSignedUploadUrl: (input) =>
+      request<AuthendSignedUploadResult>(`${storageBasePath}/signed-upload`, {
+        method: 'POST',
+        body: JSON.stringify(input satisfies AuthendSignedUploadRequest),
+      }),
+    createSignedDownloadUrl: (input) =>
+      request<AuthendSignedDownloadResult>(`${storageBasePath}/signed-download`, {
+        method: 'POST',
+        body: JSON.stringify(input satisfies AuthendSignedDownloadRequest),
+      }),
+    head: ({ key }) => request<AuthendStorageHeadResult>(`${storageBasePath}/head/${encodeURIComponent(key)}`),
+    remove: ({ key }) =>
+      request<void>(`${storageBasePath}/${encodeURIComponent(key)}`, {
+        method: 'DELETE',
+      }),
+  };
+
   return {
     auth,
     data,
+    storage,
   };
 }
+
+export type AuthendStorageClient = {
+  upload: (input: AuthendStorageUploadInput) => Promise<AuthendStorageUploadResult>;
+  createSignedUploadUrl: (input: AuthendSignedUploadRequest) => Promise<AuthendSignedUploadResult>;
+  createSignedDownloadUrl: (input: AuthendSignedDownloadRequest) => Promise<AuthendSignedDownloadResult>;
+  head: (input: { key: string }) => Promise<AuthendStorageHeadResult>;
+  remove: (input: { key: string }) => Promise<void>;
+};

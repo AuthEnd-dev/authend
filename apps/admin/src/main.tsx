@@ -7,6 +7,7 @@ import { PluginsPage } from './pages/plugins';
 import { DataPage } from './pages/data';
 import { MigrationsPage } from './pages/migrations';
 import { AuditPage } from './pages/audit';
+import { StorageFilesPage } from './pages/storage';
 import {
   AiAssistantSettingsPage,
   AdminAccessSettingsPage,
@@ -30,7 +31,7 @@ import './styles.css';
 import { useState } from 'react';
 import { Input } from './components/ui/input';
 import { FeedbackProvider } from './components/ui/feedback';
-import { Database, ScrollText, Blocks, Settings, LogOut, Bot, Search, Plus, Folder, FolderOpen, Table2 } from 'lucide-react';
+import { Database, ScrollText, Blocks, Settings, LogOut, Bot, Search, Plus, Folder, FolderOpen, Table2, HardDrive } from 'lucide-react';
 
 import { TableSchemaPanel } from './components/table-schema-panel';
 import { AiAssistantDrawer } from './components/ai-assistant-drawer';
@@ -51,6 +52,7 @@ const SYSTEM_TABLES = [
   'ai_threads',
   'ai_messages',
   'ai_runs',
+  'storage_files',
 ];
 
 function DatabaseSubNav() {
@@ -234,12 +236,14 @@ function Shell() {
   const path = location.pathname;
   let activeSection = 'settings';
   if (path.startsWith('/data')) activeSection = 'database';
+  else if (path.startsWith('/storage-files')) activeSection = 'storage';
   else if (path.startsWith('/audit')) activeSection = 'logs';
   else if (path.startsWith('/plugins')) activeSection = 'plugins';
   else activeSection = 'settings';
 
   const primaryNav = [
     { id: 'database', icon: Database, label: 'Database', to: '/data' },
+    { id: 'storage', icon: HardDrive, label: 'Storage', to: '/storage-files' },
     { id: 'logs', icon: ScrollText, label: 'Logs', to: '/audit' },
     { id: 'plugins', icon: Blocks, label: 'Plugins', to: '/plugins' },
     { id: 'settings', icon: Settings, label: 'Settings', to: '/general' },
@@ -341,6 +345,11 @@ const pluginsGroup = createRoute({
 const logsGroup = createRoute({
   getParentRoute: () => rootRoute,
   id: 'logs',
+  component: FullBleedOutletLayout,
+});
+const storageGroup = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'storage',
   component: FullBleedOutletLayout,
 });
 
@@ -463,6 +472,11 @@ const auditRoute = createRoute({
   path: '/audit',
   component: AuditPage,
 });
+const storageFilesRoute = createRoute({
+  getParentRoute: () => storageGroup,
+  path: '/storage-files',
+  component: StorageFilesPage,
+});
 
 // Compose Tree
 const routeTree = rootRoute.addChildren([
@@ -487,6 +501,7 @@ const routeTree = rootRoute.addChildren([
   ]),
   pluginsGroup.addChildren([pluginsRoute]),
   logsGroup.addChildren([auditRoute]),
+  storageGroup.addChildren([storageFilesRoute]),
 ]);
 
 const router = createRouter({

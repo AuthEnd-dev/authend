@@ -258,6 +258,27 @@ const builtinTables: Record<string, TableDescriptor> = {
     mutableSchema: false,
     ownerPluginId: null,
   },
+  storage_files: {
+    table: "storage_files",
+    primaryKey: "id",
+    fields: [
+      { name: "id", type: "text", nullable: false, unique: true, indexed: false },
+      { name: "object_key", type: "text", nullable: false, unique: true, indexed: true },
+      { name: "visibility", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "driver", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "size_bytes", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "mime_type", type: "text", nullable: true, unique: false, indexed: false },
+      { name: "public_url", type: "text", nullable: true, unique: false, indexed: false },
+      { name: "attachment_table", type: "text", nullable: true, unique: false, indexed: false },
+      { name: "attachment_record_id", type: "text", nullable: true, unique: false, indexed: false },
+      { name: "attachment_field", type: "text", nullable: true, unique: false, indexed: false },
+      { name: "created_at", type: "timestamp", nullable: false, unique: false, indexed: false },
+      { name: "updated_at", type: "timestamp", nullable: false, unique: false, indexed: false },
+    ],
+    source: "builtin",
+    mutableSchema: false,
+    ownerPluginId: null,
+  },
 };
 
 const defaultBuiltinTableExposurePolicy: BuiltinTableExposurePolicy = {
@@ -273,6 +294,10 @@ const builtinTableExposurePolicies: Partial<Record<keyof typeof builtinTables, B
   session: {
     visibleInDataApi: true,
     redactedFields: ["ip_address", "user_agent", "impersonated_by"],
+  },
+  storage_files: {
+    visibleInDataApi: true,
+    redactedFields: [],
   },
 };
 
@@ -325,10 +350,6 @@ function hiddenFieldSetForActor(
   return hiddenFields;
 }
 
-function readableFields(descriptor: TableDescriptor, config?: TableApiConfig | null) {
-  const hiddenFields = hiddenFieldSetForActor(descriptor, config, "superadmin");
-  return descriptor.fields.filter((field) => !hiddenFields.has(field.name));
-}
 
 function assertWritableDescriptor(descriptor: TableDescriptor) {
   if (descriptor.source !== "generated") {

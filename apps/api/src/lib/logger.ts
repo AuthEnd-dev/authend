@@ -6,7 +6,7 @@ function log(level: LogLevel, message: string, meta?: Record<string, unknown>) {
       level,
       message,
       timestamp: new Date().toISOString(),
-      ...(meta ?? {}),
+      ...meta,
     }),
   );
 }

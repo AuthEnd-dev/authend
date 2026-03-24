@@ -1,31 +1,32 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { logger } from "./lib/logger";
-import { jsonError } from "./lib/http";
-import { env } from "./config/env";
-import { healthRouter } from "./routes/health";
-import { setupRouter } from "./routes/setup";
-import { authRouter } from "./routes/auth";
-import { adminRouter } from "./routes/admin";
-import { adminDataRouter, dataRouter } from "./routes/data";
-import { openApiRouter } from "./routes/openapi";
-import { systemRouter } from "./routes/system";
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { logger } from './lib/logger';
+import { jsonError } from './lib/http';
+import { env } from './config/env';
+import { healthRouter } from './routes/health';
+import { setupRouter } from './routes/setup';
+import { authRouter } from './routes/auth';
+import { adminRouter } from './routes/admin';
+import { adminDataRouter, dataRouter } from './routes/data';
+import { openApiRouter } from './routes/openapi';
+import { systemRouter } from './routes/system';
+import { storageRouter } from './routes/storage';
 
-const adminDist = resolve(import.meta.dir, "../../admin/dist");
+const adminDist = resolve(import.meta.dir, '../../admin/dist');
 
 async function serveAdminAsset(pathname: string) {
-  const filePath = pathname === "/" ? resolve(adminDist, "index.html") : resolve(adminDist, `.${pathname}`);
+  const filePath = pathname === '/' ? resolve(adminDist, 'index.html') : resolve(adminDist, `.${pathname}`);
   return readFile(filePath);
 }
 
 async function adminShell() {
   try {
-    const body = await serveAdminAsset("/");
+    const body = await serveAdminAsset('/');
     return new Response(body, {
       headers: {
-        "content-type": "text/html; charset=utf-8",
+        'content-type': 'text/html; charset=utf-8',
       },
     });
   } catch {
@@ -42,7 +43,7 @@ async function adminShell() {
 </html>`;
     return new Response(html, {
       headers: {
-        "content-type": "text/html; charset=utf-8",
+        'content-type': 'text/html; charset=utf-8',
       },
     });
   }
@@ -52,45 +53,46 @@ export function createApp() {
   const app = new Hono();
 
   app.use(
-    "/api/*",
+    '/api/*',
     cors({
       origin: env.CORS_ORIGIN ?? env.ADMIN_DEV_URL,
-      allowHeaders: ["Content-Type", "Authorization"],
-      allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+      allowHeaders: ['Content-Type', 'Authorization'],
+      allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
       credentials: true,
     }),
   );
 
   app.onError((error) => {
-    logger.error("request.failed", { error: error instanceof Error ? error.message : String(error) });
+    logger.error('request.failed', { error: error instanceof Error ? error.message : String(error) });
     return jsonError(error);
   });
 
-  app.route("/", healthRouter);
-  app.route("/api/setup", setupRouter);
-  app.route("/api/auth", authRouter);
-  app.route("/api/admin", adminRouter);
-  app.route("/api/admin/data", adminDataRouter);
-  app.route("/api/system", systemRouter);
-  app.route("/api/data", dataRouter);
-  app.route("/api", openApiRouter);
+  app.route('/', healthRouter);
+  app.route('/api/setup', setupRouter);
+  app.route('/api/auth', authRouter);
+  app.route('/api/admin', adminRouter);
+  app.route('/api/admin/data', adminDataRouter);
+  app.route('/api/system', systemRouter);
+  app.route('/api/data', dataRouter);
+  app.route('/api/storage', storageRouter);
+  app.route('/api', openApiRouter);
 
-  app.get("/", (c) => c.redirect("/admin"));
-  app.get("/admin", () => adminShell());
-  app.get("/admin/*", async (c) => {
-    const pathname = new URL(c.req.url).pathname.replace("/admin", "") || "/";
+  app.get('/', (c) => c.redirect('/admin'));
+  app.get('/admin', () => adminShell());
+  app.get('/admin/*', async (c) => {
+    const pathname = new URL(c.req.url).pathname.replace('/admin', '') || '/';
     try {
       const body = await serveAdminAsset(pathname);
-      const contentType = pathname.endsWith(".js")
-        ? "text/javascript; charset=utf-8"
-        : pathname.endsWith(".css")
-          ? "text/css; charset=utf-8"
-          : pathname.endsWith(".svg")
-            ? "image/svg+xml"
-            : "text/html; charset=utf-8";
+      const contentType = pathname.endsWith('.js')
+        ? 'text/javascript; charset=utf-8'
+        : pathname.endsWith('.css')
+          ? 'text/css; charset=utf-8'
+          : pathname.endsWith('.svg')
+            ? 'image/svg+xml'
+            : 'text/html; charset=utf-8';
       return new Response(body, {
         headers: {
-          "content-type": contentType,
+          'content-type': contentType,
         },
       });
     } catch {

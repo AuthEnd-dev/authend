@@ -114,6 +114,9 @@ v1 intentionally blocks destructive operations:
 - `GET|POST /api/admin/api-preview/*`
 - `GET|POST|PATCH|DELETE /api/data/:table`
 - `GET|POST|PATCH|DELETE /api/admin/data/:table`
+- `POST /api/storage/upload`
+- `GET /api/storage/files`
+- `GET /api/storage/files/:id`
 
 Admin routes require a Better Auth session and a seeded superadmin record. App-facing data routes enforce per-table access policy, and built-in auth/system tables are default-deny unless explicitly allowlisted for read-only admin use. The admin dashboard SDK talks to `/api/admin/data/*`, while external clients default to `/api/data/*`.
 
@@ -271,7 +274,7 @@ bun test
 ## Current limitations
 
 - Multi-tenancy is out of scope for v1.
-- File upload/browser workflows are not yet exposed beyond storage configuration and diagnostics.
+- Storage upload and signed URL endpoints are available with file metadata records and optional attachment references (`attachmentTable`, `attachmentRecordId`, `attachmentField`), but admin file browser workflows are still pending.
 - Generated app tables can now be exposed through the data router with runtime policy enforcement and preset-based policy editing, but the admin UX is still operator-grade rather than polished end-user product tooling.
 - The SDK generator now uses the dedicated `/api/system/sdk-schema` manifest rather than full OpenAPI codegen. OpenAPI remains available for broader ecosystem tooling.
 - The generated SDK now emits exact per-resource record/create/update/query types, include metadata, and schema checksum/version constants, but richer doc comments still need field-level descriptions in the schema model.

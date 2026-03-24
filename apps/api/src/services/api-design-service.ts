@@ -368,6 +368,10 @@ function operationId(sdkName: string, key: ApiPreviewOperation["key"]) {
   return `${sdkName}_${key}`;
 }
 
+function primitiveToString(value: unknown, fallback: string) {
+  return typeof value === "string" || typeof value === "number" ? String(value) : fallback;
+}
+
 function buildOperations(table: TableBlueprint, config: TableApiConfig): ApiPreviewOperation[] {
   const routeBase = `/api/data/${config.routeSegment}`;
   const readableFields = table.fields.filter((field) => fieldReadableForAnyActor(field.name, config.hiddenFields, config.fieldVisibility));
@@ -384,7 +388,7 @@ function buildOperations(table: TableBlueprint, config: TableApiConfig): ApiPrev
       .filter((field) => fieldWritableForAnyActor(field.name, "update", config.fieldVisibility))
       .map((field) => [field.name, exampleValueForField(field)]),
   );
-  const primaryKeyExample = String(recordExample[table.primaryKey] ?? "record_id");
+  const primaryKeyExample = primitiveToString(recordExample[table.primaryKey], "record_id");
   const listQueryParams: ApiPreviewOperation["queryParams"] = [];
 
   if (config.pagination.enabled) {

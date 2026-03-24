@@ -4,7 +4,6 @@ import {
   settingsSectionSchemas,
 } from "@authend/shared";
 import { db, sql } from "../db/client";
-import { systemSettings } from "../db/schema/system";
 import { writeAuditLog } from "./audit-service";
 
 const defaultSettings = {

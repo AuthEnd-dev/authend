@@ -12,6 +12,10 @@ function requireHeaders(value: Headers | null): Headers {
   return value;
 }
 
+function requestUrl(input: Parameters<typeof fetch>[0]) {
+  return typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+}
+
 describe('Authend SDK API errors', () => {
   test('throws structured AuthendApiError for JSON error payloads', async () => {
     const mockFetch = asFetch(
@@ -34,7 +38,7 @@ describe('Authend SDK API errors', () => {
       fetch: mockFetch,
     });
 
-    await expect(client.data.create('posts', { title: '' })).rejects.toMatchObject({
+    expect(client.data.create('posts', { title: '' })).rejects.toMatchObject({
       name: 'AuthendApiError',
       status: 400,
       code: 'VALIDATION_FAILED',
@@ -141,7 +145,7 @@ describe('Authend SDK list helpers', () => {
   test('page and withInclude compose list params', async () => {
     const requestedUrls: string[] = [];
     const mockFetch = asFetch(async (input) => {
-      requestedUrls.push(String(input));
+      requestedUrls.push(requestUrl(input));
       return new Response(
         JSON.stringify({
           items: [],
@@ -213,5 +217,110 @@ describe('Authend SDK list helpers', () => {
       ids.push(item.id);
     }
     expect(ids).toEqual(['1', '2', '3']);
+  });
+});
+
+describe('Authend SDK storage client', () => {
+  test('upload sends multipart body and api key header', async () => {
+    let capturedHeaders: Headers | null = null;
+    let capturedBody: BodyInit | null | undefined;
+    const mockFetch = asFetch(async (_input, init) => {
+      capturedHeaders = new Headers(init?.headers);
+      capturedBody = init?.body;
+      return new Response(
+        JSON.stringify({
+          key: 'uploads/demo.png',
+          visibility: 'private',
+          driver: 'local',
+          sizeBytes: 4,
+          mimeType: 'image/png',
+          url: null,
+        }),
+        { status: 201, headers: { 'content-type': 'application/json' } },
+      );
+    });
+
+    const client = createAuthendClient({
+      baseURL: 'http://localhost:7002',
+      fetch: mockFetch,
+      apiKey: 'ak_storage',
+    });
+
+    await client.storage.upload({
+      file: new File([new Uint8Array([1, 2, 3, 4])], 'demo.png', { type: 'image/png' }),
+      visibility: 'private',
+      prefix: 'uploads',
+    });
+
+    const headers = requireHeaders(capturedHeaders);
+    expect(headers.get('x-api-key')).toBe('ak_storage');
+    expect(headers.get('content-type')).toBeNull();
+    expect(capturedBody).toBeInstanceOf(FormData);
+  });
+
+  test('storage json methods use storage base path and preserve errors', async () => {
+    const calledUrls: string[] = [];
+    const mockFetch = asFetch(async (input) => {
+      const url = requestUrl(input);
+      calledUrls.push(url);
+      if (url.endsWith('/signed-upload')) {
+        return new Response(
+          JSON.stringify({
+            url: 'https://example.com/upload',
+            method: 'PUT',
+            key: 'uploads/a.txt',
+            expiresAt: '2026-03-24T12:00:00.000Z',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.endsWith('/signed-download')) {
+        return new Response(
+          JSON.stringify({
+            url: 'https://example.com/download',
+            method: 'GET',
+            key: 'uploads/a.txt',
+            expiresAt: '2026-03-24T12:00:00.000Z',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.includes('/head/')) {
+        return new Response(
+          JSON.stringify({
+            key: 'uploads/a.txt',
+            exists: true,
+            sizeBytes: 5,
+            mimeType: 'text/plain',
+            etag: 'etag',
+            lastModified: '2026-03-24T12:00:00.000Z',
+            visibility: 'private',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(
+        JSON.stringify({ message: 'Delete failed', code: 'DELETE_FAILED' }),
+        { status: 500, headers: { 'content-type': 'application/json' } },
+      );
+    });
+
+    const client = createAuthendClient({
+      baseURL: 'http://localhost:7002',
+      fetch: mockFetch,
+      storageBasePath: '/api/storage',
+    });
+
+    await client.storage.createSignedUploadUrl({ key: 'uploads/a.txt' });
+    await client.storage.createSignedDownloadUrl({ key: 'uploads/a.txt' });
+    const head = await client.storage.head({ key: 'uploads/a.txt' });
+    expect(head.exists).toBe(true);
+    expect(client.storage.remove({ key: 'uploads/a.txt' })).rejects.toMatchObject({
+      name: 'AuthendApiError',
+      code: 'DELETE_FAILED',
+    });
+    expect(calledUrls.some((url) => url.includes('/api/storage/signed-upload'))).toBe(true);
+    expect(calledUrls.some((url) => url.includes('/api/storage/signed-download'))).toBe(true);
+    expect(calledUrls.some((url) => url.includes('/api/storage/head/uploads%2Fa.txt'))).toBe(true);
   });
 });

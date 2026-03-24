@@ -205,13 +205,13 @@ function renderTableIndexes(table: TableBlueprint) {
 
   for (const field of withId.fields.map(ensureFieldDefaults)) {
     if (field.indexed && !field.unique && field.name !== withId.primaryKey) {
-      indexEntries.push(`  ${indexName(withId.name, field.name)}: index("${indexName(withId.name, field.name)}").on(table.${field.name}),`);
+      indexEntries.push(`    index("${indexName(withId.name, field.name)}").on(table.${field.name}),`);
     }
   }
 
   for (const columns of withId.indexes) {
     const customIndexName = `${withId.name}_${columns.join("_")}_idx`;
-    indexEntries.push(`  ${customIndexName}: index("${customIndexName}").on(${columns.map((column) => `table.${column}`).join(", ")}),`);
+    indexEntries.push(`    index("${customIndexName}").on(${columns.map((column) => `table.${column}`).join(", ")}),`);
   }
 
   if (indexEntries.length === 0) {
@@ -219,9 +219,9 @@ function renderTableIndexes(table: TableBlueprint) {
   }
 
   return `,
-  (table) => ({
+  (table) => [
 ${indexEntries.join("\n")}
-  })`;
+  ]`;
 }
 
 function renderSchemaModule(draft: SchemaDraft) {
@@ -257,6 +257,10 @@ ${draft.tables.map((table) => `  ${table.name},`).join("\n")}
 };
 `;
 }
+
+export const schemaServiceTestUtils = {
+  renderSchemaModule,
+};
 
 function migrationSqlKey(prefix: string) {
   const now = new Date();
@@ -444,7 +448,6 @@ export async function getSchemaDriftReport(rawDraft?: SchemaDraft) {
 
   for (const table of generatedTables) {
     const liveColumns = columnsByTable.get(table.name) ?? [];
-    const liveColumnNames = new Set(liveColumns.map((column) => column.columnName));
     const expectedFieldNames = new Set(table.fields.map((field) => field.name));
 
     for (const field of table.fields.map(ensureFieldDefaults)) {

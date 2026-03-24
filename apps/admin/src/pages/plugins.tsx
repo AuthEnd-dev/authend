@@ -119,7 +119,13 @@ function stringValue(value: unknown) {
   if (typeof value === 'string' && value.trim().length === 0) {
     return '—';
   }
-  return String(value);
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value);
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return '—';
 }
 
 function formatTimestamp(value: unknown) {
@@ -187,7 +193,9 @@ function ConfigField({ field, value, onChange }: ConfigFieldProps) {
           field.type === 'number'
             ? value === undefined || value === null
               ? ''
-              : String(value)
+              : typeof value === 'number' || typeof value === 'string'
+                ? String(value)
+                : ''
             : typeof value === 'string' || typeof value === 'number'
               ? String(value)
               : ''
@@ -758,7 +766,7 @@ export function PluginsPage() {
                           setBindingDrafts((current) => ({
                             ...current,
                             [selectedPlugin.id]: {
-                              ...(current[selectedPlugin.id] ?? {}),
+                              ...current[selectedPlugin.id],
                               [slot.key]: event.target.value,
                             },
                           }))

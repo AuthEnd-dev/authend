@@ -32,13 +32,14 @@ const baseURL = import.meta.env.VITE_API_URL ?? 'http://localhost:7002';
 const sdkClient = createAuthendClient({ baseURL, dataBasePath: '/api/admin/data' });
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (!headers.has('content-type')) {
+    headers.set('content-type', 'application/json');
+  }
   const response = await fetch(`${baseURL}${path}`, {
     credentials: 'include',
-    headers: {
-      'content-type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
     ...init,
+    headers,
   });
 
   if (!response.ok) {
@@ -48,6 +49,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (response.status === 204) {
     return undefined as T;
+  }
+
+  return (await response.json()) as T;
+}
+
+async function requestForm<T>(path: string, formData: FormData): Promise<T> {
+  const response = await fetch(`${baseURL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `Request failed: ${response.status}`);
   }
 
   return (await response.json()) as T;
@@ -166,6 +182,33 @@ export const client = {
       runCronJob: (jobId: string) =>
         request<CronRun>(`/api/admin/settings/crons/${jobId}/run`, {
           method: 'POST',
+        }),
+    },
+    storage: {
+      listFiles: (query?: { table?: string; recordId?: string; field?: string; limit?: number }) => {
+        const params = new URLSearchParams();
+        if (query?.table) params.set('table', query.table);
+        if (query?.recordId) params.set('recordId', query.recordId);
+        if (query?.field) params.set('field', query.field);
+        if (typeof query?.limit === 'number') params.set('limit', String(query.limit));
+        const suffix = params.size > 0 ? `?${params.toString()}` : '';
+        return request<Array<Record<string, unknown>>>(`/api/storage/files${suffix}`);
+      },
+      getFile: (id: string) => request<Record<string, unknown>>(`/api/storage/files/${id}`),
+      upload: (formData: FormData) => requestForm<Record<string, unknown>>('/api/storage/upload', formData),
+      createFolder: (path: string, visibility?: 'public' | 'private') =>
+        request<Record<string, unknown>>('/api/storage/folders', {
+          method: 'POST',
+          body: JSON.stringify({ path, visibility }),
+        }),
+      createSignedDownloadUrl: (key: string, expiresIn?: number) =>
+        request<{ url: string; method: 'GET'; key: string; expiresAt: string }>('/api/storage/signed-download', {
+          method: 'POST',
+          body: JSON.stringify({ key, expiresIn }),
+        }),
+      remove: (key: string) =>
+        request<void>(`/api/storage/${encodeURIComponent(key)}`, {
+          method: 'DELETE',
         }),
     },
   },

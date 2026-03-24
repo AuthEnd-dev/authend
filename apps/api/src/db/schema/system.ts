@@ -30,9 +30,7 @@ export const pluginConfigs = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    pluginIdIndex: uniqueIndex("plugin_configs_plugin_id_idx").on(table.pluginId),
-  }),
+  (table) => [uniqueIndex("plugin_configs_plugin_id_idx").on(table.pluginId)],
 );
 
 export const schemaTables = pgTable(
@@ -46,9 +44,7 @@ export const schemaTables = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    schemaTableNameIndex: uniqueIndex("schema_tables_table_name_idx").on(table.tableName),
-  }),
+  (table) => [uniqueIndex("schema_tables_table_name_idx").on(table.tableName)],
 );
 
 export const schemaFields = pgTable("schema_fields", {
@@ -82,9 +78,7 @@ export const migrationRuns = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     appliedAt: timestamp("applied_at", { withTimezone: true }),
   },
-  (table) => ({
-    migrationKeyIndex: uniqueIndex("migration_runs_key_idx").on(table.migrationKey),
-  }),
+  (table) => [uniqueIndex("migration_runs_key_idx").on(table.migrationKey)],
 );
 
 export const auditLogs = pgTable("audit_logs", {
@@ -104,9 +98,7 @@ export const systemSettings = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    systemSettingsKeyIndex: uniqueIndex("system_settings_key_idx").on(table.key),
-  }),
+  (table) => [uniqueIndex("system_settings_key_idx").on(table.key)],
 );
 
 export const backupRuns = pgTable("backup_runs", {
@@ -139,9 +131,7 @@ export const cronJobs = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    cronJobsNameIndex: uniqueIndex("cron_jobs_name_idx").on(table.name),
-  }),
+  (table) => [uniqueIndex("cron_jobs_name_idx").on(table.name)],
 );
 
 export const cronRuns = pgTable("cron_runs", {
@@ -192,3 +182,22 @@ export const aiRuns = pgTable("ai_runs", {
   approvedAt: timestamp("approved_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });
+
+export const storageFiles = pgTable(
+  "storage_files",
+  {
+    id: text("id").primaryKey(),
+    objectKey: text("object_key").notNull(),
+    visibility: text("visibility").notNull().default("private"),
+    driver: text("driver").notNull(),
+    sizeBytes: text("size_bytes").notNull(),
+    mimeType: text("mime_type"),
+    publicUrl: text("public_url"),
+    attachmentTable: text("attachment_table"),
+    attachmentRecordId: text("attachment_record_id"),
+    attachmentField: text("attachment_field"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("storage_files_object_key_idx").on(table.objectKey)],
+);
