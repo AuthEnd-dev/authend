@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -37,7 +37,6 @@ type EditableRelation = RelationBlueprint & {
 const tableEditorTabs = [
   { key: "fields", label: "Fields" },
   { key: "api", label: "API Rules" },
-  { key: "options", label: "Options" },
 ] as const;
 
 const accessActors: ApiAccessActor[] = ["public", "session", "apiKey", "superadmin"];
@@ -334,11 +333,19 @@ export function TableSchemaPanel({
     enabled: isOpen,
   });
 
+  const schemaEditorRowIdRef = useRef(0);
+  const nextSchemaEditorRowId = () => {
+    schemaEditorRowIdRef.current += 1;
+    return `schema-editor-row-${schemaEditorRowIdRef.current}`;
+  };
+
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [fields, setFields] = useState<EditableField[]>([]);
+  const [fieldRowIds, setFieldRowIds] = useState<string[]>([]);
   const [collapsedFields, setCollapsedFields] = useState<boolean[]>([]);
   const [relations, setRelations] = useState<EditableRelation[]>([]);
+  const [relationRowIds, setRelationRowIds] = useState<string[]>([]);
   const [collapsedRelations, setCollapsedRelations] = useState<boolean[]>([]);
   const [apiConfig, setApiConfig] = useState<TableApiConfig>(defaultTableApiConfig());
   const [activeTab, setActiveTab] = useState<(typeof tableEditorTabs)[number]["key"]>("fields");
@@ -385,39 +392,35 @@ export function TableSchemaPanel({
 
       setName(table.name);
       setDisplayName(table.displayName || table.name);
-      setFields(
-        table.fields
-          .filter((field) => field.name !== "id")
-          .map((field) => ({
-            ...field,
-            default: field.default ?? "",
-            unique: !!field.unique,
-            indexed: !!field.indexed,
-            nullable: !!field.nullable,
-            size: field.size ?? 255,
-            enumValues: field.enumValues ?? [],
-          })),
-      );
-      setCollapsedFields(table.fields.filter((field) => field.name !== "id").map(() => true));
-      setRelations(
-        schemaData.relations
-          .filter((relation) => relation.sourceTable === table.name)
-          .map((relation) => ({
-            ...relation,
-            alias: relation.alias ?? "",
-            sourceAlias: relation.sourceAlias ?? "",
-            targetAlias: relation.targetAlias ?? "",
-            joinType: relation.joinType ?? "left",
-            description: relation.description ?? "",
-            sourceFieldMode: "existing",
-            generatedSourceField: relation.sourceField,
-          })),
-      );
-      setCollapsedRelations(
-        schemaData.relations
-          .filter((relation) => relation.sourceTable === table.name)
-          .map(() => true),
-      );
+      const editableFields = table.fields
+        .filter((field) => field.name !== "id")
+        .map((field) => ({
+          ...field,
+          default: field.default ?? "",
+          unique: !!field.unique,
+          indexed: !!field.indexed,
+          nullable: !!field.nullable,
+          size: field.size ?? 255,
+          enumValues: field.enumValues ?? [],
+        }));
+      setFields(editableFields);
+      setFieldRowIds(editableFields.map(() => nextSchemaEditorRowId()));
+      setCollapsedFields(editableFields.map(() => true));
+      const editableRelations = schemaData.relations
+        .filter((relation) => relation.sourceTable === table.name)
+        .map((relation) => ({
+          ...relation,
+          alias: relation.alias ?? "",
+          sourceAlias: relation.sourceAlias ?? "",
+          targetAlias: relation.targetAlias ?? "",
+          joinType: relation.joinType ?? "left",
+          description: relation.description ?? "",
+          sourceFieldMode: "existing" as const,
+          generatedSourceField: relation.sourceField,
+        }));
+      setRelations(editableRelations);
+      setRelationRowIds(editableRelations.map(() => nextSchemaEditorRowId()));
+      setCollapsedRelations(editableRelations.map(() => true));
       setApiConfig({
         ...defaultTableApiConfig(),
         ...table.api,
@@ -434,8 +437,10 @@ export function TableSchemaPanel({
     setName("");
     setDisplayName("");
     setFields([]);
+    setFieldRowIds([]);
     setCollapsedFields([]);
     setRelations([]);
+    setRelationRowIds([]);
     setCollapsedRelations([]);
     setApiConfig(defaultTableApiConfig());
   }, [isEditing, isOpen, schemaData, tableName]);
@@ -455,6 +460,7 @@ export function TableSchemaPanel({
 
   const handleAddField = () => {
     setFields((current) => [...current, emptyField()]);
+    setFieldRowIds((current) => [...current, nextSchemaEditorRowId()]);
     setCollapsedFields((current) => [...current, false]);
   };
 
@@ -489,6 +495,7 @@ export function TableSchemaPanel({
 
   const handleRemoveField = (index: number) => {
     setFields((current) => current.filter((_, fieldIndex) => fieldIndex !== index));
+    setFieldRowIds((current) => current.filter((_, fieldIndex) => fieldIndex !== index));
     setCollapsedFields((current) => current.filter((_, fieldIndex) => fieldIndex !== index));
   };
 
@@ -503,6 +510,7 @@ export function TableSchemaPanel({
   const handleAddRelation = () => {
     const initialTarget = availableTableNames.find((entry) => entry !== currentSourceTable) ?? "user";
     setRelations((current) => [...current, emptyRelation(currentSourceTable, initialTarget)]);
+    setRelationRowIds((current) => [...current, nextSchemaEditorRowId()]);
     setCollapsedRelations((current) => [...current, false]);
   };
 
@@ -548,6 +556,7 @@ export function TableSchemaPanel({
 
   const handleRemoveRelation = (index: number) => {
     setRelations((current) => current.filter((_, relationIndex) => relationIndex !== index));
+    setRelationRowIds((current) => current.filter((_, relationIndex) => relationIndex !== index));
     setCollapsedRelations((current) => current.filter((_, relationIndex) => relationIndex !== index));
   };
 
@@ -998,6 +1007,32 @@ export function TableSchemaPanel({
       }
     >
       <div className="flex flex-col gap-8 pb-10">
+        <section className="grid gap-4 rounded-2xl border border-border/60 bg-background p-5">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[13px] font-bold text-foreground">
+              Name <span className="text-destructive">*</span>
+            </label>
+            <Input
+              placeholder="e.g. posts"
+              value={name}
+              onChange={(event) => setName(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+              className="font-mono text-sm"
+              disabled={isEditing}
+            />
+            <span className="text-[11px] text-muted-foreground">Unique lowercase identifier for the table.</span>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[13px] font-bold text-foreground">Display Name</label>
+            <Input
+              placeholder="e.g. Blog Posts"
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              className="text-sm"
+            />
+          </div>
+        </section>
+
         <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/60 bg-background p-2">
           {tableEditorTabs.map((tab) => (
             <button
@@ -1038,7 +1073,7 @@ export function TableSchemaPanel({
 
               <div className="grid gap-3">
                 {fields.map((field, index) => (
-                  <div key={`${field.name || "field"}-${index}`} className="rounded-xl border border-border/60 bg-muted/20">
+                  <div key={fieldRowIds[index] ?? index} className="rounded-xl border border-border/60 bg-muted/20">
                     <div className="flex flex-wrap items-center gap-3 px-3 py-2.5">
                       <button
                         type="button"
@@ -1231,7 +1266,7 @@ export function TableSchemaPanel({
                     .join(" • ");
 
                   return (
-                    <div key={`${relationLabel(relation)}-${index}`} className="rounded-xl border border-border/60 bg-muted/20">
+                    <div key={relationRowIds[index] ?? index} className="rounded-xl border border-border/60 bg-muted/20">
                       <div className="flex flex-wrap items-center gap-3 px-3 py-2.5">
                         <button
                           type="button"
@@ -2070,7 +2105,7 @@ export function TableSchemaPanel({
                         fields={relations.map((relation) => relation.alias || (relation.sourceFieldMode === "auto" ? relation.generatedSourceField : relation.sourceField)).filter(Boolean)}
                         selected={apiConfig.includes.fields}
                         disabled={!apiConfig.includes.enabled}
-                        emptyLabel="Add relations in Options to configure includes."
+                        emptyLabel="Add relations under Fields to configure includes."
                         onToggle={toggleIncludeField}
                       />
                     </div>
@@ -2105,37 +2140,6 @@ export function TableSchemaPanel({
                 </div>
               ))}
             </section>
-          </>
-        )}
-
-        {activeTab === "options" && (
-          <>
-            <section className="grid gap-4 rounded-2xl border border-border/60 bg-background p-5">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[13px] font-bold text-foreground">
-                  Name <span className="text-destructive">*</span>
-                </label>
-                <Input
-                  placeholder="e.g. posts"
-                  value={name}
-                  onChange={(event) => setName(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
-                  className="font-mono text-sm"
-                  disabled={isEditing}
-                />
-                <span className="text-[11px] text-muted-foreground">Unique lowercase identifier for the table.</span>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[13px] font-bold text-foreground">Display Name</label>
-                <Input
-                  placeholder="e.g. Blog Posts"
-                  value={displayName}
-                  onChange={(event) => setDisplayName(event.target.value)}
-                  className="text-sm"
-                />
-              </div>
-            </section>
-
           </>
         )}
       </div>

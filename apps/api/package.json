@@ -16,6 +16,7 @@
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.41.0",
     "hono": "^4.7.2",
+    "nanoid": "^3.3.11",
     "nodemailer": "^6.10.0",
     "openai": "^6.1.0",
     "postgres": "^3.4.5",
