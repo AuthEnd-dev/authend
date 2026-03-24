@@ -1,3 +1,5 @@
+import { ZodError } from "zod";
+
 export class HttpError extends Error {
   constructor(
     readonly status: number,
@@ -16,6 +18,20 @@ export function jsonError(error: unknown) {
         details: error.details ?? null,
       },
       { status: error.status },
+    );
+  }
+
+  if (error instanceof ZodError) {
+    return Response.json(
+      {
+        error: "Validation failed",
+        details: error.issues.map((issue) => ({
+          code: issue.code,
+          path: issue.path.join("."),
+          message: issue.message,
+        })),
+      },
+      { status: 400 },
     );
   }
 

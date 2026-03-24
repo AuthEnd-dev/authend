@@ -427,13 +427,13 @@ Core saved config paths are now verified against runtime composition for the shi
 
 The data API now default-denies built-in auth/system tables and redacts sensitive fields on the small allowlisted set. Any expansion of that allowlist should be treated as a security review item.
 
-### 13.3 Generated Drizzle schema is not yet a perfect reflection of executed SQL
+### 13.3 Schema drift is detectable, but still operator-facing
 
-Enum handling and foreign-key generation still need alignment so the generated code truly matches the database state.
+The runtime now exposes schema drift reporting across metadata, generated artifacts, and the live database. That closes a major safety gap, but the flow is still an operator tool rather than a polished guided workflow.
 
-### 13.4 Better Auth compatibility still needs runtime verification
+### 13.4 Better Auth compatibility is now runtime-tested, but version pinning still matters
 
-Because the scaffold was produced before full local execution against installed packages, the exact runtime API compatibility still needs to be validated with `bun install`, `bun run dev:api`, and `bun run dev:admin`.
+The current auth and plugin flows are exercised against the installed Better Auth version in the integration suite. Production deployments should still pin Better Auth deliberately and treat upgrades as a compatibility event.
 
 ### 13.5 Admin UX is still operator-grade, not polished product-grade
 

@@ -18,7 +18,7 @@ import {
   enablePlugin,
   disablePlugin,
 } from '../services/plugin-service';
-import { getSchemaDraft, previewDraft, applyDraft } from '../services/schema-service';
+import { getSchemaDraft, previewDraft, applyDraft, getSchemaDriftReport } from '../services/schema-service';
 import { listMigrationHistory, previewPendingMigrations, applyPendingMigrations } from '../services/migration-service';
 import { buildApiPreview, listApiResources, saveTableApiConfig } from '../services/api-design-service';
 import { runBackupNow } from '../services/backup-service';
@@ -142,6 +142,7 @@ export const adminRouter = new Hono<{ Variables: { auth: SessionContext } }>()
     return c.json(await saveSettingsSectionState(section, body as never, auth.user.id));
   })
   .get('/schema', async (c) => c.json(await getSchemaDraft()))
+  .get('/schema/drift', async (c) => c.json(await getSchemaDriftReport()))
   .post('/schema/preview', async (c) => {
     const body = schemaDraftSchema.parse(await c.req.json());
     return c.json(await previewDraft(body));

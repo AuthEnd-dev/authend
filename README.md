@@ -78,6 +78,7 @@ Open [http://localhost:7001](http://localhost:7001). Sign in with the seeded sup
 - seed the curated plugin registry into `plugin_configs`
 - apply any pending SQL migrations from `apps/api/src/db/migrations`
 - create or promote the configured superadmin user
+- exit with actionable hints when required env vars are missing or bootstrap hits a database/migration failure
 
 ## Plugin model
 
@@ -86,6 +87,8 @@ Plugins are curated rather than dynamically installed. The template ships the co
 ## Schema model
 
 Dashboard-authored tables are stored in metadata tables, emitted into [`apps/api/generated/schema/generated.ts`](./apps/api/generated/schema/generated.ts), written as SQL migrations under [`apps/api/generated/migrations`](./apps/api/generated/migrations), and executed against Postgres.
+
+The admin API also exposes `GET /api/admin/schema/drift` so operators can compare metadata, generated artifacts, and live database state before assuming a schema is clean.
 
 v1 intentionally blocks destructive operations:
 
@@ -244,7 +247,7 @@ bun run start
 
 ## Tests
 
-The repo includes a small Bun test scaffold for shared schema validation helpers.
+The repo now includes Postgres-backed integration coverage for bootstrap, auth flows, plugin flows, schema apply/drift, and data-policy enforcement.
 
 ```bash
 bun test
@@ -256,4 +259,4 @@ bun test
 - File upload/browser workflows are not yet exposed beyond storage configuration and diagnostics.
 - Generated app tables can now be exposed through the data router with runtime policy enforcement and preset-based policy editing, but the admin UX is still operator-grade rather than polished end-user product tooling.
 - The SDK generator now uses the dedicated `/api/system/sdk-schema` manifest rather than full OpenAPI codegen. OpenAPI remains available for broader ecosystem tooling.
-- The plugin migration coverage is best-effort for the curated set and should be validated against the exact Better Auth version you pin in production.
+- Curated plugin runtime composition is covered by tests for the shipped surfaces, but provider-specific credentials and custom extension handlers still need environment-specific validation.

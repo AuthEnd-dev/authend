@@ -15,6 +15,13 @@ export type MigrationFile = {
   path: string;
 };
 
+function shouldLoadMigrationFile(file: string) {
+  const key = file.split("/").pop()!.replace(".sql", "");
+  // Schema apply diffs are execution artifacts written when the operator edits schema.
+  // They are not safe to replay blindly on a fresh database because they assume prior state.
+  return !key.endsWith("_schema_apply");
+}
+
 export async function ensureCoreSchema() {
   const file = resolve(coreMigrationDir, "0000_core.sql");
   const contents = await readTextFile(file);
@@ -37,7 +44,7 @@ export async function ensureCoreSchema() {
 }
 
 export async function loadMigrationFiles(): Promise<MigrationFile[]> {
-  const files = [...(await listSqlFiles(coreMigrationDir)), ...(await listSqlFiles(generatedMigrationDir))];
+  const files = [...(await listSqlFiles(coreMigrationDir)), ...(await listSqlFiles(generatedMigrationDir))].filter(shouldLoadMigrationFile);
 
   return Promise.all(
     files.map(async (file) => {

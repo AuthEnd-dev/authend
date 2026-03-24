@@ -535,6 +535,13 @@ export const setupStatusSchema = z.object({
 
 export type SetupStatus = z.infer<typeof setupStatusSchema>;
 
+export const schemaDriftReportSchema = z.object({
+  drifted: z.boolean(),
+  issues: z.array(z.string()).default([]),
+});
+
+export type SchemaDriftReport = z.infer<typeof schemaDriftReportSchema>;
+
 export const dataRecordSchema = z.record(z.string(), z.unknown());
 
 export type DataRecord = z.infer<typeof dataRecordSchema>;

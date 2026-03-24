@@ -9,7 +9,7 @@ import {
 import { db, sql } from "../db/client";
 import { schemaFields, schemaRelations, schemaTables } from "../db/schema/system";
 import { HttpError } from "../lib/http";
-import { writeTextFile } from "../lib/fs";
+import { readTextFile, writeTextFile } from "../lib/fs";
 import { applySqlMigration, writeGeneratedMigration } from "./migration-service";
 import { writeAuditLog } from "./audit-service";
 
@@ -141,7 +141,7 @@ function drizzleColumn(field: FieldBlueprint) {
     jsonb: `jsonb("${safe.name}")`,
     uuid: `uuid("${safe.name}")`,
     numeric: `numeric("${safe.name}")`,
-    enum: `text("${safe.name}")`,
+    enum: "",
   };
 
   const chain: string[] = [typeMap[safe.type]];
@@ -171,20 +171,84 @@ function drizzleColumn(field: FieldBlueprint) {
   return chain.join(".");
 }
 
+function enumVariableName(tableName: string, fieldName: string) {
+  return `${tableName}_${fieldName}_enum`;
+}
+
+function drizzleColumnForTable(tableName: string, field: FieldBlueprint) {
+  const safe = ensureFieldDefaults(field);
+
+  if (safe.type === "enum") {
+    const chain = [`${enumVariableName(tableName, safe.name)}("${safe.name}")`];
+
+    if (!safe.nullable) {
+      chain.push("notNull()");
+    }
+
+    if (safe.unique) {
+      chain.push("unique()");
+    }
+
+    if (safe.default) {
+      chain.push(`default(${JSON.stringify(safe.default)})`);
+    }
+
+    return chain.join(".");
+  }
+
+  return drizzleColumn(field);
+}
+
+function renderTableIndexes(table: TableBlueprint) {
+  const withId = withDefaultId(table);
+  const indexEntries: string[] = [];
+
+  for (const field of withId.fields.map(ensureFieldDefaults)) {
+    if (field.indexed && !field.unique && field.name !== withId.primaryKey) {
+      indexEntries.push(`  ${indexName(withId.name, field.name)}: index("${indexName(withId.name, field.name)}").on(table.${field.name}),`);
+    }
+  }
+
+  for (const columns of withId.indexes) {
+    const customIndexName = `${withId.name}_${columns.join("_")}_idx`;
+    indexEntries.push(`  ${customIndexName}: index("${customIndexName}").on(${columns.map((column) => `table.${column}`).join(", ")}),`);
+  }
+
+  if (indexEntries.length === 0) {
+    return "";
+  }
+
+  return `,
+  (table) => ({
+${indexEntries.join("\n")}
+  })`;
+}
+
 function renderSchemaModule(draft: SchemaDraft) {
-  const imports = `import { boolean, bigint, date, integer, jsonb, numeric, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+  const imports = `import { bigint, boolean, date, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";`;
+
+  const enums = draft.tables
+    .map(withDefaultId)
+    .flatMap((table) =>
+      table.fields
+        .map(ensureFieldDefaults)
+        .filter((field) => field.type === "enum" && field.enumValues?.length)
+        .map((field) => `export const ${enumVariableName(table.name, field.name)} = pgEnum("${table.name}_${field.name}_enum", [${field.enumValues!.map((value) => JSON.stringify(value)).join(", ")}]);`),
+    );
 
   const tables = draft.tables.map((table) => {
     const withId = withDefaultId(table);
     return `export const ${withId.name} = pgTable("${withId.name}", {
 ${withId.fields
-  .map((field) => `  ${field.name}: ${drizzleColumn(field)},`)
+  .map((field) => `  ${field.name}: ${drizzleColumnForTable(withId.name, field)},`)
   .join("\n")}
-});`;
+}${renderTableIndexes(withId)});`;
   });
 
   return `${imports}
+
+${enums.join("\n")}
 
 ${tables.join("\n\n")}
 
@@ -206,6 +270,261 @@ function migrationSqlKey(prefix: string) {
   ].join("");
 
   return `${stamp}_${prefix}`;
+}
+
+type LiveColumn = {
+  tableName: string;
+  columnName: string;
+  dataType: string;
+  udtName: string;
+  isNullable: boolean;
+  defaultValue: string | null;
+  maxLength: number | null;
+};
+
+type LiveIndex = {
+  tableName: string;
+  indexName: string;
+  unique: boolean;
+  columns: string[];
+};
+
+type LiveForeignKey = {
+  tableName: string;
+  columnName: string;
+  foreignTableName: string;
+  foreignColumnName: string;
+  onDelete: string;
+  onUpdate: string;
+};
+
+function liveColumnMatchesField(tableName: string, field: FieldBlueprint, live: LiveColumn) {
+  const safe = ensureFieldDefaults(field);
+  const nullableMatches = safe.name === "id" ? true : live.isNullable === safe.nullable;
+
+  const typeMatches =
+    (safe.type === "text" && live.dataType === "text") ||
+    (safe.type === "varchar" && live.dataType === "character varying" && live.maxLength === (safe.size ?? 255)) ||
+    (safe.type === "integer" && live.dataType === "integer") ||
+    (safe.type === "bigint" && live.dataType === "bigint") ||
+    (safe.type === "boolean" && live.dataType === "boolean") ||
+    (safe.type === "timestamp" && live.dataType === "timestamp with time zone") ||
+    (safe.type === "date" && live.dataType === "date") ||
+    (safe.type === "jsonb" && live.dataType === "jsonb") ||
+    (safe.type === "uuid" && live.dataType === "uuid") ||
+    (safe.type === "numeric" && live.dataType === "numeric") ||
+    (safe.type === "enum" && live.dataType === "USER-DEFINED" && live.udtName === `${tableName}_${safe.name}_enum`);
+
+  return typeMatches && nullableMatches;
+}
+
+function defaultMatches(field: FieldBlueprint, live: LiveColumn) {
+  const safe = ensureFieldDefaults(field);
+  if (!safe.default) {
+    return live.defaultValue === null;
+  }
+
+  if (!live.defaultValue) {
+    return false;
+  }
+
+  if (safe.default.endsWith("()")) {
+    return live.defaultValue.includes(safe.default.replaceAll('"', ""));
+  }
+
+  if (safe.type === "boolean" || safe.type === "integer" || safe.type === "bigint" || safe.type === "numeric" || safe.type === "enum") {
+    return live.defaultValue.includes(String(safe.default));
+  }
+
+  return live.defaultValue.includes(`'${safe.default.replaceAll("'", "''")}'`);
+}
+
+async function readLiveSchemaState(tableNames: string[]) {
+  if (tableNames.length === 0) {
+    return { columns: [], indexes: [], foreignKeys: [], enums: new Map<string, string[]>() };
+  }
+
+  const columns = await sql<LiveColumn[]>`
+    select
+      table_name as "tableName",
+      column_name as "columnName",
+      data_type as "dataType",
+      udt_name as "udtName",
+      is_nullable = 'YES' as "isNullable",
+      column_default as "defaultValue",
+      character_maximum_length as "maxLength"
+    from information_schema.columns
+    where table_schema = current_schema()
+      and table_name = any(${tableNames}::text[])
+    order by table_name, ordinal_position
+  `;
+
+  const indexes = await sql<LiveIndex[]>`
+    select
+      t.relname as "tableName",
+      i.relname as "indexName",
+      ix.indisunique as "unique",
+      array_agg(a.attname order by cols.ordinality) as "columns"
+    from pg_class t
+    join pg_index ix on ix.indrelid = t.oid
+    join pg_class i on i.oid = ix.indexrelid
+    join lateral unnest(ix.indkey) with ordinality as cols(attnum, ordinality) on true
+    join pg_attribute a on a.attrelid = t.oid and a.attnum = cols.attnum
+    where t.relname = any(${tableNames}::text[])
+      and not ix.indisprimary
+    group by t.relname, i.relname, ix.indisunique
+  `;
+
+  const foreignKeys = await sql<LiveForeignKey[]>`
+    select
+      tc.table_name as "tableName",
+      kcu.column_name as "columnName",
+      ccu.table_name as "foreignTableName",
+      ccu.column_name as "foreignColumnName",
+      lower(rc.delete_rule) as "onDelete",
+      lower(rc.update_rule) as "onUpdate"
+    from information_schema.table_constraints tc
+    join information_schema.key_column_usage kcu
+      on tc.constraint_name = kcu.constraint_name
+     and tc.table_schema = kcu.table_schema
+    join information_schema.constraint_column_usage ccu
+      on ccu.constraint_name = tc.constraint_name
+     and ccu.table_schema = tc.table_schema
+    join information_schema.referential_constraints rc
+      on rc.constraint_name = tc.constraint_name
+     and rc.constraint_schema = tc.table_schema
+    where tc.constraint_type = 'FOREIGN KEY'
+      and tc.table_schema = current_schema()
+      and tc.table_name = any(${tableNames}::text[])
+  `;
+
+  const enumTypeNames = Array.from(new Set(columns.filter((column) => column.dataType === "USER-DEFINED").map((column) => column.udtName)));
+  const enumRows =
+    enumTypeNames.length === 0
+      ? []
+      : await sql<{ enumName: string; enumLabel: string }[]>`
+          select
+            t.typname as "enumName",
+            e.enumlabel as "enumLabel"
+          from pg_type t
+          join pg_enum e on e.enumtypid = t.oid
+          where t.typname = any(${enumTypeNames}::text[])
+          order by t.typname, e.enumsortorder
+        `;
+
+  const enums = new Map<string, string[]>();
+  for (const row of enumRows) {
+    enums.set(row.enumName, [...(enums.get(row.enumName) ?? []), row.enumLabel]);
+  }
+
+  return { columns, indexes, foreignKeys, enums };
+}
+
+export async function getSchemaDriftReport(rawDraft?: SchemaDraft) {
+  const draft = rawDraft ? validateDraft(rawDraft) : await getSchemaDraft();
+  const generatedTables = draft.tables.map(withDefaultId);
+  const tableNames = generatedTables.map((table) => table.name);
+  const issues: string[] = [];
+  const { columns, indexes, foreignKeys, enums } = await readLiveSchemaState(tableNames);
+
+  const columnsByTable = new Map<string, LiveColumn[]>();
+  for (const column of columns) {
+    columnsByTable.set(column.tableName, [...(columnsByTable.get(column.tableName) ?? []), column]);
+  }
+
+  const indexesByTable = new Map<string, LiveIndex[]>();
+  for (const index of indexes) {
+    indexesByTable.set(index.tableName, [...(indexesByTable.get(index.tableName) ?? []), index]);
+  }
+
+  const foreignKeysByTable = new Map<string, LiveForeignKey[]>();
+  for (const foreignKey of foreignKeys) {
+    foreignKeysByTable.set(foreignKey.tableName, [...(foreignKeysByTable.get(foreignKey.tableName) ?? []), foreignKey]);
+  }
+
+  for (const table of generatedTables) {
+    const liveColumns = columnsByTable.get(table.name) ?? [];
+    const liveColumnNames = new Set(liveColumns.map((column) => column.columnName));
+    const expectedFieldNames = new Set(table.fields.map((field) => field.name));
+
+    for (const field of table.fields.map(ensureFieldDefaults)) {
+      const liveColumn = liveColumns.find((column) => column.columnName === field.name);
+      if (!liveColumn) {
+        issues.push(`Live database is missing column ${table.name}.${field.name}.`);
+        continue;
+      }
+
+      if (!liveColumnMatchesField(table.name, field, liveColumn)) {
+        issues.push(`Live column ${table.name}.${field.name} does not match the draft type/nullability definition.`);
+      }
+
+      if (!defaultMatches(field, liveColumn)) {
+        issues.push(`Live column ${table.name}.${field.name} default does not match the draft definition.`);
+      }
+
+      if (field.type === "enum") {
+        const liveEnumValues = enums.get(`${table.name}_${field.name}_enum`) ?? [];
+        const expectedEnumValues = field.enumValues ?? [];
+        if (liveEnumValues.join("|") !== expectedEnumValues.join("|")) {
+          issues.push(`Live enum ${table.name}.${field.name} values do not match the draft definition.`);
+        }
+      }
+
+      if (field.references) {
+        const foreignKey = (foreignKeysByTable.get(table.name) ?? []).find((entry) => entry.columnName === field.name);
+        if (!foreignKey) {
+          issues.push(`Live database is missing foreign key for ${table.name}.${field.name}.`);
+        } else if (
+          foreignKey.foreignTableName !== field.references.table ||
+          foreignKey.foreignColumnName !== field.references.column ||
+          foreignKey.onDelete !== field.references.onDelete ||
+          foreignKey.onUpdate !== field.references.onUpdate
+        ) {
+          issues.push(`Live foreign key for ${table.name}.${field.name} does not match the draft relation actions.`);
+        }
+      }
+
+      if (field.unique) {
+        const hasUniqueIndex = (indexesByTable.get(table.name) ?? []).some((index) => index.unique && index.columns.length === 1 && index.columns[0] === field.name);
+        if (!hasUniqueIndex && field.name !== table.primaryKey) {
+          issues.push(`Live database is missing unique constraint for ${table.name}.${field.name}.`);
+        }
+      }
+
+      if (field.indexed && !field.unique && field.name !== table.primaryKey) {
+        const hasIndex = (indexesByTable.get(table.name) ?? []).some((index) => !index.unique && index.columns.length === 1 && index.columns[0] === field.name);
+        if (!hasIndex) {
+          issues.push(`Live database is missing index for ${table.name}.${field.name}.`);
+        }
+      }
+    }
+
+    for (const liveColumn of liveColumns) {
+      if (!expectedFieldNames.has(liveColumn.columnName)) {
+        issues.push(`Live database has extra column ${table.name}.${liveColumn.columnName} not present in metadata.`);
+      }
+    }
+
+    for (const compoundIndex of table.indexes) {
+      const hasIndex = (indexesByTable.get(table.name) ?? []).some(
+        (index) => index.columns.length === compoundIndex.length && index.columns.every((column, indexPosition) => column === compoundIndex[indexPosition]),
+      );
+      if (!hasIndex) {
+        issues.push(`Live database is missing compound index ${table.name}(${compoundIndex.join(", ")}).`);
+      }
+    }
+  }
+
+  const expectedSchemaModule = renderSchemaModule(draft);
+  const currentSchemaModule = await readTextFile(generatedSchemaFile).catch(() => "");
+  if (currentSchemaModule !== expectedSchemaModule) {
+    issues.push("Generated Drizzle schema file is out of sync with metadata.");
+  }
+
+  return {
+    drifted: issues.length > 0,
+    issues,
+  };
 }
 
 function buildCreateTableSql(table: TableBlueprint) {

@@ -572,9 +572,8 @@ async function tableFromDescriptor(input: string): Promise<{ table: TableBluepri
         },
         filtering: {
           enabled: true,
-      fields: [],
-          fieldVisibility: {},
-      },
+          fields: [],
+        },
         sorting: {
           enabled: true,
           fields: [],
@@ -585,6 +584,7 @@ async function tableFromDescriptor(input: string): Promise<{ table: TableBluepri
           fields: [],
         },
         hiddenFields: [],
+        fieldVisibility: {},
       },
     },
     editable: false,

@@ -18,6 +18,7 @@ import type {
   PluginConfigUpdate,
   PluginManifest,
   SchemaDraft,
+  SchemaDriftReport,
   SettingsSectionConfigMap,
   SettingsSectionId,
   SettingsSectionState,
@@ -102,6 +103,7 @@ export const client = {
     },
     schema: {
       get: () => request<SchemaDraft>('/api/admin/schema'),
+      drift: () => request<SchemaDriftReport>('/api/admin/schema/drift'),
       preview: (draft: SchemaDraft) =>
         request<{ sql: string[]; warnings: string[] }>('/api/admin/schema/preview', {
           method: 'POST',

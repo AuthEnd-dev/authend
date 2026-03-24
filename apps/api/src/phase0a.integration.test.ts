@@ -1,27 +1,26 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import postgres from "postgres";
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { resolve } from 'node:path';
+import postgres from 'postgres';
 
-type AppModule = typeof import("./app");
-type BootstrapModule = typeof import("./services/bootstrap-service");
-type SchemaModule = typeof import("./services/schema-service");
-type CrudModule = typeof import("./services/crud-service");
-type PluginModule = typeof import("./services/plugin-service");
-type DbModule = typeof import("./db/client");
-type MigrationModule = typeof import("./services/migration-service");
-type SettingsStoreModule = typeof import("./services/settings-store");
-type RateLimitModule = typeof import("./services/rate-limit-service");
+type AppModule = typeof import('./app');
+type BootstrapModule = typeof import('./services/bootstrap-service');
+type SchemaModule = typeof import('./services/schema-service');
+type CrudModule = typeof import('./services/crud-service');
+type PluginModule = typeof import('./services/plugin-service');
+type DbModule = typeof import('./db/client');
+type MigrationModule = typeof import('./services/migration-service');
+type SettingsStoreModule = typeof import('./services/settings-store');
+type RateLimitModule = typeof import('./services/rate-limit-service');
 
 const sourceDatabaseUrl =
-  process.env.TEST_DATABASE_URL ??
-  process.env.DATABASE_URL ??
-  "postgres://postgres:postgres@localhost:5432/authend";
+  process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/authend';
 
-const appUrl = "http://localhost:7002";
-const adminUrl = "http://localhost:7001";
-const testDatabaseName = `authend_phase0a_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`.replace(/[^a-z0-9_]/g, "_");
+const appUrl = 'http://localhost:7002';
+const adminUrl = 'http://localhost:7001';
+const testDatabaseName = `authend_phase0a_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`.replace(/[^a-z0-9_]/g, '_');
 const databaseUrl = new URL(sourceDatabaseUrl);
 const adminDatabaseUrl = new URL(sourceDatabaseUrl);
-adminDatabaseUrl.pathname = "/postgres";
+adminDatabaseUrl.pathname = '/postgres';
 databaseUrl.pathname = `/${testDatabaseName}`;
 
 class CookieJar {
@@ -34,15 +33,15 @@ class CookieJar {
     };
 
     const setCookies =
-      typeof headers.getSetCookie === "function"
+      typeof headers.getSetCookie === 'function'
         ? headers.getSetCookie()
-        : response.headers.get("set-cookie")
-          ? [response.headers.get("set-cookie")!]
+        : response.headers.get('set-cookie')
+          ? [response.headers.get('set-cookie')!]
           : [];
 
     for (const header of setCookies) {
-      const [pair] = header.split(";", 1);
-      const separator = pair.indexOf("=");
+      const [pair] = header.split(';', 1);
+      const separator = pair.indexOf('=');
       if (separator <= 0) {
         continue;
       }
@@ -55,19 +54,53 @@ class CookieJar {
   toHeader() {
     return Array.from(this.#cookies.entries())
       .map(([key, value]) => `${key}=${value}`)
-      .join("; ");
+      .join('; ');
   }
 }
 
 function jsonHeaders(cookieJar?: CookieJar) {
   return {
-    "content-type": "application/json",
+    'content-type': 'application/json',
     origin: appUrl,
     ...(cookieJar && cookieJar.toHeader() ? { cookie: cookieJar.toHeader() } : {}),
   };
 }
 
-describe("Phase 0A integration hardening", () => {
+async function withCapturedInfoLogs<T>(run: () => Promise<T>) {
+  const originalLog = console.log;
+  const captured: Array<Record<string, unknown>> = [];
+
+  console.log = (...args: unknown[]) => {
+    const [first] = args;
+    if (typeof first === 'string') {
+      try {
+        const parsed = JSON.parse(first) as Record<string, unknown>;
+        captured.push(parsed);
+      } catch {
+        // ignore non-JSON log lines
+      }
+    }
+    originalLog(...args);
+  };
+
+  try {
+    const result = await run();
+    return { result, captured };
+  } finally {
+    console.log = originalLog;
+  }
+}
+
+function extractUrlFromPreview(logs: Array<Record<string, unknown>>, marker: string) {
+  const emailLog = logs.find(
+    (entry) => entry.message === 'email.skipped' && typeof entry.preview === 'string' && String(entry.preview).includes(marker),
+  );
+  const preview = typeof emailLog?.preview === 'string' ? emailLog.preview : '';
+  const match = preview.match(/https?:\/\/\S+/);
+  return match?.[0] ?? null;
+}
+
+describe('Phase 0A integration hardening', () => {
   let adminSql: ReturnType<typeof postgres>;
   let appModule: AppModule;
   let bootstrapModule: BootstrapModule;
@@ -78,7 +111,7 @@ describe("Phase 0A integration hardening", () => {
   let migrationModule: MigrationModule;
   let settingsStoreModule: SettingsStoreModule;
   let rateLimitModule: RateLimitModule;
-  let app: ReturnType<AppModule["createApp"]>;
+  let app: ReturnType<AppModule['createApp']>;
   let cookieJar: CookieJar;
 
   beforeAll(async () => {
@@ -89,60 +122,70 @@ describe("Phase 0A integration hardening", () => {
 
     await adminSql.unsafe(`create database "${testDatabaseName}"`);
 
-    process.env.NODE_ENV = "test";
+    process.env.NODE_ENV = 'test';
     process.env.APP_URL = appUrl;
     process.env.ADMIN_URL = adminUrl;
     process.env.ADMIN_DEV_URL = adminUrl;
     process.env.CORS_ORIGIN = appUrl;
     process.env.DATABASE_URL = databaseUrl.toString();
-    process.env.BETTER_AUTH_SECRET = "phase0a-super-secret-value-123456";
-    process.env.SUPERADMIN_EMAIL = "admin@authend.test";
-    process.env.SUPERADMIN_PASSWORD = "ChangeMe123!";
-    process.env.SUPERADMIN_NAME = "Authend Admin";
+    process.env.BETTER_AUTH_SECRET = 'phase0a-super-secret-value-123456';
+    process.env.SUPERADMIN_EMAIL = 'admin@authend.test';
+    process.env.SUPERADMIN_PASSWORD = 'ChangeMe123!';
+    process.env.SUPERADMIN_NAME = 'Authend Admin';
 
-    [appModule, bootstrapModule, schemaModule, crudModule, pluginModule, dbModule, migrationModule, settingsStoreModule, rateLimitModule] = await Promise.all([
-      import("./app"),
-      import("./services/bootstrap-service"),
-      import("./services/schema-service"),
-      import("./services/crud-service"),
-      import("./services/plugin-service"),
-      import("./db/client"),
-      import("./services/migration-service"),
-      import("./services/settings-store"),
-      import("./services/rate-limit-service"),
+    [
+      appModule,
+      bootstrapModule,
+      schemaModule,
+      crudModule,
+      pluginModule,
+      dbModule,
+      migrationModule,
+      settingsStoreModule,
+      rateLimitModule,
+    ] = await Promise.all([
+      import('./app'),
+      import('./services/bootstrap-service'),
+      import('./services/schema-service'),
+      import('./services/crud-service'),
+      import('./services/plugin-service'),
+      import('./db/client'),
+      import('./services/migration-service'),
+      import('./services/settings-store'),
+      import('./services/rate-limit-service'),
     ]);
 
     await migrationModule.ensureCoreSchema();
     await pluginModule.seedPluginConfigs();
     await pluginModule.ensureEnabledPluginsProvisioned();
-    await pluginModule.enablePlugin("apiKey");
+    await pluginModule.enablePlugin('apiKey');
     await bootstrapModule.seedSuperAdmin();
 
     await schemaModule.applyDraft({
       tables: [
         {
-          name: "notes",
-          displayName: "Notes",
-          primaryKey: "id",
+          name: 'notes',
+          displayName: 'Notes',
+          primaryKey: 'id',
           fields: [
             {
-              name: "id",
-              type: "uuid",
+              name: 'id',
+              type: 'uuid',
               nullable: false,
               unique: true,
               indexed: true,
-              default: "gen_random_uuid()",
+              default: 'gen_random_uuid()',
             },
             {
-              name: "title",
-              type: "text",
+              name: 'title',
+              type: 'text',
               nullable: false,
               unique: false,
               indexed: false,
             },
             {
-              name: "body",
-              type: "text",
+              name: 'body',
+              type: 'text',
               nullable: true,
               unique: false,
               indexed: false,
@@ -150,14 +193,14 @@ describe("Phase 0A integration hardening", () => {
           ],
           indexes: [],
           api: {
-            authMode: "superadmin",
+            authMode: 'superadmin',
             access: {
               ownershipField: null,
-              list: { actors: ["superadmin"], scope: "all" },
-              get: { actors: ["superadmin"], scope: "all" },
-              create: { actors: ["superadmin"], scope: "all" },
-              update: { actors: ["superadmin"], scope: "all" },
-              delete: { actors: ["superadmin"], scope: "all" },
+              list: { actors: ['superadmin'], scope: 'all' },
+              get: { actors: ['superadmin'], scope: 'all' },
+              create: { actors: ['superadmin'], scope: 'all' },
+              update: { actors: ['superadmin'], scope: 'all' },
+              delete: { actors: ['superadmin'], scope: 'all' },
             },
             operations: {
               list: true,
@@ -173,13 +216,13 @@ describe("Phase 0A integration hardening", () => {
             },
             filtering: {
               enabled: true,
-              fields: ["title", "body"],
+              fields: ['title', 'body'],
             },
             sorting: {
               enabled: true,
-              fields: ["id", "title"],
-              defaultField: "id",
-              defaultOrder: "desc",
+              fields: ['id', 'title'],
+              defaultField: 'id',
+              defaultOrder: 'desc',
             },
             includes: {
               enabled: false,
@@ -190,28 +233,28 @@ describe("Phase 0A integration hardening", () => {
           },
         },
         {
-          name: "authors",
-          displayName: "Authors",
-          primaryKey: "id",
+          name: 'authors',
+          displayName: 'Authors',
+          primaryKey: 'id',
           fields: [
             {
-              name: "id",
-              type: "uuid",
+              name: 'id',
+              type: 'uuid',
               nullable: false,
               unique: true,
               indexed: true,
-              default: "gen_random_uuid()",
+              default: 'gen_random_uuid()',
             },
             {
-              name: "display_name",
-              type: "text",
+              name: 'display_name',
+              type: 'text',
               nullable: false,
               unique: false,
               indexed: false,
             },
             {
-              name: "email",
-              type: "text",
+              name: 'email',
+              type: 'text',
               nullable: false,
               unique: false,
               indexed: true,
@@ -219,14 +262,14 @@ describe("Phase 0A integration hardening", () => {
           ],
           indexes: [],
           api: {
-            authMode: "public",
+            authMode: 'public',
             access: {
               ownershipField: null,
-              list: { actors: ["public"], scope: "all" },
-              get: { actors: ["public"], scope: "all" },
-              create: { actors: [], scope: "all" },
-              update: { actors: [], scope: "all" },
-              delete: { actors: [], scope: "all" },
+              list: { actors: ['public'], scope: 'all' },
+              get: { actors: ['public'], scope: 'all' },
+              create: { actors: [], scope: 'all' },
+              update: { actors: [], scope: 'all' },
+              delete: { actors: [], scope: 'all' },
             },
             operations: {
               list: true,
@@ -242,87 +285,87 @@ describe("Phase 0A integration hardening", () => {
             },
             filtering: {
               enabled: true,
-              fields: ["display_name"],
+              fields: ['display_name'],
             },
             sorting: {
               enabled: true,
-              fields: ["id", "display_name"],
-              defaultField: "id",
-              defaultOrder: "desc",
+              fields: ['id', 'display_name'],
+              defaultField: 'id',
+              defaultOrder: 'desc',
             },
             includes: {
               enabled: false,
               fields: [],
             },
-            hiddenFields: ["email"],
+            hiddenFields: ['email'],
             fieldVisibility: {},
           },
         },
         {
-          name: "articles",
-          displayName: "Articles",
-          primaryKey: "id",
+          name: 'articles',
+          displayName: 'Articles',
+          primaryKey: 'id',
           fields: [
             {
-              name: "id",
-              type: "uuid",
+              name: 'id',
+              type: 'uuid',
               nullable: false,
               unique: true,
               indexed: true,
-              default: "gen_random_uuid()",
+              default: 'gen_random_uuid()',
             },
             {
-              name: "title",
-              type: "text",
+              name: 'title',
+              type: 'text',
               nullable: false,
               unique: false,
               indexed: false,
             },
             {
-              name: "body",
-              type: "text",
+              name: 'body',
+              type: 'text',
               nullable: true,
               unique: false,
               indexed: false,
             },
             {
-              name: "internal_notes",
-              type: "text",
+              name: 'internal_notes',
+              type: 'text',
               nullable: true,
               unique: false,
               indexed: false,
             },
             {
-              name: "member_excerpt",
-              type: "text",
+              name: 'member_excerpt',
+              type: 'text',
               nullable: true,
               unique: false,
               indexed: false,
             },
             {
-              name: "author_id",
-              type: "uuid",
+              name: 'author_id',
+              type: 'uuid',
               nullable: false,
               unique: false,
               indexed: true,
               references: {
-                table: "authors",
-                column: "id",
-                onDelete: "restrict",
-                onUpdate: "cascade",
+                table: 'authors',
+                column: 'id',
+                onDelete: 'restrict',
+                onUpdate: 'cascade',
               },
             },
           ],
           indexes: [],
           api: {
-            authMode: "public",
+            authMode: 'public',
             access: {
               ownershipField: null,
-              list: { actors: ["public"], scope: "all" },
-              get: { actors: ["public"], scope: "all" },
-              create: { actors: [], scope: "all" },
-              update: { actors: [], scope: "all" },
-              delete: { actors: [], scope: "all" },
+              list: { actors: ['public'], scope: 'all' },
+              get: { actors: ['public'], scope: 'all' },
+              create: { actors: [], scope: 'all' },
+              update: { actors: [], scope: 'all' },
+              delete: { actors: [], scope: 'all' },
             },
             operations: {
               list: true,
@@ -338,22 +381,22 @@ describe("Phase 0A integration hardening", () => {
             },
             filtering: {
               enabled: true,
-              fields: ["title", "body"],
+              fields: ['title', 'body'],
             },
             sorting: {
               enabled: true,
-              fields: ["id", "title"],
-              defaultField: "id",
-              defaultOrder: "desc",
+              fields: ['id', 'title'],
+              defaultField: 'id',
+              defaultOrder: 'desc',
             },
             includes: {
               enabled: true,
-              fields: ["author_id"],
+              fields: ['author_id'],
             },
-            hiddenFields: ["internal_notes"],
+            hiddenFields: ['internal_notes'],
             fieldVisibility: {
               member_excerpt: {
-                read: ["session", "apiKey"],
+                read: ['session', 'apiKey'],
                 create: [],
                 update: [],
               },
@@ -361,42 +404,42 @@ describe("Phase 0A integration hardening", () => {
           },
         },
         {
-          name: "profiles",
-          displayName: "Profiles",
-          primaryKey: "id",
+          name: 'profiles',
+          displayName: 'Profiles',
+          primaryKey: 'id',
           fields: [
             {
-              name: "id",
-              type: "uuid",
+              name: 'id',
+              type: 'uuid',
               nullable: false,
               unique: true,
               indexed: true,
-              default: "gen_random_uuid()",
+              default: 'gen_random_uuid()',
             },
             {
-              name: "owner_id",
-              type: "text",
+              name: 'owner_id',
+              type: 'text',
               nullable: false,
               unique: false,
               indexed: true,
             },
             {
-              name: "display_name",
-              type: "text",
+              name: 'display_name',
+              type: 'text',
               nullable: false,
               unique: false,
               indexed: false,
             },
             {
-              name: "moderation_state",
-              type: "text",
+              name: 'moderation_state',
+              type: 'text',
               nullable: true,
               unique: false,
               indexed: false,
             },
             {
-              name: "internal_notes",
-              type: "text",
+              name: 'internal_notes',
+              type: 'text',
               nullable: true,
               unique: false,
               indexed: false,
@@ -404,14 +447,14 @@ describe("Phase 0A integration hardening", () => {
           ],
           indexes: [],
           api: {
-            authMode: "session",
+            authMode: 'session',
             access: {
-              ownershipField: "owner_id",
-              list: { actors: ["session"], scope: "own" },
-              get: { actors: ["session"], scope: "own" },
-              create: { actors: ["session"], scope: "own" },
-              update: { actors: ["session"], scope: "own" },
-              delete: { actors: ["session"], scope: "own" },
+              ownershipField: 'owner_id',
+              list: { actors: ['session'], scope: 'own' },
+              get: { actors: ['session'], scope: 'own' },
+              create: { actors: ['session'], scope: 'own' },
+              update: { actors: ['session'], scope: 'own' },
+              delete: { actors: ['session'], scope: 'own' },
             },
             operations: {
               list: true,
@@ -427,51 +470,51 @@ describe("Phase 0A integration hardening", () => {
             },
             filtering: {
               enabled: true,
-              fields: ["display_name"],
+              fields: ['display_name'],
             },
             sorting: {
               enabled: true,
-              fields: ["id", "display_name"],
-              defaultField: "id",
-              defaultOrder: "desc",
+              fields: ['id', 'display_name'],
+              defaultField: 'id',
+              defaultOrder: 'desc',
             },
             includes: {
               enabled: false,
               fields: [],
             },
-            hiddenFields: ["internal_notes"],
+            hiddenFields: ['internal_notes'],
             fieldVisibility: {
               moderation_state: {
-                read: ["session", "apiKey"],
-                create: ["apiKey"],
-                update: ["apiKey"],
+                read: ['session', 'apiKey'],
+                create: ['apiKey'],
+                update: ['apiKey'],
               },
             },
           },
         },
         {
-          name: "server_tasks",
-          displayName: "Server Tasks",
-          primaryKey: "id",
+          name: 'server_tasks',
+          displayName: 'Server Tasks',
+          primaryKey: 'id',
           fields: [
             {
-              name: "id",
-              type: "uuid",
+              name: 'id',
+              type: 'uuid',
               nullable: false,
               unique: true,
               indexed: true,
-              default: "gen_random_uuid()",
+              default: 'gen_random_uuid()',
             },
             {
-              name: "title",
-              type: "text",
+              name: 'title',
+              type: 'text',
               nullable: false,
               unique: false,
               indexed: false,
             },
             {
-              name: "status",
-              type: "text",
+              name: 'status',
+              type: 'text',
               nullable: false,
               unique: false,
               indexed: false,
@@ -479,14 +522,14 @@ describe("Phase 0A integration hardening", () => {
           ],
           indexes: [],
           api: {
-            authMode: "session",
+            authMode: 'session',
             access: {
               ownershipField: null,
-              list: { actors: ["apiKey"], scope: "all" },
-              get: { actors: ["apiKey"], scope: "all" },
-              create: { actors: ["apiKey"], scope: "all" },
-              update: { actors: ["apiKey"], scope: "all" },
-              delete: { actors: ["apiKey"], scope: "all" },
+              list: { actors: ['apiKey'], scope: 'all' },
+              get: { actors: ['apiKey'], scope: 'all' },
+              create: { actors: ['apiKey'], scope: 'all' },
+              update: { actors: ['apiKey'], scope: 'all' },
+              delete: { actors: ['apiKey'], scope: 'all' },
             },
             operations: {
               list: true,
@@ -502,13 +545,13 @@ describe("Phase 0A integration hardening", () => {
             },
             filtering: {
               enabled: true,
-              fields: ["title", "status"],
+              fields: ['title', 'status'],
             },
             sorting: {
               enabled: true,
-              fields: ["id", "title"],
-              defaultField: "id",
-              defaultOrder: "desc",
+              fields: ['id', 'title'],
+              defaultField: 'id',
+              defaultOrder: 'desc',
             },
             includes: {
               enabled: false,
@@ -519,49 +562,49 @@ describe("Phase 0A integration hardening", () => {
           },
         },
         {
-          name: "profile_cards",
-          displayName: "Profile Cards",
-          primaryKey: "id",
+          name: 'profile_cards',
+          displayName: 'Profile Cards',
+          primaryKey: 'id',
           fields: [
             {
-              name: "id",
-              type: "uuid",
+              name: 'id',
+              type: 'uuid',
               nullable: false,
               unique: true,
               indexed: true,
-              default: "gen_random_uuid()",
+              default: 'gen_random_uuid()',
             },
             {
-              name: "headline",
-              type: "text",
+              name: 'headline',
+              type: 'text',
               nullable: false,
               unique: false,
               indexed: false,
             },
             {
-              name: "profile_id",
-              type: "uuid",
+              name: 'profile_id',
+              type: 'uuid',
               nullable: false,
               unique: false,
               indexed: true,
               references: {
-                table: "profiles",
-                column: "id",
-                onDelete: "restrict",
-                onUpdate: "cascade",
+                table: 'profiles',
+                column: 'id',
+                onDelete: 'restrict',
+                onUpdate: 'cascade',
               },
             },
           ],
           indexes: [],
           api: {
-            authMode: "public",
+            authMode: 'public',
             access: {
               ownershipField: null,
-              list: { actors: ["public"], scope: "all" },
-              get: { actors: ["public"], scope: "all" },
-              create: { actors: [], scope: "all" },
-              update: { actors: [], scope: "all" },
-              delete: { actors: [], scope: "all" },
+              list: { actors: ['public'], scope: 'all' },
+              get: { actors: ['public'], scope: 'all' },
+              create: { actors: [], scope: 'all' },
+              update: { actors: [], scope: 'all' },
+              delete: { actors: [], scope: 'all' },
             },
             operations: {
               list: true,
@@ -577,17 +620,17 @@ describe("Phase 0A integration hardening", () => {
             },
             filtering: {
               enabled: true,
-              fields: ["headline"],
+              fields: ['headline'],
             },
             sorting: {
               enabled: true,
-              fields: ["id", "headline"],
-              defaultField: "id",
-              defaultOrder: "desc",
+              fields: ['id', 'headline'],
+              defaultField: 'id',
+              defaultOrder: 'desc',
             },
             includes: {
               enabled: true,
-              fields: ["profile_id"],
+              fields: ['profile_id'],
             },
             hiddenFields: [],
             fieldVisibility: {},
@@ -597,23 +640,27 @@ describe("Phase 0A integration hardening", () => {
       relations: [],
     });
 
-    const author = await crudModule.createRecord("authors", {
-      display_name: "Phase One Author",
-      email: "author@authend.test",
+    const author = await crudModule.createRecord('authors', {
+      display_name: 'Phase One Author',
+      email: 'author@authend.test',
     });
 
-    await crudModule.createRecord("articles", {
-      title: "Ship app-facing policies",
-      body: "Make the public data plane safe and easy.",
-      internal_notes: "draft-internal",
-      member_excerpt: "Members get the rollout details.",
-      author_id: author.id,
-    }, {
-      access: {
-        actorKind: "superadmin",
-        bypassOwnership: true,
+    await crudModule.createRecord(
+      'articles',
+      {
+        title: 'Ship app-facing policies',
+        body: 'Make the public data plane safe and easy.',
+        internal_notes: 'draft-internal',
+        member_excerpt: 'Members get the rollout details.',
+        author_id: author.id,
       },
-    });
+      {
+        access: {
+          actorKind: 'superadmin',
+          bypassOwnership: true,
+        },
+      },
+    );
 
     app = appModule.createApp();
     cookieJar = new CookieJar();
@@ -634,11 +681,11 @@ describe("Phase 0A integration hardening", () => {
   async function createUserSession(email: string, name: string) {
     const userCookieJar = new CookieJar();
     const signUpResponse = await app.request(`${appUrl}/api/auth/sign-up/email`, {
-      method: "POST",
+      method: 'POST',
       headers: jsonHeaders(userCookieJar),
       body: JSON.stringify({
         email,
-        password: "ChangeMe123!",
+        password: 'ChangeMe123!',
         name,
       }),
     });
@@ -646,7 +693,7 @@ describe("Phase 0A integration hardening", () => {
     expect(signUpResponse.status).toBe(200);
 
     const sessionResponse = await app.request(`${appUrl}/api/auth/get-session`, {
-      method: "GET",
+      method: 'GET',
       headers: {
         origin: appUrl,
         cookie: userCookieJar.toHeader(),
@@ -665,9 +712,9 @@ describe("Phase 0A integration hardening", () => {
     settings: { defaultRateLimitPerMinute: number; maxRateLimitPerMinute: number },
     run: () => Promise<void>,
   ) {
-    const previous = (await settingsStoreModule.readSettingsSection("api")).config;
+    const previous = (await settingsStoreModule.readSettingsSection('api')).config;
     rateLimitModule.clearRateLimitBuckets();
-    await settingsStoreModule.writeSettingsSection("api", {
+    await settingsStoreModule.writeSettingsSection('api', {
       ...previous,
       ...settings,
     });
@@ -676,28 +723,28 @@ describe("Phase 0A integration hardening", () => {
       await run();
     } finally {
       rateLimitModule.clearRateLimitBuckets();
-      await settingsStoreModule.writeSettingsSection("api", previous);
+      await settingsStoreModule.writeSettingsSection('api', previous);
     }
   }
 
-  test("bootstrap creates a healthy setup status", async () => {
-    const response = await appRequest("/api/setup/status");
+  test('bootstrap creates a healthy setup status', async () => {
+    const response = await appRequest('/api/setup/status');
     expect(response.status).toBe(200);
 
     const body = await response.json();
     expect(body.healthy).toBe(true);
     expect(body.superAdminExists).toBe(true);
-    expect(body.enabledPlugins).toContain("admin");
+    expect(body.enabledPlugins).toContain('admin');
   });
 
-  test("unauthenticated admin requests are rejected", async () => {
+  test('unauthenticated admin requests are rejected', async () => {
     const response = await app.request(`${appUrl}/api/admin/plugins`);
     expect(response.status).toBe(401);
   });
 
-  test("superadmin can sign in over HTTP and reach admin routes", async () => {
-    const signInResponse = await appRequest("/api/auth/sign-in/email", {
-      method: "POST",
+  test('superadmin can sign in over HTTP and reach admin routes', async () => {
+    const signInResponse = await appRequest('/api/auth/sign-in/email', {
+      method: 'POST',
       headers: jsonHeaders(),
       body: JSON.stringify({
         email: process.env.SUPERADMIN_EMAIL,
@@ -707,7 +754,7 @@ describe("Phase 0A integration hardening", () => {
 
     expect(signInResponse.status).toBe(200);
 
-    const adminResponse = await appRequest("/api/admin/plugins", {
+    const adminResponse = await appRequest('/api/admin/plugins', {
       headers: {
         origin: appUrl,
         cookie: cookieJar.toHeader(),
@@ -717,20 +764,362 @@ describe("Phase 0A integration hardening", () => {
     expect(adminResponse.status).toBe(200);
   });
 
-  test("generated tables still support CRUD over the data API", async () => {
-    const createResponse = await appRequest("/api/data/notes", {
-      method: "POST",
+  test('admin validation errors return structured 400 details', async () => {
+    const response = await app.request(`${appUrl}/api/admin/schema/preview`, {
+      method: 'POST',
       headers: jsonHeaders(cookieJar),
       body: JSON.stringify({
-        title: "First note",
-        body: "Hello from the integration suite",
+        tables: [
+          {
+            name: 'invalid-table-name',
+            displayName: 'Invalid Table',
+            fields: [],
+          },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe('Validation failed');
+    expect(Array.isArray(body.details)).toBe(true);
+    expect(body.details.some((issue: { path: string; message: string }) => issue.path.includes('tables.0.name'))).toBe(true);
+  });
+
+  test('plugin lifecycle failures return actionable messages', async () => {
+    const response = await app.request(`${appUrl}/api/admin/plugins/admin/disable`, {
+      method: 'POST',
+      headers: jsonHeaders(cookieJar),
+    });
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toContain('required and cannot be disabled');
+  });
+
+  test('session refresh and sign-out work over the auth HTTP surface', async () => {
+    const user = await createUserSession('auth.flows@authend.test', 'Auth Flow User');
+
+    const getSessionResponse = await app.request(`${appUrl}/api/auth/get-session`, {
+      method: 'GET',
+      headers: {
+        origin: appUrl,
+        cookie: user.jar.toHeader(),
+      },
+    });
+    expect(getSessionResponse.status).toBe(200);
+    const getSessionBody = await getSessionResponse.json();
+    expect(getSessionBody.user.email).toBe('auth.flows@authend.test');
+
+    const refreshSessionResponse = await app.request(`${appUrl}/api/auth/get-session`, {
+      method: 'POST',
+      headers: {
+        origin: appUrl,
+        cookie: user.jar.toHeader(),
+      },
+    });
+    user.jar.addFrom(refreshSessionResponse);
+    expect([200, 405]).toContain(refreshSessionResponse.status);
+    if (refreshSessionResponse.status === 200) {
+      const refreshBody = await refreshSessionResponse.json();
+      expect(refreshBody.user.email).toBe('auth.flows@authend.test');
+    }
+
+    const signOutResponse = await app.request(`${appUrl}/api/auth/sign-out`, {
+      method: 'POST',
+      headers: jsonHeaders(user.jar),
+    });
+    user.jar.addFrom(signOutResponse);
+    expect(signOutResponse.status).toBe(200);
+
+    const postSignOutSessionResponse = await app.request(`${appUrl}/api/auth/get-session`, {
+      method: 'GET',
+      headers: {
+        origin: appUrl,
+        cookie: user.jar.toHeader(),
+      },
+    });
+    expect(postSignOutSessionResponse.status).toBe(200);
+    expect(await postSignOutSessionResponse.json()).toBeNull();
+  });
+
+  test('password reset requests and reset completion work without SMTP', async () => {
+    await createUserSession('reset.me@authend.test', 'Reset Me');
+
+    const { captured } = await withCapturedInfoLogs(() =>
+      Promise.resolve(app.request(`${appUrl}/api/auth/request-password-reset`, {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({
+          email: 'reset.me@authend.test',
+          redirectTo: `${appUrl}/reset-complete`,
+        }),
+      })),
+    );
+
+    const resetUrl = extractUrlFromPreview(captured, 'Reset your password with this link:');
+    expect(resetUrl).toBeTruthy();
+    const token = new URL(resetUrl!).pathname.split('/').filter(Boolean).at(-1) ?? null;
+    expect(token).toBeTruthy();
+
+    const resetResponse = await app.request(`${appUrl}/api/auth/reset-password`, {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        token,
+        newPassword: 'ChangedPass123!',
+      }),
+    });
+    expect(resetResponse.status).toBe(200);
+
+    const oldPasswordResponse = await app.request(`${appUrl}/api/auth/sign-in/email`, {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        email: 'reset.me@authend.test',
+        password: 'ChangeMe123!',
+      }),
+    });
+    expect(oldPasswordResponse.status).not.toBe(200);
+
+    const newPasswordResponse = await app.request(`${appUrl}/api/auth/sign-in/email`, {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        email: 'reset.me@authend.test',
+        password: 'ChangedPass123!',
+      }),
+    });
+    expect(newPasswordResponse.status).toBe(200);
+  });
+
+  test('email verification send and verify flow works without SMTP', async () => {
+    const user = await createUserSession('verify.me@authend.test', 'Verify Me');
+
+    const beforeVerifySession = await app.request(`${appUrl}/api/auth/get-session`, {
+      method: 'GET',
+      headers: {
+        origin: appUrl,
+        cookie: user.jar.toHeader(),
+      },
+    });
+    expect(beforeVerifySession.status).toBe(200);
+    const beforeVerifyBody = await beforeVerifySession.json();
+    expect(beforeVerifyBody.user.emailVerified).toBe(false);
+
+    const { captured } = await withCapturedInfoLogs(() =>
+      Promise.resolve(app.request(`${appUrl}/api/auth/send-verification-email`, {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({
+          email: 'verify.me@authend.test',
+          callbackURL: `${appUrl}/verified`,
+        }),
+      })),
+    );
+
+    const verifyUrl = extractUrlFromPreview(captured, 'Verify your email with this link:');
+    expect(verifyUrl).toBeTruthy();
+
+    const verifyResponse = await app.request(verifyUrl!, {
+      method: 'GET',
+      headers: {
+        origin: appUrl,
+      },
+    });
+    expect([200, 302]).toContain(verifyResponse.status);
+
+    const afterVerifySession = await app.request(`${appUrl}/api/auth/get-session`, {
+      method: 'GET',
+      headers: {
+        origin: appUrl,
+        cookie: user.jar.toHeader(),
+      },
+    });
+    expect(afterVerifySession.status).toBe(200);
+    const afterVerifyBody = await afterVerifySession.json();
+    expect(afterVerifyBody.user.emailVerified).toBe(true);
+  });
+
+  test('magic link plugin sends a sign-in link and creates a session after verification', async () => {
+    await pluginModule.enablePlugin('magicLink');
+
+    const magicJar = new CookieJar();
+    const { captured } = await withCapturedInfoLogs(() =>
+      Promise.resolve(app.request(`${appUrl}/api/auth/sign-in/magic-link`, {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({
+          email: 'magic.link@authend.test',
+          name: 'Magic Link User',
+          callbackURL: `${appUrl}/magic-complete`,
+        }),
+      })),
+    );
+
+    const magicUrl = extractUrlFromPreview(captured, 'Use this link to sign in:');
+    expect(magicUrl).toBeTruthy();
+
+    const verifyResponse = await app.request(magicUrl!, {
+      method: 'GET',
+      headers: {
+        origin: appUrl,
+      },
+    });
+    magicJar.addFrom(verifyResponse);
+    expect([200, 302]).toContain(verifyResponse.status);
+
+    const sessionResponse = await app.request(`${appUrl}/api/auth/get-session`, {
+      method: 'GET',
+      headers: {
+        origin: appUrl,
+        cookie: magicJar.toHeader(),
+      },
+    });
+    expect(sessionResponse.status).toBe(200);
+    const sessionBody = await sessionResponse.json();
+    expect(sessionBody.user.email).toBe('magic.link@authend.test');
+  });
+
+  test('jwt plugin exposes configured token and jwks endpoints over HTTP', async () => {
+    await pluginModule.enablePlugin('jwt');
+
+    const current = await pluginModule.readPluginCapabilityManifest('jwt');
+    await pluginModule.savePluginConfig('jwt', {
+      config: {
+        ...current.installState.config,
+        issuer: 'https://issuer.authend.test',
+        audience: 'phase0-suite',
+        jwksPath: '/custom-jwks',
+      },
+      capabilityState: current.installState.capabilityState,
+      extensionBindings: current.installState.extensionBindings,
+    });
+
+    const user = await createUserSession('jwt.user@authend.test', 'JWT User');
+
+    const sessionResponse = await app.request(`${appUrl}/api/auth/get-session`, {
+      method: 'GET',
+      headers: {
+        origin: appUrl,
+        cookie: user.jar.toHeader(),
+      },
+    });
+    expect(sessionResponse.status).toBe(200);
+    expect(sessionResponse.headers.get('set-auth-jwt')).toBeTruthy();
+
+    const tokenResponse = await app.request(`${appUrl}/api/auth/token`, {
+      method: 'GET',
+      headers: {
+        origin: appUrl,
+        cookie: user.jar.toHeader(),
+      },
+    });
+    expect(tokenResponse.status).toBe(200);
+    const tokenBody = await tokenResponse.json();
+    expect(typeof tokenBody.token).toBe('string');
+    expect(tokenBody.token.split('.')).toHaveLength(3);
+
+    const jwksResponse = await app.request(`${appUrl}/api/auth/custom-jwks`, {
+      method: 'GET',
+      headers: {
+        origin: appUrl,
+      },
+    });
+    expect(jwksResponse.status).toBe(200);
+    const jwksBody = await jwksResponse.json();
+    expect(Array.isArray(jwksBody.keys)).toBe(true);
+    expect(jwksBody.keys.length).toBeGreaterThan(0);
+  });
+
+  test('organization plugin creates an organization for a signed-in user', async () => {
+    await pluginModule.enablePlugin('organization');
+
+    const user = await createUserSession('org.owner@authend.test', 'Org Owner');
+    const createOrganizationResponse = await app.request(`${appUrl}/api/auth/organization/create`, {
+      method: 'POST',
+      headers: jsonHeaders(user.jar),
+      body: JSON.stringify({
+        name: 'Phase Zero Org',
+        slug: `phase-zero-org-${Date.now().toString(36)}`,
+      }),
+    });
+    expect(createOrganizationResponse.status).toBe(200);
+    const organizationBody = await createOrganizationResponse.json();
+    expect(organizationBody.name).toBe('Phase Zero Org');
+    expect(Array.isArray(organizationBody.members)).toBe(true);
+    expect(organizationBody.members.length).toBeGreaterThan(0);
+  });
+
+  test('two-factor plugin enables TOTP enrollment for a signed-in user', async () => {
+    await pluginModule.enablePlugin('twoFactor');
+
+    const user = await createUserSession('two.factor@authend.test', 'Two Factor User');
+    const enableResponse = await app.request(`${appUrl}/api/auth/two-factor/enable`, {
+      method: 'POST',
+      headers: jsonHeaders(user.jar),
+      body: JSON.stringify({
+        password: 'ChangeMe123!',
+      }),
+    });
+    expect(enableResponse.status).toBe(200);
+    const enableBody = await enableResponse.json();
+    expect(String(enableBody.totpURI)).toContain('otpauth://');
+    expect(Array.isArray(enableBody.backupCodes)).toBe(true);
+    expect(enableBody.backupCodes.length).toBeGreaterThan(0);
+  });
+
+  test('social auth plugin produces a provider redirect url when configured', async () => {
+    process.env.GOOGLE_CLIENT_ID = 'google-client-id';
+    process.env.GOOGLE_CLIENT_SECRET = 'google-client-secret';
+
+    const current = await pluginModule.readPluginCapabilityManifest('socialAuth');
+    await pluginModule.savePluginConfig('socialAuth', {
+      config: {
+        ...current.installState.config,
+        enabledProviders: 'google',
+        providers: {
+          ...((current.installState.config.providers as Record<string, unknown> | undefined) ?? {}),
+          google: {
+            scope: ['openid', 'email', 'profile'],
+            prompt: 'consent',
+          },
+        },
+      },
+      capabilityState: current.installState.capabilityState,
+      extensionBindings: current.installState.extensionBindings,
+    });
+    await pluginModule.enablePlugin('socialAuth');
+
+    const socialResponse = await app.request(`${appUrl}/api/auth/sign-in/social`, {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        provider: 'google',
+        callbackURL: `${appUrl}/social-complete`,
+        disableRedirect: true,
+      }),
+    });
+    expect(socialResponse.status).toBe(200);
+    const socialBody = await socialResponse.json();
+    expect(socialBody.redirect).toBe(false);
+    expect(String(socialBody.url)).toContain('accounts.google.com');
+  });
+
+  test('generated tables still support CRUD over the data API', async () => {
+    const createResponse = await appRequest('/api/data/notes', {
+      method: 'POST',
+      headers: jsonHeaders(cookieJar),
+      body: JSON.stringify({
+        title: 'First note',
+        body: 'Hello from the integration suite',
       }),
     });
     expect(createResponse.status).toBe(200);
     const created = await createResponse.json();
-    expect(created.title).toBe("First note");
+    expect(created.title).toBe('First note');
 
-    const listResponse = await appRequest("/api/data/notes", {
+    const listResponse = await appRequest('/api/data/notes', {
       headers: {
         origin: appUrl,
         cookie: cookieJar.toHeader(),
@@ -748,21 +1137,21 @@ describe("Phase 0A integration hardening", () => {
     });
     expect(getResponse.status).toBe(200);
     const fetched = await getResponse.json();
-    expect(fetched.body).toBe("Hello from the integration suite");
+    expect(fetched.body).toBe('Hello from the integration suite');
 
     const updateResponse = await appRequest(`/api/data/notes/${created.id}`, {
-      method: "PATCH",
+      method: 'PATCH',
       headers: jsonHeaders(cookieJar),
       body: JSON.stringify({
-        body: "Updated body",
+        body: 'Updated body',
       }),
     });
     expect(updateResponse.status).toBe(200);
     const updated = await updateResponse.json();
-    expect(updated.body).toBe("Updated body");
+    expect(updated.body).toBe('Updated body');
 
     const deleteResponse = await appRequest(`/api/data/notes/${created.id}`, {
-      method: "DELETE",
+      method: 'DELETE',
       headers: {
         origin: appUrl,
         cookie: cookieJar.toHeader(),
@@ -771,7 +1160,7 @@ describe("Phase 0A integration hardening", () => {
     expect(deleteResponse.status).toBe(204);
   });
 
-  test("client and admin data routes are split cleanly", async () => {
+  test('client and admin data routes are split cleanly', async () => {
     const publicClientResponse = await app.request(`${appUrl}/api/data/articles`, {
       headers: {
         origin: appUrl,
@@ -786,7 +1175,7 @@ describe("Phase 0A integration hardening", () => {
     });
     expect(adminWithoutSession.status).toBe(401);
 
-    const regularUser = await createUserSession("route.split.user@authend.test", "Route Split User");
+    const regularUser = await createUserSession('route.split.user@authend.test', 'Route Split User');
     const adminAsUser = await app.request(`${appUrl}/api/admin/data`, {
       headers: {
         origin: appUrl,
@@ -795,7 +1184,7 @@ describe("Phase 0A integration hardening", () => {
     });
     expect(adminAsUser.status).toBe(403);
 
-    const adminAsSuperadmin = await appRequest("/api/admin/data", {
+    const adminAsSuperadmin = await appRequest('/api/admin/data', {
       headers: {
         origin: appUrl,
         cookie: cookieJar.toHeader(),
@@ -803,11 +1192,11 @@ describe("Phase 0A integration hardening", () => {
     });
     expect(adminAsSuperadmin.status).toBe(200);
     const adminBody = await adminAsSuperadmin.json();
-    expect(adminBody.tables).toContain("notes");
+    expect(adminBody.tables).toContain('notes');
   });
 
-  test("blocked built-in tables are hidden from listings and denied directly", async () => {
-    const listResponse = await appRequest("/api/data", {
+  test('blocked built-in tables are hidden from listings and denied directly', async () => {
+    const listResponse = await appRequest('/api/data', {
       headers: {
         origin: appUrl,
         cookie: cookieJar.toHeader(),
@@ -815,13 +1204,13 @@ describe("Phase 0A integration hardening", () => {
     });
     const body = await listResponse.json();
 
-    expect(body.tables).toContain("notes");
-    expect(body.tables).toContain("user");
-    expect(body.tables).toContain("session");
-    expect(body.tables).not.toContain("plugin_configs");
-    expect(body.tables).not.toContain("verification");
+    expect(body.tables).toContain('notes');
+    expect(body.tables).toContain('user');
+    expect(body.tables).toContain('session');
+    expect(body.tables).not.toContain('plugin_configs');
+    expect(body.tables).not.toContain('verification');
 
-    const blockedMeta = await appRequest("/api/data/meta/plugin_configs", {
+    const blockedMeta = await appRequest('/api/data/meta/plugin_configs', {
       headers: {
         origin: appUrl,
         cookie: cookieJar.toHeader(),
@@ -829,7 +1218,7 @@ describe("Phase 0A integration hardening", () => {
     });
     expect(blockedMeta.status).toBe(403);
 
-    const blockedRead = await appRequest("/api/data/plugin_configs", {
+    const blockedRead = await appRequest('/api/data/plugin_configs', {
       headers: {
         origin: appUrl,
         cookie: cookieJar.toHeader(),
@@ -837,18 +1226,18 @@ describe("Phase 0A integration hardening", () => {
     });
     expect(blockedRead.status).toBe(403);
 
-    const blockedCreate = await appRequest("/api/data/plugin_configs", {
-      method: "POST",
+    const blockedCreate = await appRequest('/api/data/plugin_configs', {
+      method: 'POST',
       headers: jsonHeaders(cookieJar),
       body: JSON.stringify({
-        plugin_id: "username",
+        plugin_id: 'username',
       }),
     });
     expect(blockedCreate.status).toBe(403);
   });
 
-  test("allowlisted built-in session metadata is redacted", async () => {
-    const metaResponse = await appRequest("/api/data/meta/session", {
+  test('allowlisted built-in session metadata is redacted', async () => {
+    const metaResponse = await appRequest('/api/data/meta/session', {
       headers: {
         origin: appUrl,
         cookie: cookieJar.toHeader(),
@@ -856,11 +1245,11 @@ describe("Phase 0A integration hardening", () => {
     });
     expect(metaResponse.status).toBe(200);
     const metaBody = await metaResponse.json();
-    expect(metaBody.fields.map((field: { name: string }) => field.name)).not.toContain("ip_address");
-    expect(metaBody.fields.map((field: { name: string }) => field.name)).not.toContain("user_agent");
-    expect(metaBody.fields.map((field: { name: string }) => field.name)).not.toContain("impersonated_by");
+    expect(metaBody.fields.map((field: { name: string }) => field.name)).not.toContain('ip_address');
+    expect(metaBody.fields.map((field: { name: string }) => field.name)).not.toContain('user_agent');
+    expect(metaBody.fields.map((field: { name: string }) => field.name)).not.toContain('impersonated_by');
 
-    const listResponse = await appRequest("/api/data/session", {
+    const listResponse = await appRequest('/api/data/session', {
       headers: {
         origin: appUrl,
         cookie: cookieJar.toHeader(),
@@ -874,11 +1263,11 @@ describe("Phase 0A integration hardening", () => {
     expect(body.items[0].impersonated_by).toBeUndefined();
   });
 
-  test("username plugin config invalidates auth and changes runtime validation", async () => {
-    await pluginModule.enablePlugin("username");
+  test('username plugin config invalidates auth and changes runtime validation', async () => {
+    await pluginModule.enablePlugin('username');
 
-    const current = await pluginModule.readPluginCapabilityManifest("username");
-    await pluginModule.savePluginConfig("username", {
+    const current = await pluginModule.readPluginCapabilityManifest('username');
+    await pluginModule.savePluginConfig('username', {
       config: {
         ...current.installState.config,
         minUsernameLength: 6,
@@ -888,41 +1277,41 @@ describe("Phase 0A integration hardening", () => {
     });
 
     const shortUsernameResponse = await app.request(`${appUrl}/api/auth/sign-up/email`, {
-      method: "POST",
+      method: 'POST',
       headers: jsonHeaders(),
       body: JSON.stringify({
-        name: "Short Username",
-        email: "short-username@authend.test",
-        password: "ChangeMe123!",
-        username: "abc",
+        name: 'Short Username',
+        email: 'short-username@authend.test',
+        password: 'ChangeMe123!',
+        username: 'abc',
       }),
     });
     expect(shortUsernameResponse.status).toBe(400);
     const shortBody = await shortUsernameResponse.json();
-    expect(String(shortBody.code ?? shortBody.error ?? "")).toContain("USERNAME_TOO_SHORT");
+    expect(String(shortBody.code ?? shortBody.error ?? '')).toContain('USERNAME_TOO_SHORT');
 
     const validUsernameResponse = await app.request(`${appUrl}/api/auth/sign-up/email`, {
-      method: "POST",
+      method: 'POST',
       headers: jsonHeaders(),
       body: JSON.stringify({
-        name: "Valid Username",
-        email: "valid-username@authend.test",
-        password: "ChangeMe123!",
-        username: "abcdef",
+        name: 'Valid Username',
+        email: 'valid-username@authend.test',
+        password: 'ChangeMe123!',
+        username: 'abcdef',
       }),
     });
     expect(validUsernameResponse.status).toBe(200);
   });
 
-  test("createRecord still blocks writes to visible built-in tables", async () => {
+  test('createRecord still blocks writes to visible built-in tables', async () => {
     await expect(
-      crudModule.createRecord("user", {
-        email: "should-not-work@authend.test",
+      crudModule.createRecord('user', {
+        email: 'should-not-work@authend.test',
       }),
-    ).rejects.toThrow("read-only");
+    ).rejects.toThrow('read-only');
   });
 
-  test("public callers can read public resources and receive redacted includes", async () => {
+  test('public callers can read public resources and receive redacted includes', async () => {
     const publicMetaResponse = await app.request(`${appUrl}/api/data/meta/articles`, {
       headers: {
         origin: appUrl,
@@ -930,7 +1319,7 @@ describe("Phase 0A integration hardening", () => {
     });
     expect(publicMetaResponse.status).toBe(200);
     const publicMetaBody = await publicMetaResponse.json();
-    expect(publicMetaBody.fields.map((field: { name: string }) => field.name)).not.toContain("member_excerpt");
+    expect(publicMetaBody.fields.map((field: { name: string }) => field.name)).not.toContain('member_excerpt');
 
     const tablesResponse = await app.request(`${appUrl}/api/data`, {
       headers: {
@@ -939,10 +1328,10 @@ describe("Phase 0A integration hardening", () => {
     });
     expect(tablesResponse.status).toBe(200);
     const tablesBody = await tablesResponse.json();
-    expect(tablesBody.tables).toContain("authors");
-    expect(tablesBody.tables).toContain("articles");
-    expect(tablesBody.tables).not.toContain("profiles");
-    expect(tablesBody.tables).not.toContain("server_tasks");
+    expect(tablesBody.tables).toContain('authors');
+    expect(tablesBody.tables).toContain('articles');
+    expect(tablesBody.tables).not.toContain('profiles');
+    expect(tablesBody.tables).not.toContain('server_tasks');
 
     const listResponse = await app.request(`${appUrl}/api/data/articles?include=author_id`, {
       headers: {
@@ -952,17 +1341,17 @@ describe("Phase 0A integration hardening", () => {
     expect(listResponse.status).toBe(200);
     const listBody = await listResponse.json();
     expect(listBody.items).toHaveLength(1);
-    expect(listBody.items[0].title).toBe("Ship app-facing policies");
+    expect(listBody.items[0].title).toBe('Ship app-facing policies');
     expect(listBody.items[0].internal_notes).toBeUndefined();
     expect(listBody.items[0].member_excerpt).toBeUndefined();
-    expect(listBody.items[0].author_idRelation.display_name).toBe("Phase One Author");
+    expect(listBody.items[0].author_idRelation.display_name).toBe('Phase One Author');
     expect(listBody.items[0].author_idRelation.email).toBeUndefined();
 
     const createResponse = await app.request(`${appUrl}/api/data/articles`, {
-      method: "POST",
+      method: 'POST',
       headers: jsonHeaders(),
       body: JSON.stringify({
-        title: "blocked",
+        title: 'blocked',
       }),
     });
     expect(createResponse.status).toBe(405);
@@ -975,9 +1364,9 @@ describe("Phase 0A integration hardening", () => {
     expect(privateResponse.status).toBe(401);
   });
 
-  test("API preview policy simulator matches runtime authorization for public and session callers", async () => {
-    const signInResponse = await appRequest("/api/auth/sign-in/email", {
-      method: "POST",
+  test('API preview policy simulator matches runtime authorization for public and session callers', async () => {
+    const signInResponse = await appRequest('/api/auth/sign-in/email', {
+      method: 'POST',
       headers: jsonHeaders(),
       body: JSON.stringify({
         email: process.env.SUPERADMIN_EMAIL,
@@ -986,7 +1375,7 @@ describe("Phase 0A integration hardening", () => {
     });
     expect(signInResponse.status).toBe(200);
 
-    const previewResponse = await appRequest("/api/admin/api-preview/articles", {
+    const previewResponse = await appRequest('/api/admin/api-preview/articles', {
       headers: {
         origin: appUrl,
         cookie: cookieJar.toHeader(),
@@ -995,12 +1384,12 @@ describe("Phase 0A integration hardening", () => {
     expect(previewResponse.status).toBe(200);
     const previewBody = await previewResponse.json();
 
-    const publicPolicy = previewBody.resource.policy.actors.find((entry: { actor: string }) => entry.actor === "public");
-    const sessionPolicy = previewBody.resource.policy.actors.find((entry: { actor: string }) => entry.actor === "session");
+    const publicPolicy = previewBody.resource.policy.actors.find((entry: { actor: string }) => entry.actor === 'public');
+    const sessionPolicy = previewBody.resource.policy.actors.find((entry: { actor: string }) => entry.actor === 'session');
 
-    expect(publicPolicy.readableFields).toEqual(["id", "title", "body", "author_id"]);
+    expect(publicPolicy.readableFields).toEqual(['id', 'title', 'body', 'author_id']);
     expect(publicPolicy.createFields).toEqual([]);
-    expect(publicPolicy.operations.find((entry: { key: string }) => entry.key === "create").allowed).toBe(false);
+    expect(publicPolicy.operations.find((entry: { key: string }) => entry.key === 'create').allowed).toBe(false);
 
     const publicMetaResponse = await app.request(`${appUrl}/api/data/meta/articles`, {
       headers: {
@@ -1011,7 +1400,7 @@ describe("Phase 0A integration hardening", () => {
     const publicMetaBody = await publicMetaResponse.json();
     expect(publicMetaBody.fields.map((field: { name: string }) => field.name)).toEqual(publicPolicy.readableFields);
 
-    const regularUser = await createUserSession("preview.policy.user@authend.test", "Preview Policy User");
+    const regularUser = await createUserSession('preview.policy.user@authend.test', 'Preview Policy User');
     const sessionMetaResponse = await app.request(`${appUrl}/api/data/meta/articles`, {
       headers: {
         origin: appUrl,
@@ -1021,11 +1410,11 @@ describe("Phase 0A integration hardening", () => {
     expect(sessionMetaResponse.status).toBe(200);
     const sessionMetaBody = await sessionMetaResponse.json();
     expect(sessionMetaBody.fields.map((field: { name: string }) => field.name)).toEqual(sessionPolicy.readableFields);
-    expect(sessionPolicy.readableFields).toContain("member_excerpt");
+    expect(sessionPolicy.readableFields).toContain('member_excerpt');
     expect(sessionPolicy.createFields).toEqual([]);
   });
 
-  test("hidden fields cannot be filtered or sorted through the public data API", async () => {
+  test('hidden fields cannot be filtered or sorted through the public data API', async () => {
     const hiddenFilterResponse = await app.request(`${appUrl}/api/data/articles?filterField=internal_notes&filterValue=draft`, {
       headers: {
         origin: appUrl,
@@ -1041,7 +1430,7 @@ describe("Phase 0A integration hardening", () => {
     expect(hiddenSortResponse.status).toBe(400);
   });
 
-  test("public data traffic is rate limited by client ip", async () => {
+  test('public data traffic is rate limited by client ip', async () => {
     await withApiRateLimitSettings(
       {
         defaultRateLimitPerMinute: 2,
@@ -1051,37 +1440,37 @@ describe("Phase 0A integration hardening", () => {
         const firstResponse = await app.request(`${appUrl}/api/data/articles`, {
           headers: {
             origin: appUrl,
-            "x-forwarded-for": "203.0.113.10",
+            'x-forwarded-for': '203.0.113.10',
           },
         });
         expect(firstResponse.status).toBe(200);
-        expect(firstResponse.headers.get("x-ratelimit-limit")).toBe("2");
-        expect(firstResponse.headers.get("x-ratelimit-remaining")).toBe("1");
+        expect(firstResponse.headers.get('x-ratelimit-limit')).toBe('2');
+        expect(firstResponse.headers.get('x-ratelimit-remaining')).toBe('1');
 
         const secondResponse = await app.request(`${appUrl}/api/data/articles`, {
           headers: {
             origin: appUrl,
-            "x-forwarded-for": "203.0.113.10",
+            'x-forwarded-for': '203.0.113.10',
           },
         });
         expect(secondResponse.status).toBe(200);
-        expect(secondResponse.headers.get("x-ratelimit-remaining")).toBe("0");
+        expect(secondResponse.headers.get('x-ratelimit-remaining')).toBe('0');
 
         const limitedResponse = await app.request(`${appUrl}/api/data/articles`, {
           headers: {
             origin: appUrl,
-            "x-forwarded-for": "203.0.113.10",
+            'x-forwarded-for': '203.0.113.10',
           },
         });
         expect(limitedResponse.status).toBe(429);
-        expect(limitedResponse.headers.get("retry-after")).toBeTruthy();
+        expect(limitedResponse.headers.get('retry-after')).toBeTruthy();
         const limitedBody = await limitedResponse.json();
-        expect(limitedBody.error).toBe("Rate limit exceeded");
+        expect(limitedBody.error).toBe('Rate limit exceeded');
 
         const differentIpResponse = await app.request(`${appUrl}/api/data/articles`, {
           headers: {
             origin: appUrl,
-            "x-forwarded-for": "203.0.113.11",
+            'x-forwarded-for': '203.0.113.11',
           },
         });
         expect(differentIpResponse.status).toBe(200);
@@ -1089,9 +1478,9 @@ describe("Phase 0A integration hardening", () => {
     );
   });
 
-  test("signed-in users inherit public access and owner scope is enforced", async () => {
-    const userOne = await createUserSession("user.one@authend.test", "User One");
-    const userTwo = await createUserSession("user.two@authend.test", "User Two");
+  test('signed-in users inherit public access and owner scope is enforced', async () => {
+    const userOne = await createUserSession('user.one@authend.test', 'User One');
+    const userTwo = await createUserSession('user.two@authend.test', 'User Two');
 
     const sessionMetaResponse = await app.request(`${appUrl}/api/data/meta/articles`, {
       headers: {
@@ -1101,7 +1490,7 @@ describe("Phase 0A integration hardening", () => {
     });
     expect(sessionMetaResponse.status).toBe(200);
     const sessionMetaBody = await sessionMetaResponse.json();
-    expect(sessionMetaBody.fields.map((field: { name: string }) => field.name)).toContain("member_excerpt");
+    expect(sessionMetaBody.fields.map((field: { name: string }) => field.name)).toContain('member_excerpt');
 
     const tablesResponse = await app.request(`${appUrl}/api/data`, {
       headers: {
@@ -1111,10 +1500,10 @@ describe("Phase 0A integration hardening", () => {
     });
     expect(tablesResponse.status).toBe(200);
     const tablesBody = await tablesResponse.json();
-    expect(tablesBody.tables).toContain("articles");
-    expect(tablesBody.tables).toContain("authors");
-    expect(tablesBody.tables).toContain("profiles");
-    expect(tablesBody.tables).not.toContain("server_tasks");
+    expect(tablesBody.tables).toContain('articles');
+    expect(tablesBody.tables).toContain('authors');
+    expect(tablesBody.tables).toContain('profiles');
+    expect(tablesBody.tables).not.toContain('server_tasks');
 
     const publicAsSession = await app.request(`${appUrl}/api/data/articles?include=author_id`, {
       headers: {
@@ -1124,27 +1513,27 @@ describe("Phase 0A integration hardening", () => {
     });
     expect(publicAsSession.status).toBe(200);
     const publicAsSessionBody = await publicAsSession.json();
-    expect(publicAsSessionBody.items[0].member_excerpt).toBe("Members get the rollout details.");
+    expect(publicAsSessionBody.items[0].member_excerpt).toBe('Members get the rollout details.');
 
     const blockedProfileCreateResponse = await app.request(`${appUrl}/api/data/profiles`, {
-      method: "POST",
+      method: 'POST',
       headers: jsonHeaders(userOne.jar),
       body: JSON.stringify({
-        owner_id: "malicious-override",
-        display_name: "User One Profile",
-        moderation_state: "approved",
-        internal_notes: "do not expose",
+        owner_id: 'malicious-override',
+        display_name: 'User One Profile',
+        moderation_state: 'approved',
+        internal_notes: 'do not expose',
       }),
     });
     expect(blockedProfileCreateResponse.status).toBe(403);
 
     const createProfileResponse = await app.request(`${appUrl}/api/data/profiles`, {
-      method: "POST",
+      method: 'POST',
       headers: jsonHeaders(userOne.jar),
       body: JSON.stringify({
-        owner_id: "malicious-override",
-        display_name: "User One Profile",
-        internal_notes: "do not expose",
+        owner_id: 'malicious-override',
+        display_name: 'User One Profile',
+        internal_notes: 'do not expose',
       }),
     });
     expect(createProfileResponse.status).toBe(200);
@@ -1183,36 +1572,36 @@ describe("Phase 0A integration hardening", () => {
     expect(otherGetResponse.status).toBe(404);
 
     const otherUpdateResponse = await app.request(`${appUrl}/api/data/profiles/${createdProfile.id}`, {
-      method: "PATCH",
+      method: 'PATCH',
       headers: jsonHeaders(userTwo.jar),
       body: JSON.stringify({
-        display_name: "Hijacked",
+        display_name: 'Hijacked',
       }),
     });
     expect(otherUpdateResponse.status).toBe(404);
 
     const protectedFieldUpdateResponse = await app.request(`${appUrl}/api/data/profiles/${createdProfile.id}`, {
-      method: "PATCH",
+      method: 'PATCH',
       headers: jsonHeaders(userOne.jar),
       body: JSON.stringify({
-        moderation_state: "approved",
+        moderation_state: 'approved',
       }),
     });
     expect(protectedFieldUpdateResponse.status).toBe(403);
   });
 
-  test("relation includes respect target-table access rules", async () => {
-    const owner = await createUserSession("profile.owner@authend.test", "Profile Owner");
-    const otherUser = await createUserSession("profile.other@authend.test", "Other Viewer");
+  test('relation includes respect target-table access rules', async () => {
+    const owner = await createUserSession('profile.owner@authend.test', 'Profile Owner');
+    const otherUser = await createUserSession('profile.other@authend.test', 'Other Viewer');
 
-    const profile = await crudModule.createRecord("profiles", {
+    const profile = await crudModule.createRecord('profiles', {
       owner_id: owner.userId,
-      display_name: "Owner Profile",
-      internal_notes: "never include this",
+      display_name: 'Owner Profile',
+      internal_notes: 'never include this',
     });
 
-    await crudModule.createRecord("profile_cards", {
-      headline: "Visible public card",
+    await crudModule.createRecord('profile_cards', {
+      headline: 'Visible public card',
       profile_id: profile.id,
     });
 
@@ -1235,7 +1624,7 @@ describe("Phase 0A integration hardening", () => {
     expect(ownerResponse.status).toBe(200);
     const ownerBody = await ownerResponse.json();
     expect(ownerBody.items).toHaveLength(1);
-    expect(ownerBody.items[0].profile_idRelation.display_name).toBe("Owner Profile");
+    expect(ownerBody.items[0].profile_idRelation.display_name).toBe('Owner Profile');
     expect(ownerBody.items[0].profile_idRelation.internal_notes).toBeUndefined();
 
     const otherResponse = await app.request(`${appUrl}/api/data/profile_cards?include=profile_id`, {
@@ -1250,74 +1639,80 @@ describe("Phase 0A integration hardening", () => {
     expect(otherBody.items[0].profile_idRelation).toBeNull();
   });
 
-  test("listRecords defaults do not allow hidden-field filtering or sorting", async () => {
+  test('listRecords defaults do not allow hidden-field filtering or sorting', async () => {
     await expect(
-      crudModule.listRecords("articles", new URLSearchParams({
-        filterField: "internal_notes",
-        filterValue: "draft",
-      })),
-    ).rejects.toThrow("Unknown filter field internal_notes");
+      crudModule.listRecords(
+        'articles',
+        new URLSearchParams({
+          filterField: 'internal_notes',
+          filterValue: 'draft',
+        }),
+      ),
+    ).rejects.toThrow('Unknown filter field internal_notes');
 
     await expect(
-      crudModule.listRecords("articles", new URLSearchParams({
-        sort: "internal_notes",
-        order: "asc",
-      })),
-    ).rejects.toThrow("Unknown sort field internal_notes");
+      crudModule.listRecords(
+        'articles',
+        new URLSearchParams({
+          sort: 'internal_notes',
+          order: 'asc',
+        }),
+      ),
+    ).rejects.toThrow('Unknown sort field internal_notes');
   });
 
-  test("api keys can use permitted routes and are blocked elsewhere", async () => {
-    const user = await createUserSession("api.key.owner@authend.test", "API Key Owner");
+  test('api keys can use permitted routes and are blocked elsewhere', async () => {
+    const user = await createUserSession('api.key.owner@authend.test', 'API Key Owner');
 
     const createKeyResponse = await app.request(`${appUrl}/api/auth/api-key/create`, {
-      method: "POST",
+      method: 'POST',
       headers: jsonHeaders(user.jar),
       body: JSON.stringify({
-        name: "Phase 1 Data Key",
+        name: 'Phase 1 Data Key',
       }),
     });
     expect(createKeyResponse.status).toBe(200);
     const keyBody = await createKeyResponse.json();
-    expect(typeof keyBody.key).toBe("string");
+    expect(typeof keyBody.key).toBe('string');
 
     await dbModule.sql.unsafe(
       `update "apikey"
        set "permissions" = $2
        where "id" = $1`,
-      [keyBody.id, JSON.stringify({ "resource:server_tasks": ["list", "create"] })] as never[],
+      [keyBody.id, JSON.stringify({ 'resource:server_tasks': ['list', 'create'] })] as never[],
     );
 
     const tablesResponse = await app.request(`${appUrl}/api/data`, {
       headers: {
         origin: appUrl,
-        "x-api-key": keyBody.key,
+        'x-api-key': keyBody.key,
       },
     });
     expect(tablesResponse.status).toBe(200);
     const tablesBody = await tablesResponse.json();
-    expect(tablesBody.tables).toContain("server_tasks");
-    expect(tablesBody.tables).toContain("articles");
-    expect(tablesBody.tables).not.toContain("profiles");
+    expect(tablesBody.tables).toContain('server_tasks');
+    expect(tablesBody.tables).toContain('articles');
+    expect(tablesBody.tables).not.toContain('profiles');
 
     const createTaskResponse = await app.request(`${appUrl}/api/data/server_tasks`, {
-      method: "POST",
+      method: 'POST',
       headers: {
         ...jsonHeaders(),
-        "x-api-key": keyBody.key,
+        'x-api-key': keyBody.key,
       },
       body: JSON.stringify({
-        title: "Sync cache",
-        status: "queued",
+        title: 'Sync cache',
+        status: 'queued',
       }),
     });
     expect(createTaskResponse.status).toBe(200);
     const createdTask = await createTaskResponse.json();
-    expect(createdTask.title).toBe("Sync cache");
+    expect(createdTask.title).toBe('Sync cache');
 
     const listTaskResponse = await app.request(`${appUrl}/api/data/server_tasks`, {
       headers: {
         origin: appUrl,
-        "x-api-key": keyBody.key,
+        'x-api-key': keyBody.key,
       },
     });
     expect(listTaskResponse.status).toBe(200);
@@ -1325,26 +1720,26 @@ describe("Phase 0A integration hardening", () => {
     expect(listTaskBody.items).toHaveLength(1);
 
     const updateTaskResponse = await app.request(`${appUrl}/api/data/server_tasks/${createdTask.id}`, {
-      method: "PATCH",
+      method: 'PATCH',
       headers: {
         ...jsonHeaders(),
-        "x-api-key": keyBody.key,
+        'x-api-key': keyBody.key,
       },
       body: JSON.stringify({
-        status: "complete",
+        status: 'complete',
       }),
     });
     expect(updateTaskResponse.status).toBe(403);
   });
 
-  test("api key data traffic is rate limited by key id", async () => {
-    const user = await createUserSession("api.key.ratelimit@authend.test", "API Key Rate Limit");
+  test('api key data traffic is rate limited by key id', async () => {
+    const user = await createUserSession('api.key.ratelimit@authend.test', 'API Key Rate Limit');
 
     const createKeyResponse = await app.request(`${appUrl}/api/auth/api-key/create`, {
-      method: "POST",
+      method: 'POST',
       headers: jsonHeaders(user.jar),
       body: JSON.stringify({
-        name: "Rate Limited Key",
+        name: 'Rate Limited Key',
       }),
     });
     expect(createKeyResponse.status).toBe(200);
@@ -1354,7 +1749,7 @@ describe("Phase 0A integration hardening", () => {
       `update "apikey"
        set "permissions" = $2
        where "id" = $1`,
-      [keyBody.id, JSON.stringify({ "resource:server_tasks": ["list"] })] as never[],
+      [keyBody.id, JSON.stringify({ 'resource:server_tasks': ['list'] })] as never[],
     );
 
     await withApiRateLimitSettings(
@@ -1366,32 +1761,140 @@ describe("Phase 0A integration hardening", () => {
         const firstResponse = await app.request(`${appUrl}/api/data/server_tasks`, {
           headers: {
             origin: appUrl,
-            "x-api-key": keyBody.key,
+            'x-api-key': keyBody.key,
           },
         });
         expect(firstResponse.status).toBe(200);
-        expect(firstResponse.headers.get("x-ratelimit-limit")).toBe("2");
-        expect(firstResponse.headers.get("x-ratelimit-remaining")).toBe("1");
+        expect(firstResponse.headers.get('x-ratelimit-limit')).toBe('2');
+        expect(firstResponse.headers.get('x-ratelimit-remaining')).toBe('1');
 
         const secondResponse = await app.request(`${appUrl}/api/data/server_tasks`, {
           headers: {
             origin: appUrl,
-            "x-api-key": keyBody.key,
+            'x-api-key': keyBody.key,
           },
         });
         expect(secondResponse.status).toBe(200);
-        expect(secondResponse.headers.get("x-ratelimit-remaining")).toBe("0");
+        expect(secondResponse.headers.get('x-ratelimit-remaining')).toBe('0');
 
         const limitedResponse = await app.request(`${appUrl}/api/data/server_tasks`, {
           headers: {
             origin: appUrl,
-            "x-api-key": keyBody.key,
+            'x-api-key': keyBody.key,
           },
         });
         expect(limitedResponse.status).toBe(429);
         const limitedBody = await limitedResponse.json();
-        expect(limitedBody.error).toBe("Rate limit exceeded");
+        expect(limitedBody.error).toBe('Rate limit exceeded');
       },
     );
+  });
+
+  test('schema drift report stays clean after apply and flags live database drift', async () => {
+    const currentDraft = await schemaModule.getSchemaDraft();
+    await schemaModule.applyDraft({
+      ...currentDraft,
+      tables: [
+        ...currentDraft.tables,
+        {
+          name: 'release_notes',
+          displayName: 'Release Notes',
+          primaryKey: 'id',
+          fields: [
+            {
+              name: 'id',
+              type: 'uuid',
+              nullable: false,
+              unique: true,
+              indexed: true,
+              default: 'gen_random_uuid()',
+            },
+            {
+              name: 'title',
+              type: 'text',
+              nullable: false,
+              unique: false,
+              indexed: true,
+            },
+            {
+              name: 'status',
+              type: 'enum',
+              nullable: false,
+              unique: false,
+              indexed: false,
+              default: 'draft',
+              enumValues: ['draft', 'published'],
+            },
+            {
+              name: 'author_id',
+              type: 'uuid',
+              nullable: false,
+              unique: false,
+              indexed: true,
+              references: {
+                table: 'authors',
+                column: 'id',
+                onDelete: 'cascade',
+                onUpdate: 'cascade',
+              },
+            },
+          ],
+          indexes: [['title', 'status']],
+          api: {
+            authMode: 'superadmin',
+            access: {
+              ownershipField: null,
+              list: { actors: [], scope: 'all' },
+              get: { actors: [], scope: 'all' },
+              create: { actors: [], scope: 'all' },
+              update: { actors: [], scope: 'all' },
+              delete: { actors: [], scope: 'all' },
+            },
+            operations: {
+              list: true,
+              get: true,
+              create: true,
+              update: true,
+              delete: true,
+            },
+            pagination: {
+              enabled: true,
+              defaultPageSize: 20,
+              maxPageSize: 100,
+            },
+            filtering: {
+              enabled: true,
+              fields: [],
+            },
+            sorting: {
+              enabled: true,
+              fields: [],
+              defaultOrder: 'desc',
+            },
+            includes: {
+              enabled: true,
+              fields: [],
+            },
+            hiddenFields: [],
+            fieldVisibility: {},
+          },
+        },
+      ],
+    });
+
+    const cleanReport = await schemaModule.getSchemaDriftReport();
+    expect(cleanReport.drifted).toBe(false);
+
+    const generatedSchemaPath = resolve(import.meta.dir, '../generated/schema/generated.ts');
+    const generatedSchemaText = await Bun.file(generatedSchemaPath).text();
+    expect(generatedSchemaText).toContain('pgEnum("release_notes_status_enum"');
+    expect(generatedSchemaText).toContain('index("release_notes_title_status_idx")');
+    expect(generatedSchemaText).toContain('references(() => authors.id, { onDelete: "cascade", onUpdate: "cascade" })');
+
+    await dbModule.sql.unsafe(`alter table "release_notes" add column "rogue_field" text`);
+
+    const driftedReport = await schemaModule.getSchemaDriftReport();
+    expect(driftedReport.drifted).toBe(true);
+    expect(driftedReport.issues.some((issue: string) => issue.includes('release_notes.rogue_field'))).toBe(true);
   });
 });

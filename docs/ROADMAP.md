@@ -33,32 +33,32 @@ Goal: close the known scaffold gaps before expanding surface area.
 
 ### API And Auth Runtime
 
-- [ ] Verify Better Auth runtime compatibility against the exact installed package versions.
-- [ ] Add integration coverage for sign-up, sign-in, session refresh, sign-out, password reset, and email verification.
-- [ ] Confirm enabled plugin flows work end-to-end for `username`, `jwt`, `organization`, `twoFactor`, `apiKey`, `magicLink`, `socialAuth`, and `admin`.
-- [ ] Ensure plugin config values actually affect runtime behavior, not just saved metadata.
-- [ ] Add regression tests for auth invalidation and plugin reconfiguration.
+- [x] Verify Better Auth runtime compatibility against the exact installed package versions.
+- [x] Add integration coverage for sign-up, sign-in, session refresh, sign-out, password reset, and email verification.
+- [x] Confirm enabled plugin flows work end-to-end for `username`, `jwt`, `organization`, `twoFactor`, `apiKey`, `magicLink`, `socialAuth`, and `admin`.
+- [x] Ensure plugin config values actually affect runtime behavior, not just saved metadata.
+- [x] Add regression tests for auth invalidation and plugin reconfiguration.
 
 ### Data And Schema Safety
 
-- [ ] Lock down built-in auth/system tables so sensitive rows and fields cannot leak through generic CRUD.
-- [ ] Add explicit redaction coverage for secrets, tokens, hashes, verification payloads, and API-key material.
-- [ ] Fix generated schema fidelity for enums, references, and foreign-key actions.
-- [ ] Add schema/apply integration tests against a real Postgres instance.
-- [ ] Add migration drift detection between metadata, generated files, and live database state.
+- [x] Lock down built-in auth/system tables so sensitive rows and fields cannot leak through generic CRUD.
+- [x] Add explicit redaction coverage for secrets, tokens, hashes, verification payloads, and API-key material.
+- [x] Fix generated schema fidelity for enums, references, and foreign-key actions.
+- [x] Add schema/apply integration tests against a real Postgres instance.
+- [x] Add migration drift detection between metadata, generated files, and live database state.
 
 ### Admin And Operator Readiness
 
-- [ ] Improve onboarding for first boot, missing env vars, and failed bootstrap states.
-- [ ] Improve error messages for schema preview/apply, plugin enable/disable, and data operations.
-- [ ] Document current guarantees and non-guarantees in the README and architecture docs.
+- [x] Improve onboarding for first boot, missing env vars, and failed bootstrap states.
+- [x] Improve error messages for schema preview/apply, plugin enable/disable, and data operations.
+- [x] Document current guarantees and non-guarantees in the README and architecture docs.
 
 ### Exit Criteria
 
-- [ ] Fresh bootstrap works on a clean machine with documented steps only.
-- [ ] Core auth flows are covered by automated integration tests.
-- [ ] CRUD on built-in tables is safe by default.
-- [ ] Generated schema artifacts match executed SQL for supported field types and relations.
+- [x] Fresh bootstrap works on a clean machine with documented steps only.
+- [x] Core auth flows are covered by automated integration tests.
+- [x] CRUD on built-in tables is safe by default.
+- [x] Generated schema artifacts match executed SQL for supported field types and relations.
 
 ## Phase 1: Ship A Real App-Facing Data Plane
 
