@@ -1,8 +1,7 @@
-# Full-stack image: Vite admin → apps/admin/dist, bundled API → apps/api/dist (serves /admin + /api)
+# Vite admin → apps/admin/dist; API runs as TypeScript (Bun), not bundled
 FROM oven/bun:1.3.11 AS builder
 WORKDIR /app
 
-# Baked at build time. Default empty = browser-relative URLs (same host as /admin). Override: docker build --build-arg VITE_API_URL=https://api.example.com .
 ARG VITE_API_URL=
 ENV VITE_API_URL=${VITE_API_URL}
 
@@ -14,7 +13,7 @@ COPY apps ./apps
 
 RUN bun install --frozen-lockfile
 
-RUN bun run build
+RUN bun run --cwd apps/admin build
 
 FROM oven/bun:1.3.11
 WORKDIR /app
@@ -22,10 +21,13 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-COPY --from=builder /app/apps/api/dist ./apps/api/dist
-COPY --from=builder /app/apps/api/db ./apps/api/db
+COPY --from=builder /app/package.json /app/bun.lock ./
+COPY --from=builder /app/tsconfig.json /app/tsconfig.base.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/apps/api ./apps/api
 COPY --from=builder /app/apps/admin/dist ./apps/admin/dist
 
 EXPOSE 3000
 
-CMD ["bun", "apps/api/dist/index.js"]
+CMD ["bun", "run", "--cwd", "apps/api", "start"]
