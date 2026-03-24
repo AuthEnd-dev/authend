@@ -193,6 +193,12 @@ Then generate local types:
 npx authend-gen generate
 ```
 
+Or watch for schema changes during development:
+
+```bash
+npx authend-gen watch --interval 2000
+```
+
 Or via `package.json`:
 
 ```json
@@ -225,6 +231,7 @@ Framework-specific setup guides:
 - [Next.js example](./docs/examples/nextjs.md)
 - [Expo example](./docs/examples/expo.md)
 - [Node backend example](./docs/examples/node.md)
+- [Quick-start templates](./docs/examples/quick-start-templates.md)
 
 ## Runtime-verified plugin config
 

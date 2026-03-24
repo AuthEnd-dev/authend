@@ -92,6 +92,35 @@ async function commandGenerate(cwd, options) {
   }
 
   process.stdout.write(`Generated Authend types at ${outputPath}\n`);
+  return manifest;
+}
+
+async function commandWatch(cwd, options) {
+  const intervalMsRaw = options.interval ?? "2000";
+  const intervalMs = Number.parseInt(intervalMsRaw, 10);
+  if (!Number.isFinite(intervalMs) || intervalMs < 250) {
+    throw new Error("Invalid --interval. Use an integer >= 250 (milliseconds).");
+  }
+
+  process.stdout.write(`Watching SDK schema every ${intervalMs}ms...\n`);
+  let lastChecksum = null;
+
+  while (true) {
+    try {
+      const manifest = await commandGenerate(cwd, options);
+      const checksum = manifest?.schemaChecksum ?? null;
+      if (checksum && checksum !== lastChecksum) {
+        process.stdout.write(`Schema checksum changed: ${checksum}\n`);
+      }
+      lastChecksum = checksum;
+    } catch (error) {
+      process.stderr.write(`watch: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+
+    await new Promise((resolveTimeout) => {
+      setTimeout(resolveTimeout, intervalMs);
+    });
+  }
 }
 
 async function main() {
@@ -105,6 +134,11 @@ async function main() {
 
   if (command === "generate") {
     await commandGenerate(cwd, options);
+    return;
+  }
+
+  if (command === "watch") {
+    await commandWatch(cwd, options);
     return;
   }
 

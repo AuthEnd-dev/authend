@@ -121,10 +121,10 @@ Goal: remove generic-client friction and make Authend feel native to TS apps.
 
 ### Developer Workflow
 
-- [ ] Add a simple `authend init` or equivalent setup flow for client projects.
-- [ ] Add watch mode for SDK regeneration during local development.
-- [ ] Add CI validation for stale generated SDK artifacts.
-- [ ] Add better quick-start templates showing auth + data working together.
+- [x] Add a simple `authend init` or equivalent setup flow for client projects.
+- [x] Add watch mode for SDK regeneration during local development.
+- [x] Add CI validation for stale generated SDK artifacts.
+- [x] Add better quick-start templates showing auth + data working together.
 
 ### Exit Criteria
 

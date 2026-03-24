@@ -16,6 +16,7 @@ Use these guides:
 - [Next.js](./nextjs.md)
 - [Expo](./expo.md)
 - [Node backend](./node.md)
+- [Quick-start templates (auth + data)](./quick-start-templates.md)
 
 ## Canonical SDK Generate Flow
 

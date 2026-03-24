@@ -254,12 +254,20 @@ Available commands:
 
 - `authend-gen init`
 - `authend-gen generate`
+- `authend-gen watch`
 
 Optional flags for `generate`:
 
 - `--api-url`
 - `--output`
 - `--schema-output`
+
+Optional flags for `watch`:
+
+- `--api-url`
+- `--output`
+- `--schema-output`
+- `--interval` (milliseconds, default `2000`)
 
 ## Notes
 
