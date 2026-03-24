@@ -33,6 +33,33 @@ export type ListResponse<TRecord> = {
   pageSize: number;
 };
 
+export type AuthendApiErrorPayload = {
+  error?: string;
+  code?: string;
+  message?: string;
+  details?: unknown;
+};
+
+export type AuthendApiKeyProvider = string | (() => string | null | undefined);
+
+export class AuthendApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  readonly details?: unknown;
+  readonly path: string;
+  readonly rawBody: string;
+
+  constructor(input: { status: number; path: string; message: string; code?: string; details?: unknown; rawBody?: string }) {
+    super(input.message);
+    this.name = 'AuthendApiError';
+    this.status = input.status;
+    this.code = input.code;
+    this.details = input.details;
+    this.path = input.path;
+    this.rawBody = input.rawBody ?? '';
+  }
+}
+
 export type AuthendSchemaResource<
   TRecord extends DataRecord = DataRecord,
   TCreate = Record<string, unknown>,
@@ -52,10 +79,7 @@ export type AuthendSchemaResource<
   __includes?: TIncludes;
 };
 
-export type AuthendIncludeDefinition<
-  TRecord extends DataRecord = DataRecord,
-  TResultKey extends string = string,
-> = {
+export type AuthendIncludeDefinition<TRecord extends DataRecord = DataRecord, TResultKey extends string = string> = {
   resultKey: TResultKey;
   __record?: TRecord;
 };
@@ -104,19 +128,15 @@ type InferListParams<TResource extends AnyAuthendSchemaResource> = ResourceListP
 type InferOperations<TResource extends AnyAuthendSchemaResource> = TResource['operations'];
 type EnabledMethod<TEnabled, TMethod> = TEnabled extends false ? never : TMethod;
 type IncludeKeysFromParam<TParam> = TParam extends readonly (infer TKey)[] ? Extract<TKey, string> : Extract<TParam, string>;
-type SelectedIncludeKeys<TParams> = TParams extends { include?: infer TInclude } ? IncludeKeysFromParam<Exclude<TInclude, undefined>> : never;
+type SelectedIncludeKeys<TParams> = TParams extends { include?: infer TInclude }
+  ? IncludeKeysFromParam<Exclude<TInclude, undefined>>
+  : never;
 type InferIncludeRecord<TInclude> = TInclude extends { __record?: infer TRecord } ? TRecord : DataRecord;
 type InferIncludeResultKey<TInclude> = TInclude extends { resultKey: infer TResultKey } ? Extract<TResultKey, string> : never;
-type UnionToIntersection<T> = (
-  T extends unknown ? (value: T) => void : never
-) extends ((value: infer TResult) => void)
+type UnionToIntersection<T> = (T extends unknown ? (value: T) => void : never) extends (value: infer TResult) => void
   ? TResult
   : never;
-type MergeIncludedRecord<
-  TRecord,
-  TIncludeMap,
-  TSelected extends string,
-> = TRecord &
+type MergeIncludedRecord<TRecord, TIncludeMap, TSelected extends string> = TRecord &
   UnionToIntersection<
     {
       [K in TSelected]: K extends keyof TIncludeMap
@@ -145,7 +165,9 @@ export type ResourceClientFromDefinition<TResource extends AnyAuthendSchemaResou
     InferOperations<TResource>['list'],
     <TParams extends InferListParams<TResource> | undefined = undefined>(
       params?: TParams,
-    ) => Promise<ListResponse<MergeIncludedRecord<InferRecord<TResource>, InferIncludes<TResource>, SelectedIncludeKeys<TParams>>>>
+    ) => Promise<
+      ListResponse<MergeIncludedRecord<InferRecord<TResource>, InferIncludes<TResource>, SelectedIncludeKeys<TParams>>>
+    >
   >;
   get: EnabledMethod<InferOperations<TResource>['get'], (id: string) => Promise<InferRecord<TResource>>>;
   create: EnabledMethod<
@@ -197,6 +219,8 @@ type AuthendClientBaseOptions = {
   enabledPlugins?: PluginId[];
   authClient?: AuthendAuthClient;
   dataBasePath?: string;
+  apiKey?: AuthendApiKeyProvider;
+  apiKeyHeaderName?: string;
 };
 
 export type AuthendClientOptions<TSchema extends AuthendSchemaShape> = AuthendClientBaseOptions & {
@@ -257,9 +281,7 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape>(
   data: TypedDataClient<TSchema>;
 };
 
-export function createAuthendClient(
-  options: AuthendClientOptionsWithoutSchema,
-): {
+export function createAuthendClient(options: AuthendClientOptionsWithoutSchema): {
   auth: AuthendAuthClient;
   data: TypedDataClient<undefined>;
 };
@@ -268,6 +290,7 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape>(
   options: AuthendClientOptions<TSchema> | AuthendClientOptionsWithoutSchema,
 ) {
   const dataBasePath = options.dataBasePath ?? '/api/data';
+  const apiKeyHeaderName = options.apiKeyHeaderName ?? 'x-api-key';
   const auth =
     options.authClient ??
     createAuthClient({
@@ -277,19 +300,60 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape>(
         options.enabledPlugins === undefined ? defaultAuthClientPlugins : createAuthendAuthClientPlugins(options.enabledPlugins),
     });
 
+  const resolveApiKey = () => {
+    if (typeof options.apiKey === 'function') {
+      return options.apiKey() ?? undefined;
+    }
+    return options.apiKey ?? undefined;
+  };
+
+  const composeHeaders = (initHeaders?: HeadersInit) => {
+    const headers = new Headers(initHeaders);
+    if (!headers.has('content-type')) {
+      headers.set('content-type', 'application/json');
+    }
+
+    const apiKey = resolveApiKey();
+    if (apiKey && !headers.has(apiKeyHeaderName)) {
+      headers.set(apiKeyHeaderName, apiKey);
+    }
+
+    return headers;
+  };
+
   const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
+    const headers = composeHeaders(init?.headers);
     const response = await (options.fetch ?? fetch)(`${options.baseURL}${path}`, {
       credentials: 'include',
-      headers: {
-        'content-type': 'application/json',
-        ...(init?.headers ?? {}),
-      },
       ...init,
+      headers,
     });
 
     if (!response.ok) {
-      const body = await response.text();
-      throw new Error(body || `Request failed: ${response.status}`);
+      const rawBody = await response.text();
+      let parsedPayload: AuthendApiErrorPayload | null = null;
+
+      if (rawBody.trim().length > 0) {
+        try {
+          parsedPayload = JSON.parse(rawBody) as AuthendApiErrorPayload;
+        } catch {
+          parsedPayload = null;
+        }
+      }
+
+      const message =
+        parsedPayload?.message ??
+        parsedPayload?.error ??
+        (rawBody.trim().length > 0 ? rawBody : `Request failed: ${response.status}`);
+
+      throw new AuthendApiError({
+        status: response.status,
+        path,
+        message,
+        code: parsedPayload?.code,
+        details: parsedPayload?.details,
+        rawBody,
+      });
     }
 
     if (response.status === 204) {
@@ -331,7 +395,9 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape>(
       if (typedParams?.include) {
         searchParams.set('include', Array.isArray(typedParams.include) ? typedParams.include.join(',') : typedParams.include);
       }
-      return request<ListResponse<TRecord>>(`${dataBasePath}/${table}${searchParams.size > 0 ? `?${searchParams.toString()}` : ''}`);
+      return request<ListResponse<TRecord>>(
+        `${dataBasePath}/${table}${searchParams.size > 0 ? `?${searchParams.toString()}` : ''}`,
+      );
     },
     get: (id: string) => request<TRecord>(`${dataBasePath}/${table}/${id}`),
     create: (payload: TCreate) =>
