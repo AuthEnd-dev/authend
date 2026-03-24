@@ -154,6 +154,16 @@ export type ResourceClient<
   TListParams = ResourceListParams,
 > = {
   list: (params?: TListParams) => Promise<ListResponse<TRecord>>;
+  page: (
+    page: number,
+    params?: Omit<TListParams extends object ? TListParams : ResourceListParams, 'page'>,
+  ) => Promise<ListResponse<TRecord>>;
+  withInclude: (
+    include: ResourceListParams['include'],
+    params?: Omit<TListParams extends object ? TListParams : ResourceListParams, 'include'>,
+  ) => Promise<ListResponse<TRecord>>;
+  iteratePages: (params?: TListParams) => AsyncGenerator<ListResponse<TRecord>, void, unknown>;
+  iterateItems: (params?: TListParams) => AsyncGenerator<TRecord, void, unknown>;
   get: (id: string) => Promise<TRecord>;
   create: (payload: TCreate) => Promise<TRecord>;
   update: (id: string, payload: TUpdate) => Promise<TRecord>;
@@ -168,6 +178,25 @@ export type ResourceClientFromDefinition<TResource extends AnyAuthendSchemaResou
     ) => Promise<
       ListResponse<MergeIncludedRecord<InferRecord<TResource>, InferIncludes<TResource>, SelectedIncludeKeys<TParams>>>
     >
+  >;
+  page: EnabledMethod<
+    InferOperations<TResource>['list'],
+    (page: number, params?: Omit<InferListParams<TResource>, 'page'>) => Promise<ListResponse<InferRecord<TResource>>>
+  >;
+  withInclude: EnabledMethod<
+    InferOperations<TResource>['list'],
+    (
+      include: InferListParams<TResource>['include'],
+      params?: Omit<InferListParams<TResource>, 'include'>,
+    ) => Promise<ListResponse<InferRecord<TResource>>>
+  >;
+  iteratePages: EnabledMethod<
+    InferOperations<TResource>['list'],
+    (params?: InferListParams<TResource>) => AsyncGenerator<ListResponse<InferRecord<TResource>>, void, unknown>
+  >;
+  iterateItems: EnabledMethod<
+    InferOperations<TResource>['list'],
+    (params?: InferListParams<TResource>) => AsyncGenerator<InferRecord<TResource>, void, unknown>
   >;
   get: EnabledMethod<InferOperations<TResource>['get'], (id: string) => Promise<InferRecord<TResource>>>;
   create: EnabledMethod<
@@ -370,8 +399,8 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape>(
     TListParams = ResourceListParams,
   >(
     table: string,
-  ): ResourceClient<TRecord, TCreate, TUpdate, TListParams> => ({
-    list: (params?: TListParams) => {
+  ): ResourceClient<TRecord, TCreate, TUpdate, TListParams> => {
+    const listWithParams = (params?: TListParams) => {
       const searchParams = new URLSearchParams();
       const typedParams = params as ResourceListParams | undefined;
       if (typedParams?.page) {
@@ -398,23 +427,66 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape>(
       return request<ListResponse<TRecord>>(
         `${dataBasePath}/${table}${searchParams.size > 0 ? `?${searchParams.toString()}` : ''}`,
       );
-    },
-    get: (id: string) => request<TRecord>(`${dataBasePath}/${table}/${id}`),
-    create: (payload: TCreate) =>
-      request<TRecord>(`${dataBasePath}/${table}`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }),
-    update: (id: string, payload: TUpdate) =>
-      request<TRecord>(`${dataBasePath}/${table}/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(payload),
-      }),
-    remove: (id: string) =>
-      request<void>(`${dataBasePath}/${table}/${id}`, {
-        method: 'DELETE',
-      }),
-  });
+    };
+
+    return {
+      list: listWithParams,
+      page: (page, params) =>
+        listWithParams({
+          ...(params as ResourceListParams | undefined),
+          page,
+        } as TListParams),
+      withInclude: (include, params) =>
+        listWithParams({
+          ...(params as ResourceListParams | undefined),
+          include,
+        } as TListParams),
+      iteratePages: async function* (params?: TListParams) {
+        let currentPage = (params as ResourceListParams | undefined)?.page ?? 1;
+        const sharedParams = {
+          ...(params as ResourceListParams | undefined),
+        };
+        delete sharedParams.page;
+
+        while (true) {
+          const response = await listWithParams({
+            ...sharedParams,
+            page: currentPage,
+          } as TListParams);
+          if (response.items.length === 0) {
+            return;
+          }
+          yield response;
+          if (response.page * response.pageSize >= response.total) {
+            return;
+          }
+          currentPage += 1;
+        }
+      },
+      iterateItems: async function* (params?: TListParams) {
+        for await (const page of this.iteratePages(params)) {
+          for (const item of page.items) {
+            yield item;
+          }
+        }
+      },
+      get: (id: string) => request<TRecord>(`${dataBasePath}/${table}/${id}`),
+      create: (payload: TCreate) =>
+        request<TRecord>(`${dataBasePath}/${table}`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }),
+      update: (id: string, payload: TUpdate) =>
+        request<TRecord>(`${dataBasePath}/${table}/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        }),
+      remove: (id: string) =>
+        request<void>(`${dataBasePath}/${table}/${id}`, {
+          method: 'DELETE',
+        }),
+    };
+  };
 
   const schemaResources = ((options.schema as AuthendSchemaRuntime<TSchema> | undefined)?.resources ?? {}) as Record<
     string,

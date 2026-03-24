@@ -14,18 +14,20 @@ function requireHeaders(value: Headers | null): Headers {
 
 describe('Authend SDK API errors', () => {
   test('throws structured AuthendApiError for JSON error payloads', async () => {
-    const mockFetch = asFetch(async () =>
-      new Response(
-        JSON.stringify({
-          error: 'Validation failed.',
-          code: 'VALIDATION_FAILED',
-          details: { field: 'title' },
-        }),
-        {
-          status: 400,
-          headers: { 'content-type': 'application/json' },
-        },
-      ));
+    const mockFetch = asFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: 'Validation failed.',
+            code: 'VALIDATION_FAILED',
+            details: { field: 'title' },
+          }),
+          {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+    );
 
     const client = createAuthendClient({
       baseURL: 'http://localhost:7002',
@@ -43,11 +45,13 @@ describe('Authend SDK API errors', () => {
   });
 
   test('falls back to plain response text when payload is not JSON', async () => {
-    const mockFetch = asFetch(async () =>
-      new Response('Service temporarily unavailable', {
-        status: 503,
-        headers: { 'content-type': 'text/plain' },
-      }));
+    const mockFetch = asFetch(
+      async () =>
+        new Response('Service temporarily unavailable', {
+          status: 503,
+          headers: { 'content-type': 'text/plain' },
+        }),
+    );
 
     const client = createAuthendClient({
       baseURL: 'http://localhost:7002',
@@ -130,5 +134,84 @@ describe('Authend SDK API-key ergonomics', () => {
     await client.data.create('posts', { title: 'hello' });
     headers = requireHeaders(capturedHeaders);
     expect(headers.get('authorization')).toBe('ak_provider_default');
+  });
+});
+
+describe('Authend SDK list helpers', () => {
+  test('page and withInclude compose list params', async () => {
+    const requestedUrls: string[] = [];
+    const mockFetch = asFetch(async (input) => {
+      requestedUrls.push(String(input));
+      return new Response(
+        JSON.stringify({
+          items: [],
+          total: 0,
+          page: 2,
+          pageSize: 10,
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    });
+
+    const client = createAuthendClient({
+      baseURL: 'http://localhost:7002',
+      fetch: mockFetch,
+    });
+
+    await client.data.resource('posts').page(2, { pageSize: 10, sort: 'created_at' });
+    await client.data.resource('posts').withInclude(['author', 'comments'], { pageSize: 5 });
+
+    expect(requestedUrls[0]).toContain('/api/data/posts?page=2&pageSize=10&sort=created_at');
+    expect(requestedUrls[1]).toContain('/api/data/posts?pageSize=5&include=author%2Ccomments');
+  });
+
+  test('iteratePages and iterateItems walk paginated responses', async () => {
+    const responses = [
+      {
+        items: [{ id: '1' }, { id: '2' }],
+        total: 3,
+        page: 1,
+        pageSize: 2,
+      },
+      {
+        items: [{ id: '3' }],
+        total: 3,
+        page: 2,
+        pageSize: 2,
+      },
+    ];
+    let callCount = 0;
+    const mockFetch = asFetch(async () => {
+      const payload = responses[Math.min(callCount, responses.length - 1)];
+      callCount += 1;
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    const client = createAuthendClient({
+      baseURL: 'http://localhost:7002',
+      fetch: mockFetch,
+    });
+
+    const pages: Array<{ page: number; itemCount: number }> = [];
+    for await (const page of client.data.resource<{ id: string }>('posts').iteratePages({ pageSize: 2 })) {
+      pages.push({ page: page.page, itemCount: page.items.length });
+    }
+    expect(pages).toEqual([
+      { page: 1, itemCount: 2 },
+      { page: 2, itemCount: 1 },
+    ]);
+
+    callCount = 0;
+    const ids: string[] = [];
+    for await (const item of client.data.resource<{ id: string }>('posts').iterateItems({ pageSize: 2 })) {
+      ids.push(item.id);
+    }
+    expect(ids).toEqual(['1', '2', '3']);
   });
 });

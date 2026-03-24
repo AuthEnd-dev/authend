@@ -115,7 +115,7 @@ Goal: remove generic-client friction and make Authend feel native to TS apps.
 
 - [x] Improve SDK error handling with structured typed API errors.
 - [x] Support API-key auth ergonomics in the SDK without requiring custom fetch wrappers.
-- [ ] Expose first-class helpers for pagination, includes, and cursor-style iteration if added later.
+- [x] Expose first-class helpers for pagination, includes, and cursor-style iteration if added later.
 - [ ] Add environment-safe browser/server usage examples.
 - [ ] Publish framework examples for React, Next.js, Expo, and Node backends.
 
