@@ -361,6 +361,14 @@ export function TableSchemaPanel({
     includes: true,
   });
 
+  const editingDescriptor = useMemo(() => {
+    if (!isEditing) {
+      return null;
+    }
+    const key = tableName ?? "";
+    return tableCatalog?.[key] ?? null;
+  }, [isEditing, tableCatalog, tableName]);
+
   const availableTableNames = useMemo(() => {
     const names = Object.keys(tableCatalog ?? {});
     if (!isEditing && name && !names.includes(name)) {
@@ -382,57 +390,105 @@ export function TableSchemaPanel({
   );
 
   useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    if (!isEditing) {
+      return;
+    }
+
+    // Clear previous table state immediately when switching system tables,
+    // so we don't show stale fields while the catalog/meta loads.
+    setName(tableName ?? "");
+    setDisplayName(tableName ?? "");
+    setFields([]);
+    setFieldRowIds([]);
+    setCollapsedFields([]);
+    setRelations([]);
+    setRelationRowIds([]);
+    setCollapsedRelations([]);
+    setApiConfig(defaultTableApiConfig());
+  }, [isEditing, isOpen, tableName]);
+
+  useEffect(() => {
     if (!isOpen || !schemaData) {
       return;
     }
 
     if (isEditing) {
       const table = schemaData.tables.find((entry) => entry.name === tableName);
-      if (!table) {
+      if (table) {
+        setName(table.name);
+        setDisplayName(table.displayName || table.name);
+        const editableFields = table.fields
+          .filter((field) => field.name !== table.primaryKey)
+          .map((field) => ({
+            ...field,
+            default: field.default ?? "",
+            unique: !!field.unique,
+            indexed: !!field.indexed,
+            nullable: !!field.nullable,
+            size: field.size ?? 255,
+            enumValues: field.enumValues ?? [],
+          }));
+        setFields(editableFields);
+        setFieldRowIds(editableFields.map(() => nextSchemaEditorRowId()));
+        setCollapsedFields(editableFields.map(() => true));
+        const editableRelations = schemaData.relations
+          .filter((relation) => relation.sourceTable === table.name)
+          .map((relation) => ({
+            ...relation,
+            alias: relation.alias ?? "",
+            sourceAlias: relation.sourceAlias ?? "",
+            targetAlias: relation.targetAlias ?? "",
+            joinType: relation.joinType ?? "left",
+            description: relation.description ?? "",
+            sourceFieldMode: "existing" as const,
+            generatedSourceField: relation.sourceField,
+          }));
+        setRelations(editableRelations);
+        setRelationRowIds(editableRelations.map(() => nextSchemaEditorRowId()));
+        setCollapsedRelations(editableRelations.map(() => true));
+        setApiConfig({
+          ...defaultTableApiConfig(),
+          ...table.api,
+          access: table.api?.access ?? defaultTableApiConfig().access,
+          operations: table.api?.operations ?? defaultTableApiConfig().operations,
+          pagination: table.api?.pagination ?? defaultTableApiConfig().pagination,
+          filtering: table.api?.filtering ?? defaultTableApiConfig().filtering,
+          sorting: table.api?.sorting ?? defaultTableApiConfig().sorting,
+          includes: table.api?.includes ?? defaultTableApiConfig().includes,
+        });
         return;
       }
 
-      setName(table.name);
-      setDisplayName(table.displayName || table.name);
-      const editableFields = table.fields
-        .filter((field) => field.name !== "id")
+      const catalog = editingDescriptor;
+      if (!catalog) {
+        return;
+      }
+
+      setName(tableName ?? catalog.table);
+      setDisplayName(catalog.table);
+      const pk = catalog.primaryKey;
+      const editableFields = catalog.fields
+        .filter((field) => field.name !== pk)
         .map((field) => ({
           ...field,
-          default: field.default ?? "",
+          default: "",
           unique: !!field.unique,
           indexed: !!field.indexed,
           nullable: !!field.nullable,
-          size: field.size ?? 255,
-          enumValues: field.enumValues ?? [],
+          size: (field as { size?: number | null }).size ?? 255,
+          enumValues: (field as { enumValues?: string[] | null }).enumValues ?? [],
         }));
       setFields(editableFields);
       setFieldRowIds(editableFields.map(() => nextSchemaEditorRowId()));
       setCollapsedFields(editableFields.map(() => true));
-      const editableRelations = schemaData.relations
-        .filter((relation) => relation.sourceTable === table.name)
-        .map((relation) => ({
-          ...relation,
-          alias: relation.alias ?? "",
-          sourceAlias: relation.sourceAlias ?? "",
-          targetAlias: relation.targetAlias ?? "",
-          joinType: relation.joinType ?? "left",
-          description: relation.description ?? "",
-          sourceFieldMode: "existing" as const,
-          generatedSourceField: relation.sourceField,
-        }));
-      setRelations(editableRelations);
-      setRelationRowIds(editableRelations.map(() => nextSchemaEditorRowId()));
-      setCollapsedRelations(editableRelations.map(() => true));
-      setApiConfig({
-        ...defaultTableApiConfig(),
-        ...table.api,
-        access: table.api?.access ?? defaultTableApiConfig().access,
-        operations: table.api?.operations ?? defaultTableApiConfig().operations,
-        pagination: table.api?.pagination ?? defaultTableApiConfig().pagination,
-        filtering: table.api?.filtering ?? defaultTableApiConfig().filtering,
-        sorting: table.api?.sorting ?? defaultTableApiConfig().sorting,
-        includes: table.api?.includes ?? defaultTableApiConfig().includes,
-      });
+      setRelations([]);
+      setRelationRowIds([]);
+      setCollapsedRelations([]);
+      setApiConfig(defaultTableApiConfig());
       return;
     }
 
@@ -445,7 +501,7 @@ export function TableSchemaPanel({
     setRelationRowIds([]);
     setCollapsedRelations([]);
     setApiConfig(defaultTableApiConfig());
-  }, [isEditing, isOpen, schemaData, tableName]);
+  }, [editingDescriptor, isEditing, isOpen, schemaData, tableName]);
 
   useEffect(() => {
     if (isOpen) {
@@ -615,21 +671,26 @@ export function TableSchemaPanel({
       .filter((field, index, collection) => collection.findIndex((entry) => entry.name === field.name) === index)
       .filter((field) => !manualFields.some((entry) => entry.name === field.name));
 
+    const resolvedPrimaryKey = editingDescriptor?.primaryKey ?? "id";
+    const primaryKeyField =
+      editingDescriptor?.fields.find((field) => field.name === resolvedPrimaryKey) ??
+      ({
+        name: "id",
+        type: "uuid",
+        nullable: false,
+        unique: true,
+        indexed: true,
+        default: "gen_random_uuid()",
+      } as FieldBlueprint);
+
     return {
       name,
       displayName: displayName || name,
-      primaryKey: "id",
+      primaryKey: resolvedPrimaryKey,
       indexes: [],
       fields: [
-        {
-          name: "id",
-          type: "uuid",
-          nullable: false,
-          unique: true,
-          indexed: true,
-          default: "gen_random_uuid()",
-        },
-        ...manualFields,
+        primaryKeyField,
+        ...manualFields.filter((field) => field.name !== resolvedPrimaryKey),
         ...autoFields,
       ],
       api: {
@@ -869,9 +930,10 @@ export function TableSchemaPanel({
       if (isEditing) {
         const existingIndex = nextTables.findIndex((table) => table.name === tableName);
         if (existingIndex === -1) {
-          throw new Error(`Table ${tableName} no longer exists in the current draft.`);
+          nextTables.push(newTable);
+        } else {
+          nextTables[existingIndex] = newTable;
         }
-        nextTables[existingIndex] = newTable;
       } else {
         nextTables.push(newTable);
       }

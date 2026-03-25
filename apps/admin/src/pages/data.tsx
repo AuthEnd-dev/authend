@@ -797,7 +797,7 @@ export function DataPage() {
     [data],
   );
   const tableSchema = tableMeta as TableDescriptor | undefined;
-  const canMutateRows = tableMeta?.source === 'generated';
+  const canMutateRows = Boolean(tableMeta);
   const totalRecords = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalRecords / currentPageSize));
   const visibleStart = totalRecords === 0 ? 0 : (currentPage - 1) * currentPageSize + 1;
@@ -812,13 +812,11 @@ export function DataPage() {
   const [selectedRecordIds, setSelectedRecordIds] = useState<Set<string>>(new Set());
 
   const handleEditRecord = (record: DataRecord) => {
-    if (!canMutateRows) return;
     setEditingRecord(record);
     setFormOpen(true);
   };
 
   const handleNewRecord = () => {
-    if (!canMutateRows) return;
     setEditingRecord(null);
     setFormOpen(true);
   };
@@ -1022,8 +1020,8 @@ export function DataPage() {
             size="icon"
             className="h-7 w-7 text-muted-foreground max-w-fit px-1.5 ml-2 hover:bg-muted/60 disabled:opacity-40"
             onClick={() => setSchemaOpen(true)}
-            disabled={!tableMeta?.mutableSchema}
-            title={tableMeta?.mutableSchema ? 'Edit table schema' : 'Built-in tables are not editable from the schema UI'}
+            disabled={!tableMeta}
+            title={tableMeta ? 'Edit table schema' : 'Loading table metadata...'}
           >
             <Settings className="w-3.5 h-3.5" />
           </Button>
@@ -1050,7 +1048,7 @@ export function DataPage() {
             size="sm"
             onClick={handleNewRecord}
             disabled={!canMutateRows}
-            title={canMutateRows ? 'Create a new record' : 'Built-in tables are read-only from the admin UI'}
+            title={canMutateRows ? 'Create a new record' : 'Loading table metadata...'}
             className="h-8 shadow-sm bg-zinc-900 border border-transparent dark:bg-zinc-100 text-zinc-50 dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-xs font-semibold px-4 transition-all disabled:opacity-50"
           >
             <Plus className="w-3.5 h-3.5 mr-1.5" strokeWidth={2.5} />

@@ -355,7 +355,11 @@ function hiddenFieldSetForActor(
 }
 
 
-function assertWritableDescriptor(descriptor: TableDescriptor) {
+function assertWritableDescriptor(descriptor: TableDescriptor, access?: RecordAccessContext) {
+  if (access?.actorKind === "superadmin") {
+    return;
+  }
+
   if (descriptor.source !== "generated") {
     throw new HttpError(403, `Table ${descriptor.table} is read-only`);
   }
@@ -370,6 +374,153 @@ async function listExistingDatabaseTables() {
   `;
 
   return new Set(rows.map((row) => row.table_name));
+}
+
+type LiveColumnInfo = {
+  columnName: string;
+  dataType: string;
+  udtName: string;
+  isNullable: boolean;
+};
+
+type LivePrimaryKeyInfo = {
+  primaryKey: string | null;
+};
+
+type LiveIndexColumnInfo = {
+  columnName: string;
+  unique: boolean;
+};
+
+type LiveEnumValueInfo = {
+  enumLabel: string;
+};
+
+async function introspectTableDescriptor(tableName: string): Promise<TableDescriptor> {
+  const columns = await sql<LiveColumnInfo[]>`
+    select
+      column_name as "columnName",
+      data_type as "dataType",
+      udt_name as "udtName",
+      is_nullable = 'YES' as "isNullable"
+    from information_schema.columns
+    where table_schema = current_schema()
+      and table_name = ${tableName}
+    order by ordinal_position
+  `;
+
+  if (columns.length === 0) {
+    throw new HttpError(404, `Unknown table ${tableName}`);
+  }
+
+  const [{ primaryKey } = { primaryKey: null }] = await sql<LivePrimaryKeyInfo[]>`
+    select a.attname as "primaryKey"
+    from pg_index i
+    join pg_class t on t.oid = i.indrelid
+    join pg_namespace n on n.oid = t.relnamespace
+    join pg_attribute a on a.attrelid = t.oid and a.attnum = any(i.indkey)
+    where n.nspname = current_schema()
+      and t.relname = ${tableName}
+      and i.indisprimary
+    limit 1
+  `;
+
+  const indexColumns = await sql<LiveIndexColumnInfo[]>`
+    select
+      a.attname as "columnName",
+      ix.indisunique as "unique"
+    from pg_class t
+    join pg_namespace n on n.oid = t.relnamespace
+    join pg_index ix on ix.indrelid = t.oid
+    join lateral unnest(ix.indkey) with ordinality as cols(attnum, ordinality) on true
+    join pg_attribute a on a.attrelid = t.oid and a.attnum = cols.attnum
+    where n.nspname = current_schema()
+      and t.relname = ${tableName}
+  `;
+
+  const indexedSet = new Set(indexColumns.map((entry) => entry.columnName));
+  const uniqueSet = new Set(indexColumns.filter((entry) => entry.unique).map((entry) => entry.columnName));
+
+  const primaryKeyField = primaryKey && columns.some((col) => col.columnName === primaryKey) ? primaryKey : columns[0]?.columnName ?? "id";
+
+  const fields: FieldBlueprint[] = [];
+  for (const column of columns) {
+    let type: FieldBlueprint["type"] = "text";
+    let enumValues: string[] | undefined;
+
+    switch (column.dataType) {
+      case "text":
+        type = "text";
+        break;
+      case "character varying":
+        type = "varchar";
+        break;
+      case "integer":
+        type = "integer";
+        break;
+      case "bigint":
+        type = "bigint";
+        break;
+      case "boolean":
+        type = "boolean";
+        break;
+      case "timestamp with time zone":
+      case "timestamp without time zone":
+        type = "timestamp";
+        break;
+      case "date":
+        type = "date";
+        break;
+      case "jsonb":
+      case "json":
+        type = "jsonb";
+        break;
+      case "uuid":
+        type = "uuid";
+        break;
+      case "numeric":
+        type = "numeric";
+        break;
+      case "USER-DEFINED": {
+        // Treat user-defined types as enums when possible.
+        const values = await sql<LiveEnumValueInfo[]>`
+          select e.enumlabel as "enumLabel"
+          from pg_type t
+          join pg_enum e on e.enumtypid = t.oid
+          where t.typname = ${column.udtName}
+          order by e.enumsortorder
+        `;
+        if (values.length > 0) {
+          type = "enum";
+          enumValues = values.map((row) => row.enumLabel);
+        } else {
+          type = "text";
+        }
+        break;
+      }
+      default:
+        type = "text";
+        break;
+    }
+
+    fields.push({
+      name: column.columnName,
+      type,
+      nullable: column.columnName === primaryKeyField ? false : column.isNullable,
+      unique: uniqueSet.has(column.columnName),
+      indexed: indexedSet.has(column.columnName),
+      enumValues,
+    });
+  }
+
+  return {
+    table: tableName,
+    primaryKey: primaryKeyField,
+    fields,
+    source: "builtin",
+    mutableSchema: false,
+    ownerPluginId: null,
+  };
 }
 
 async function resolveTableResource(tableInput: string) {
@@ -414,6 +565,13 @@ async function resolveTableResource(tableInput: string) {
     (entry) => entry.name === tableInput || (entry.api?.routeSegment ?? entry.name) === tableInput,
   );
   if (!current) {
+    const existingTables = await listExistingDatabaseTables();
+    if (existingTables.has(tableInput)) {
+      return {
+        descriptor: await introspectTableDescriptor(tableInput),
+        config: null,
+      };
+    }
     throw new HttpError(404, `Unknown table ${tableInput}`);
   }
 
@@ -952,7 +1110,7 @@ export async function createRecord(table: string, payload: Record<string, unknow
   const resource = await resolveTableResource(table);
   assertDataApiReadable(resource);
   const { descriptor } = resource;
-  assertWritableDescriptor(descriptor);
+  assertWritableDescriptor(descriptor, options.access);
   const nextPayload = { ...payload };
   if (options.access?.ownershipField && !options.access.bypassOwnership) {
     if (!options.access.subjectId) {
@@ -987,7 +1145,7 @@ export async function updateRecord(table: string, id: string, payload: Record<st
   const resource = await resolveTableResource(table);
   assertDataApiReadable(resource);
   const { descriptor } = resource;
-  assertWritableDescriptor(descriptor);
+  assertWritableDescriptor(descriptor, options.access);
   const nextPayload = { ...payload };
   if (options.access?.ownershipField && !options.access.bypassOwnership) {
     delete nextPayload[options.access.ownershipField];
@@ -1030,7 +1188,7 @@ export async function deleteRecord(table: string, id: string, options: MutationR
   const resource = await resolveTableResource(table);
   assertDataApiReadable(resource, options.access);
   const { descriptor } = resource;
-  assertWritableDescriptor(descriptor);
+  assertWritableDescriptor(descriptor, options.access);
   const whereClauses = [`${quoteIdentifier(descriptor.primaryKey)} = $1`];
   const values: unknown[] = [id];
   applyOwnershipFilter(descriptor, whereClauses, values, options.access);
@@ -1049,9 +1207,12 @@ export async function deleteRecord(table: string, id: string, options: MutationR
 export async function listBrowsableTables(actor?: ApiAccessActor) {
   const draft = await getSchemaDraft();
   const existingTables = await listExistingDatabaseTables();
-  const builtin = Object.keys(builtinTables).filter(
-    (key) => existingTables.has(builtinTables[key].table) && (actor === "superadmin" || builtinTableExposurePolicy(key).visibleInDataApi),
-  );
+  const builtin =
+    actor === "superadmin"
+      ? Array.from(existingTables)
+      : Object.keys(builtinTables).filter(
+          (key) => existingTables.has(builtinTables[key].table) && builtinTableExposurePolicy(key).visibleInDataApi,
+        );
   const pluginTables = (await listPluginCapabilityManifests())
     .filter((manifest) => manifest.installState.enabled)
     .flatMap((manifest) => manifest.models)

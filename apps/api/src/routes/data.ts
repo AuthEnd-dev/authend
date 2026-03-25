@@ -159,10 +159,10 @@ function buildDataRouter(options: { adminOnly: boolean; rateLimited: boolean }) 
       if (options.rateLimited) {
         await applyDataRateLimit(c, actor);
       }
-    const resources = await listApiResources(actor.kind);
-    return c.json({
-      tables: resources.filter((resource) => canAccessOperation(resource, actor, "list")).map((resource) => resource.table),
-    });
+      const resources = await listApiResources(actor.kind);
+      return c.json({
+        tables: resources.filter((resource) => canAccessOperation(resource, actor, 'list')).map((resource) => resource.table),
+      });
     })
     .get('/meta/:table', async (c) => {
       const actor = options.adminOnly ? await resolveAdminRequestActor(c) : await resolveRequestActor(c);
