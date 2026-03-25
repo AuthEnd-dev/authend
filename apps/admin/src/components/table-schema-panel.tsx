@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { SYSTEM_TABLES } from "../lib/tables";
+
 import { useNavigate } from "@tanstack/react-router";
 import {
   analyseTableApiPolicyWarnings,
@@ -979,7 +981,10 @@ export function TableSchemaPanel({
     <SidePanel
       isOpen={isOpen}
       onClose={onClose}
-      title={isEditing ? `Edit Table - ${tableName}` : "New Table"}
+      title={isEditing 
+        ? (SYSTEM_TABLES.includes(tableName!) ? `Edit System Table - ${tableName}` : `Edit Table - ${tableName}`) 
+        : "New Table"
+      }
       footer={
         <div className="flex w-full items-center justify-between">
           <div>

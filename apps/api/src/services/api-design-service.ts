@@ -631,8 +631,8 @@ export async function buildApiResource(tableInput: string): Promise<ApiResource>
   return buildResource(await resolvePreviewTable(tableInput));
 }
 
-export async function listApiResources() {
-  const tables = await listBrowsableTables();
+export async function listApiResources(actor?: ApiAccessActor) {
+  const tables = await listBrowsableTables(actor);
   const resources = await Promise.all(tables.map((table) => buildApiResource(table)));
   return resources.sort((left, right) => left.routeSegment.localeCompare(right.routeSegment));
 }

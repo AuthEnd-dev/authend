@@ -1,5 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { SYSTEM_TABLES } from './lib/tables';
+
 import { QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Link, Outlet, RouterProvider, createRootRoute, createRoute, createRouter, useLocation } from '@tanstack/react-router';
 import { queryClient } from './lib/query-client';
@@ -41,19 +43,7 @@ const routeGroups = {
   settings: settingsNavItems.map((item) => ({ to: item.to, label: item.label })),
 };
 
-const SYSTEM_TABLES = [
-  'plugin_configs',
-  'migration_runs',
-  'audit_logs',
-  'system_settings',
-  'backup_runs',
-  'cron_jobs',
-  'cron_runs',
-  'ai_threads',
-  'ai_messages',
-  'ai_runs',
-  'storage_files',
-];
+
 
 function DatabaseSubNav() {
   const location = useLocation();

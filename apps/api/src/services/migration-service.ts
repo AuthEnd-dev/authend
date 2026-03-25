@@ -23,6 +23,24 @@ function shouldLoadMigrationFile(file: string) {
 }
 
 export async function ensureCoreSchema() {
+  const [migrationTable] = await sql<{ exists: boolean }[]>`
+    SELECT EXISTS (
+      SELECT FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_name = 'migration_runs'
+    )
+  `;
+
+  if (migrationTable?.exists) {
+    const alreadyRecorded = await db.query.migrationRuns.findFirst({
+      where: (table, operators) => operators.eq(table.migrationKey, "0000_core"),
+    });
+
+    if (alreadyRecorded) {
+      return;
+    }
+  }
+
   const file = resolve(coreMigrationDir, "0000_core.sql");
   const contents = await readTextFile(file);
   await sql.unsafe(contents);

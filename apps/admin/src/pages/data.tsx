@@ -4,6 +4,8 @@ import { startTransition, useMemo, useState, useRef, useEffect } from 'react';
 import type { DataRecord, TableDescriptor } from '@authend/shared';
 import { createPortal } from 'react-dom';
 import { client } from '../lib/client';
+import { SYSTEM_TABLES } from '../lib/tables';
+
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import {
   Database,
@@ -552,7 +554,10 @@ function DataRecordPanel({
     <SidePanel
       isOpen={isOpen}
       onClose={onClose}
-      title={isEditing ? `Edit Record - ${tableName}` : `New Record - ${tableName}`}
+      title={isEditing 
+        ? (SYSTEM_TABLES.includes(tableName) ? `Edit System Record - ${tableName}` : `Edit Record - ${tableName}`)
+        : (SYSTEM_TABLES.includes(tableName) ? `New System Record - ${tableName}` : `New Record - ${tableName}`)
+      }
       footer={
         <div className="flex justify-between items-center w-full">
           <div>
@@ -720,7 +725,6 @@ export function DataPage() {
   const navigate = useNavigate({ from: '/data' });
   const search = useSearch({ from: '/database/data' });
   const tableName = search.table ?? 'user';
-  const previousTableNameRef = useRef(tableName);
   const { data: tableMeta, refetch: refetchMeta } = useQuery({
     queryKey: ['table-meta', tableName],
     queryFn: () => client.data.meta(tableName),
@@ -753,10 +757,6 @@ export function DataPage() {
     setSorting([]);
   }, [tableName]);
 
-  useEffect(() => {
-    previousTableNameRef.current = tableName;
-  }, [tableName]);
-
   const updateDataSearch = (patch: { page?: number; pageSize?: number; table?: string }) => {
     void navigate({
       to: '/data',
@@ -776,7 +776,12 @@ export function DataPage() {
 
   const { data, isFetching, isPlaceholderData, refetch } = useQuery({
     queryKey,
-    placeholderData: (previousData) => previousTableNameRef.current === tableName ? keepPreviousData(previousData) : undefined,
+    placeholderData: (previousData, previousQuery) => {
+      // Only keep previous data when the previous query was for the same table.
+      // This prevents stale rows from a different table bleeding through during the fetch.
+      const prevTable = previousQuery?.queryKey?.[1];
+      return prevTable === tableName ? keepPreviousData(previousData) : undefined;
+    },
     queryFn: () =>
       client.data.resource<DataRecord>(tableName).list({
         page: currentPage,
@@ -787,7 +792,10 @@ export function DataPage() {
       }),
   });
 
-  const items = useMemo<DataRecord[]>(() => (data?.items ?? []).map((item) => item as DataRecord), [data?.items]);
+  const items = useMemo<DataRecord[]>(
+    () => (data?.items ?? []).map((item) => item as DataRecord),
+    [data],
+  );
   const tableSchema = tableMeta as TableDescriptor | undefined;
   const canMutateRows = tableMeta?.source === 'generated';
   const totalRecords = data?.total ?? 0;
@@ -1000,6 +1008,12 @@ export function DataPage() {
         <div className="flex items-center gap-2.5">
           <h2 className="text-xl font-bold tracking-tight text-foreground/90 flex items-center gap-2">
             <span className="text-muted-foreground/60 font-medium tracking-normal text-lg">Tables</span>
+            {SYSTEM_TABLES.includes(tableName) && (
+              <>
+                <span className="text-muted-foreground/40 font-light translate-y-px">/</span>
+                <span className="text-muted-foreground/60 font-medium tracking-normal text-lg">System</span>
+              </>
+            )}
             <span className="text-muted-foreground/40 font-light translate-y-px">/</span>
             {tableName}
           </h2>

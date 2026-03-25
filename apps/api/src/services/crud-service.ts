@@ -309,7 +309,11 @@ function builtinTableExposurePolicy(table: string): BuiltinTableExposurePolicy {
   return builtinTableExposurePolicies[table as keyof typeof builtinTables] ?? defaultBuiltinTableExposurePolicy;
 }
 
-function assertDataApiReadable(resource: { descriptor: TableDescriptor }) {
+function assertDataApiReadable(resource: { descriptor: TableDescriptor }, access?: RecordAccessContext) {
+  if (access?.actorKind === "superadmin") {
+    return;
+  }
+
   if (resource.descriptor.source === "builtin" && !builtinTableExposurePolicy(resource.descriptor.table).visibleInDataApi) {
     throw new HttpError(403, `Table ${resource.descriptor.table} is not exposed through the data API`);
   }
@@ -455,7 +459,7 @@ export async function getTableDescriptor(table: string): Promise<TableDescriptor
 
 export async function getClientTableDescriptor(table: string, access?: RecordAccessContext): Promise<TableDescriptor> {
   const resource = await resolveTableResource(table);
-  assertDataApiReadable(resource);
+  assertDataApiReadable(resource, access);
   return {
     ...resource.descriptor,
     fields: resource.descriptor.fields.filter(
@@ -744,7 +748,7 @@ function buildInnerRelationClauses(descriptor: TableDescriptor, relations: Inclu
 
 export async function listRecords(table: string, query: URLSearchParams, options: ListRecordsOptions = {}) {
   const resource = await resolveTableResource(table);
-  assertDataApiReadable(resource);
+  assertDataApiReadable(resource, options.access);
   const { descriptor } = resource;
   const actorKind = options.access?.actorKind ?? "public";
   const readableFieldNames = descriptor.fields
@@ -1024,7 +1028,7 @@ export async function updateRecord(table: string, id: string, payload: Record<st
 
 export async function deleteRecord(table: string, id: string, options: MutationRecordOptions = {}) {
   const resource = await resolveTableResource(table);
-  assertDataApiReadable(resource);
+  assertDataApiReadable(resource, options.access);
   const { descriptor } = resource;
   assertWritableDescriptor(descriptor);
   const whereClauses = [`${quoteIdentifier(descriptor.primaryKey)} = $1`];
@@ -1042,11 +1046,11 @@ export async function deleteRecord(table: string, id: string, options: MutationR
   return record;
 }
 
-export async function listBrowsableTables() {
+export async function listBrowsableTables(actor?: ApiAccessActor) {
   const draft = await getSchemaDraft();
   const existingTables = await listExistingDatabaseTables();
   const builtin = Object.keys(builtinTables).filter(
-    (key) => existingTables.has(builtinTables[key].table) && builtinTableExposurePolicy(key).visibleInDataApi,
+    (key) => existingTables.has(builtinTables[key].table) && (actor === "superadmin" || builtinTableExposurePolicy(key).visibleInDataApi),
   );
   const pluginTables = (await listPluginCapabilityManifests())
     .filter((manifest) => manifest.installState.enabled)

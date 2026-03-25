@@ -1,0 +1,17 @@
+export const SYSTEM_TABLES = [
+  'plugin_configs',
+  'migration_runs',
+  'audit_logs',
+  'system_settings',
+  'backup_runs',
+  'cron_jobs',
+  'cron_runs',
+  'ai_threads',
+  'ai_messages',
+  'ai_runs',
+  'storage_files',
+  'system_admins',
+  'schema_tables',
+  'schema_fields',
+  'schema_relations',
+];

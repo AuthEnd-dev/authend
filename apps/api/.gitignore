@@ -11,7 +11,4 @@ coverage
 *.log
 var/storage/*
 
-## Always remove this after creating a new app
-generated
-
 

@@ -53,7 +53,7 @@ function canAccessOperation(resource: ApiResource, actor: RequestActor, operatio
 }
 
 async function authoriseDataOperation(tableInput: string, actor: RequestActor, operation: ApiPreviewOperation['key']) {
-  await getClientTableDescriptor(tableInput);
+  await getClientTableDescriptor(tableInput, { actorKind: actor.kind, subjectId: actor.subjectId });
   const resource = await buildApiResource(tableInput);
 
   if (!resource.config.operations[operation]) {
@@ -159,10 +159,10 @@ function buildDataRouter(options: { adminOnly: boolean; rateLimited: boolean }) 
       if (options.rateLimited) {
         await applyDataRateLimit(c, actor);
       }
-      const resources = await listApiResources();
-      return c.json({
-        tables: resources.filter((resource) => canAccessOperation(resource, actor, 'list')).map((resource) => resource.table),
-      });
+    const resources = await listApiResources(actor.kind);
+    return c.json({
+      tables: resources.filter((resource) => canAccessOperation(resource, actor, "list")).map((resource) => resource.table),
+    });
     })
     .get('/meta/:table', async (c) => {
       const actor = await resolveRequestActor(c);
