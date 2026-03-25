@@ -12,6 +12,7 @@ import { HttpError } from "../lib/http";
 import { readTextFile, writeTextFile } from "../lib/fs";
 import { applySqlMigration, writeGeneratedMigration } from "./migration-service";
 import { writeAuditLog } from "./audit-service";
+import { getTableDescriptor } from "./crud-service";
 
 const generatedSchemaFile =
   process.env.AUTHEND_GENERATED_SCHEMA_FILE
@@ -756,6 +757,19 @@ async function replaceMetadata(draft: SchemaDraft) {
 
 export async function applyDraft(rawDraft: SchemaDraft, actorUserId?: string | null) {
   const draft = validateDraft(rawDraft);
+  const current = await getSchemaDraft();
+  const nextTableNames = new Set(draft.tables.map((table) => table.name));
+  const droppedTableNames = current.tables
+    .map((table) => table.name)
+    .filter((tableName) => !nextTableNames.has(tableName));
+
+  for (const tableName of droppedTableNames) {
+    const descriptor = await getTableDescriptor(tableName);
+    if (descriptor.source !== "generated") {
+      throw new HttpError(403, `Table ${tableName} cannot be deleted because it is not generated`);
+    }
+  }
+
   const preview = await previewDraft(draft);
   const migrationKey = migrationSqlKey("schema_apply");
   const sqlText = preview.sql.join("\n\n");

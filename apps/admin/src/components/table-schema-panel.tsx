@@ -368,6 +368,7 @@ export function TableSchemaPanel({
     const key = tableName ?? "";
     return tableCatalog?.[key] ?? null;
   }, [isEditing, tableCatalog, tableName]);
+  const canDeleteTable = !isEditing || editingDescriptor?.source === "generated";
 
   const availableTableNames = useMemo(() => {
     const names = Object.keys(tableCatalog ?? {});
@@ -983,6 +984,14 @@ export function TableSchemaPanel({
     if (!schemaData || !tableName) {
       return;
     }
+    if (!canDeleteTable) {
+      showNotice({
+        title: "Table cannot be deleted",
+        description: "Only generated tables can be deleted.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const confirmed = await confirm({
       title: `Delete ${tableName}?`,
@@ -1054,7 +1063,8 @@ export function TableSchemaPanel({
               <Button
                 variant="ghost"
                 onClick={handleDelete}
-                disabled={isDeleting || isSchemaLoading}
+                disabled={isDeleting || isSchemaLoading || !canDeleteTable}
+                title={canDeleteTable ? "Delete table" : "Only generated tables can be deleted"}
                 className="text-destructive hover:bg-destructive/10 hover:text-destructive"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
