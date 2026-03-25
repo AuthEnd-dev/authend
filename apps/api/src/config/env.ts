@@ -22,7 +22,14 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().default("Authend <no-reply@example.com>"),
-  CORS_ORIGIN: z.string().optional(),
+  CORS_ORIGIN: z
+    .string()
+    .optional()
+    .transform((value) => {
+      if (value === undefined || value.trim() === "") return undefined;
+      const origins = value.split(",").map((s) => s.trim()).filter(Boolean);
+      return origins.length > 0 ? origins : undefined;
+    }),
   PORT: z
     .string()
     .optional()

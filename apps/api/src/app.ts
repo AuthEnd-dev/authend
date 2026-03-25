@@ -79,8 +79,9 @@ export function createApp() {
     '/api/*',
     cors({
       origin: (origin) => {
-        const allowed = env.CORS_ORIGIN ?? env.ADMIN_DEV_URL;
-        return origin === allowed ? origin : allowed;
+        const allowed = env.CORS_ORIGIN ?? [env.ADMIN_DEV_URL];
+        if (origin && allowed.includes(origin)) return origin;
+        return allowed[0];
       },
       allowHeaders: ['Content-Type', 'Authorization', 'x-better-auth-session'],
       allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],

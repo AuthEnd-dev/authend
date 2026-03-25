@@ -64,7 +64,7 @@ async function createAuth(kind: "app" | "admin") {
   const trustedOrigins = Array.from(
     new Set(
       [
-        env.CORS_ORIGIN ?? env.ADMIN_DEV_URL,
+        ...(env.CORS_ORIGIN ?? [env.ADMIN_DEV_URL]),
         env.APP_URL,
         generalSettings.appUrl,
         generalSettings.adminUrl,
