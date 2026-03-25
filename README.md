@@ -4,7 +4,7 @@
 
 The stack is **TypeScript**, the **Bun** runtime, **Better Auth**, **Drizzle**, **Hono**, and **Postgres**.
 
-For architecture, API details, and client examples, see [`docs/`](./docs/) (start with [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)).
+For architecture, API details, and client examples, see [`docs/`](./docs/) (start with [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)). For fork-specific routes, plugins, and admin UI hooks without merge pain, see [`docs/EXTENSIONS.md`](./docs/EXTENSIONS.md).
 
 ## Quick start
 
@@ -56,9 +56,12 @@ The API emits Drizzle schema and SQL migrations under [`apps/api/generated/`](./
 | Path | Role |
 |------|------|
 | `apps/api` | HTTP API, auth, database, migrations |
+| `apps/api/src/extensions` | Your routes, plugins, auth hooks (see [`apps/api/src/README.md`](./apps/api/src/README.md)) |
+| `apps/api/src/core` | Platform implementation (pull upstream here) |
 | `apps/admin` | Operator dashboard |
 | `packages/sdk` | Typed client for your schema |
 | `packages/shared` | Shared types and helpers |
+| `apps/*/src/extensions` | Fork-owned customization (see [`docs/EXTENSIONS.md`](./docs/EXTENSIONS.md)) |
 
 ## Production-ish run
 

@@ -117,6 +117,10 @@ There is one logical system:
 - the admin dashboard is a separate frontend during development
 - the API serves the built admin assets in production
 
+### 5.1 Fork extensions
+
+Fork-specific routes, auth options, plugins, and admin navigation should live under **`extensions/`** directories and related config files so upstream can evolve core wiring without constant merge conflicts. The HTTP API keeps those under `apps/api/src/extensions/`; everything else ships under **`apps/api/src/core/`** so the top of `src/` stays small. Do not name customization folders **`system`** or **`internal`** (those collide with existing routers and semantics). See [`docs/EXTENSIONS.md`](./EXTENSIONS.md) and [`apps/api/src/README.md`](../apps/api/src/README.md).
+
 ## 6. Architecture
 
 ### 6.1 API Layer
@@ -135,8 +139,11 @@ Main responsibilities:
 Important files:
 
 - [`apps/api/src/index.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/index.ts)
-- [`apps/api/src/app.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/app.ts)
-- [`apps/api/src/routes`](/Users/akuma/Github/akumzy/authend/apps/api/src/routes)
+- [`apps/api/src/README.md`](/Users/akuma/Github/akumzy/authend/apps/api/src/README.md)
+- [`apps/api/src/core/app.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/core/app.ts)
+- [`apps/api/src/core/register-core-routes.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/core/register-core-routes.ts)
+- [`apps/api/src/extensions/`](/Users/akuma/Github/akumzy/authend/apps/api/src/extensions)
+- [`apps/api/src/core/routes`](/Users/akuma/Github/akumzy/authend/apps/api/src/core/routes)
 
 ### 6.2 Auth Layer
 
@@ -157,7 +164,7 @@ Current auth responsibilities:
 
 Important file:
 
-- [`apps/api/src/services/auth-service.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/services/auth-service.ts)
+- [`apps/api/src/core/services/auth-service.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/core/services/auth-service.ts)
 
 ### 6.3 Database Layer
 
@@ -177,8 +184,8 @@ There are three categories of data:
 
 Important files:
 
-- [`apps/api/src/db/schema/auth.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/db/schema/auth.ts)
-- [`apps/api/src/db/schema/system.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/db/schema/system.ts)
+- [`apps/api/src/core/db/schema/auth.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/core/db/schema/auth.ts)
+- [`apps/api/src/core/db/schema/system.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/core/db/schema/system.ts)
 - [`apps/api/generated/schema/generated.ts`](/Users/akuma/Github/akumzy/authend/apps/api/generated/schema/generated.ts)
 
 ### 6.4 Admin Dashboard
@@ -199,6 +206,10 @@ Main screens:
 Important files:
 
 - [`apps/admin/src/main.tsx`](/Users/akuma/Github/akumzy/authend/apps/admin/src/main.tsx)
+- [`apps/admin/src/app/router.tsx`](/Users/akuma/Github/akumzy/authend/apps/admin/src/app/router.tsx)
+- [`apps/admin/src/app/shell.tsx`](/Users/akuma/Github/akumzy/authend/apps/admin/src/app/shell.tsx)
+- [`apps/admin/src/config/navigation.ts`](/Users/akuma/Github/akumzy/authend/apps/admin/src/config/navigation.ts)
+- [`apps/admin/src/extensions/`](/Users/akuma/Github/akumzy/authend/apps/admin/src/extensions)
 - [`apps/admin/src/pages`](/Users/akuma/Github/akumzy/authend/apps/admin/src/pages)
 
 ### 6.5 SDK Layer
@@ -261,8 +272,8 @@ The current model stores both:
 
 Main files:
 
-- [`apps/api/src/scripts/bootstrap.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/scripts/bootstrap.ts)
-- [`apps/api/src/services/bootstrap-service.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/services/bootstrap-service.ts)
+- [`apps/api/src/core/scripts/bootstrap.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/core/scripts/bootstrap.ts)
+- [`apps/api/src/core/services/bootstrap-service.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/core/services/bootstrap-service.ts)
 
 ### 8.2 Authentication Flow
 
@@ -273,7 +284,7 @@ Main files:
 
 Main middleware:
 
-- [`apps/api/src/middleware/auth.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/middleware/auth.ts)
+- [`apps/api/src/core/middleware/auth.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/core/middleware/auth.ts)
 
 ### 8.3 Plugin Enable Flow
 
@@ -287,11 +298,11 @@ The intended flow is:
 
 Current persistence exists in:
 
-- [`apps/api/src/services/plugin-service.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/services/plugin-service.ts)
+- [`apps/api/src/core/services/plugin-service.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/core/services/plugin-service.ts)
 
 Plugin definitions live in:
 
-- [`apps/api/src/services/plugin-catalog.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/services/plugin-catalog.ts)
+- [`apps/api/src/core/plugins/registry.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/core/plugins/registry.ts)
 
 ### 8.4 Schema Apply Flow
 
@@ -308,7 +319,7 @@ The intended flow is:
 
 Main file:
 
-- [`apps/api/src/services/schema-service.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/services/schema-service.ts)
+- [`apps/api/src/core/services/schema-service.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/core/services/schema-service.ts)
 
 ### 8.5 CRUD Flow
 
@@ -320,7 +331,7 @@ The generic data API works by:
 
 Main file:
 
-- [`apps/api/src/services/crud-service.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/services/crud-service.ts)
+- [`apps/api/src/core/services/crud-service.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/core/services/crud-service.ts)
 
 ## 9. Public API Surface
 

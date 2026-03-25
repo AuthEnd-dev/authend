@@ -1,8 +1,8 @@
-import { env } from './config/env';
-import { createApp } from './app';
-import { bootstrapSystem } from './services/bootstrap-service';
-import { logger } from './lib/logger';
-import { startCronScheduler } from './services/cron-service';
+import { env } from './core/config/env';
+import { createApp } from './core/app';
+import { bootstrapSystem } from './core/services/bootstrap-service';
+import { logger } from './core/lib/logger';
+import { startCronScheduler } from './core/services/cron-service';
 
 type RegisteredRoute = {
   method?: string;
