@@ -227,7 +227,6 @@ async function genericDiagnostics(section: Exclude<SettingsSectionId, "storage" 
     case "api": {
       const state = await readSettingsSection("api");
       return {
-        openApiEnabled: state.config.enableOpenApi,
         defaultAuthMode: state.config.defaultAuthMode,
       };
     }

@@ -19,7 +19,6 @@ The immediate objective is not just to show example requests. It is to define, p
 That contract is then reused by:
 
 - the admin API preview panel
-- the OpenAPI document
 - the SDK client helpers
 
 ## Current Model
@@ -57,7 +56,7 @@ That normalization currently guarantees:
 - the default sort field falls back to the primary key
 - pagination defaults are clamped so `defaultPageSize <= maxPageSize`
 
-This matters because OpenAPI generation and future SDK generation should never need to interpret partial or inconsistent raw config.
+This matters because future SDK generation should never need to interpret partial or inconsistent raw config.
 
 ## Resource Contract
 
@@ -88,13 +87,6 @@ These admin endpoints now expose the contract layer:
 
 This gives the admin UI and any internal tooling a stable manifest endpoint.
 
-## OpenAPI Strategy
-
-The OpenAPI document is now generated from normalized resources rather than hand-assembled route strings.
-
-For each resource it includes:
-
-- operation IDs derived from `sdkName`
 - tags from the configured API tag
 - security requirements from `authMode`
 - list query parameters from the query capability config
@@ -102,9 +94,8 @@ For each resource it includes:
   - `<sdkName>Record`
   - `<sdkName>Write`
   - `<sdkName>ListResponse`
-- `x-authend-resource` metadata for codegen-friendly extensions
 
-This keeps the exported spec aligned with the admin preview configuration.
+This keeps the exported manifest aligned with the admin preview configuration.
 
 ## SDK Strategy
 
@@ -119,14 +110,13 @@ The SDK is not fully code-generated yet, but it now has two important foundation
 That gives us a transitional path:
 
 - today: generic runtime helper bound to route segments
-- next: generated typed resource clients based on the OpenAPI spec and `x-authend-resource`
+- next: generated typed resource clients based on the resource manifest
 
 ## Why This Matters
 
 Without this layer, “API Preview” would just be documentation. With it, the preview becomes the beginning of a real contract system:
 
 - admins can design APIs intentionally
-- OpenAPI has stable machine-readable metadata
 - SDK generation has consistent names and capabilities to target
 - future client-facing API work has a defined contract source instead of ad hoc route conventions
 

@@ -992,7 +992,6 @@ export const apiSettingsSchema = z.object({
   maxPageSize: z.number().int().positive().max(250).default(100),
   defaultRateLimitPerMinute: z.number().int().positive().max(100000).default(120),
   maxRateLimitPerMinute: z.number().int().positive().max(100000).default(1000),
-  enableOpenApi: z.boolean().default(true),
   defaultAuthMode: apiAuthModeSchema.default("superadmin"),
   allowClientApiPreview: z.boolean().default(false),
 });

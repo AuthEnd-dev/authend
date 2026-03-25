@@ -36,7 +36,7 @@ export function ApiPreviewPanel({ tableName, isOpen, onClose }: { tableName: str
       title={`API Preview - ${tableName}`}
       footer={
         <div className="flex items-center justify-between gap-3">
-          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Read-only preview for runtime, OpenAPI, and SDK clients</div>
+          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Read-only preview for runtime and SDK clients</div>
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>

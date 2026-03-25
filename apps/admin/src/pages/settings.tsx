@@ -434,7 +434,6 @@ const apiFields: SettingsField[] = [
       { value: "public", label: "Public" },
     ],
   },
-  { key: "enableOpenApi", label: "Enable OpenAPI", kind: "boolean" },
   { key: "allowClientApiPreview", label: "Allow client API preview", kind: "boolean" },
 ];
 
@@ -521,7 +520,7 @@ export const DomainsOriginsSettingsPage = createSettingsSectionPage(
 export const ApiSettingsPage = createSettingsSectionPage(
   "api",
   "API",
-  "Defaults for pagination, rate limiting, OpenAPI exposure, and client-facing API behavior.",
+  "Defaults for pagination, rate limiting, and client-facing API behavior.",
   apiFields,
 );
 
