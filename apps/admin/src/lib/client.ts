@@ -28,7 +28,12 @@ import type {
   TableApiConfig,
 } from '@authend/shared';
 
-const baseURL = import.meta.env.VITE_API_URL ?? 'http://localhost:7002';
+const viteApiUrl = typeof import.meta.env.VITE_API_URL === 'string' ? import.meta.env.VITE_API_URL.trim() : '';
+
+/** Dev: explicit API server. Prod: optional override, else same origin as the admin UI (better-auth needs an absolute URL). */
+const baseURL = import.meta.env.DEV
+  ? viteApiUrl || 'http://localhost:7002'
+  : viteApiUrl || (typeof window !== 'undefined' ? window.location.origin : '');
 
 const adminAuthClient = createAuthClient({
   baseURL: `${baseURL}/api/admin/auth`,

@@ -2,6 +2,8 @@
 FROM oven/bun:1.3.11 AS builder
 WORKDIR /app
 
+# Optional. If unset/empty, the admin UI uses the browser origin at runtime (same host as the API).
+# If the API is on another host, pass: --build-arg VITE_API_URL=https://api.example.com
 ARG VITE_API_URL=
 ENV VITE_API_URL=${VITE_API_URL}
 
