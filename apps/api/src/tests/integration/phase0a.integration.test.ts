@@ -1,16 +1,17 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import postgres from 'postgres';
 
-type AppModule = typeof import('./app');
-type BootstrapModule = typeof import('./services/bootstrap-service');
-type SchemaModule = typeof import('./services/schema-service');
-type CrudModule = typeof import('./services/crud-service');
-type PluginModule = typeof import('./services/plugin-service');
-type DbModule = typeof import('./db/client');
-type MigrationModule = typeof import('./services/migration-service');
-type SettingsStoreModule = typeof import('./services/settings-store');
-type RateLimitModule = typeof import('./services/rate-limit-service');
+type AppModule = typeof import('../../app');
+type BootstrapModule = typeof import('../../services/bootstrap-service');
+type SchemaModule = typeof import('../../services/schema-service');
+type CrudModule = typeof import('../../services/crud-service');
+type PluginModule = typeof import('../../services/plugin-service');
+type DbModule = typeof import('../../db/client');
+type MigrationModule = typeof import('../../services/migration-service');
+type SettingsStoreModule = typeof import('../../services/settings-store');
+type RateLimitModule = typeof import('../../services/rate-limit-service');
 
 const sourceDatabaseUrl =
   process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/authend';
@@ -100,6 +101,21 @@ function extractUrlFromPreview(logs: Array<Record<string, unknown>>, marker: str
   return match?.[0] ?? null;
 }
 
+if (process.env.AUTHEND_INTEGRATION_SUBPROCESS !== '1') {
+  test('Phase 0A integration hardening (subprocess)', () => {
+    const command = spawnSync('bun', ['test', import.meta.path], {
+      cwd: resolve(import.meta.dir, '../../../..'),
+      env: {
+        ...process.env,
+        AUTHEND_INTEGRATION_SUBPROCESS: '1',
+      },
+      encoding: 'utf8',
+      timeout: 55_000,
+    });
+    const output = `${command.stdout}\n${command.stderr}`;
+    expect(command.status, output).toBe(0);
+  }, 60_000);
+} else {
 describe('Phase 0A integration hardening', () => {
   let adminSql: ReturnType<typeof postgres>;
   let appModule: AppModule;
@@ -128,6 +144,9 @@ describe('Phase 0A integration hardening', () => {
     process.env.ADMIN_DEV_URL = adminUrl;
     process.env.CORS_ORIGIN = appUrl;
     process.env.DATABASE_URL = databaseUrl.toString();
+    // Prevent tests from writing into apps/api/generated/*
+    process.env.AUTHEND_GENERATED_SCHEMA_FILE = resolve(import.meta.dir, `../generated/${testDatabaseName}/schema/generated.ts`);
+    process.env.AUTHEND_GENERATED_MIGRATIONS_DIR = resolve(import.meta.dir, `../generated/${testDatabaseName}/migrations`);
     process.env.BETTER_AUTH_SECRET = 'phase0a-super-secret-value-123456';
     process.env.SUPERADMIN_EMAIL = 'admin@authend.test';
     process.env.SUPERADMIN_PASSWORD = 'ChangeMe123!';
@@ -144,15 +163,15 @@ describe('Phase 0A integration hardening', () => {
       settingsStoreModule,
       rateLimitModule,
     ] = await Promise.all([
-      import('./app'),
-      import('./services/bootstrap-service'),
-      import('./services/schema-service'),
-      import('./services/crud-service'),
-      import('./services/plugin-service'),
-      import('./db/client'),
-      import('./services/migration-service'),
-      import('./services/settings-store'),
-      import('./services/rate-limit-service'),
+      import(`../../app?phase0a=${testDatabaseName}`),
+      import(`../../services/bootstrap-service?phase0a=${testDatabaseName}`),
+      import(`../../services/schema-service?phase0a=${testDatabaseName}`),
+      import(`../../services/crud-service?phase0a=${testDatabaseName}`),
+      import(`../../services/plugin-service?phase0a=${testDatabaseName}`),
+      import(`../../db/client?phase0a=${testDatabaseName}`),
+      import(`../../services/migration-service?phase0a=${testDatabaseName}`),
+      import(`../../services/settings-store?phase0a=${testDatabaseName}`),
+      import(`../../services/rate-limit-service?phase0a=${testDatabaseName}`),
     ]);
 
     await migrationModule.ensureCoreSchema();
@@ -161,7 +180,7 @@ describe('Phase 0A integration hardening', () => {
     await pluginModule.enablePlugin('apiKey');
     await bootstrapModule.seedSuperAdmin();
 
-    await schemaModule.applyDraft({
+    const draft = {
       tables: [
         {
           name: 'notes',
@@ -638,7 +657,9 @@ describe('Phase 0A integration hardening', () => {
         },
       ],
       relations: [],
-    });
+    };
+
+    await schemaModule.applyDraft(draft as never);
 
     const author = await crudModule.createRecord('authors', {
       display_name: 'Phase One Author',
@@ -708,6 +729,21 @@ describe('Phase 0A integration hardening', () => {
     };
   }
 
+  async function createAdminSession() {
+    const adminJar = new CookieJar();
+    const signInResponse = await app.request(`${appUrl}/api/admin/auth/sign-in/email`, {
+      method: 'POST',
+      headers: jsonHeaders(adminJar),
+      body: JSON.stringify({
+        email: process.env.SUPERADMIN_EMAIL,
+        password: process.env.SUPERADMIN_PASSWORD,
+      }),
+    });
+    adminJar.addFrom(signInResponse);
+    expect(signInResponse.status).toBe(200);
+    return adminJar;
+  }
+
   async function withApiRateLimitSettings(
     settings: { defaultRateLimitPerMinute: number; maxRateLimitPerMinute: number },
     run: () => Promise<void>,
@@ -743,7 +779,7 @@ describe('Phase 0A integration hardening', () => {
   });
 
   test('superadmin can sign in over HTTP and reach admin routes', async () => {
-    const signInResponse = await appRequest('/api/auth/sign-in/email', {
+    const signInResponse = await appRequest('/api/admin/auth/sign-in/email', {
       method: 'POST',
       headers: jsonHeaders(),
       body: JSON.stringify({
@@ -762,6 +798,29 @@ describe('Phase 0A integration hardening', () => {
     });
 
     expect(adminResponse.status).toBe(200);
+  });
+
+  test('admin session does not elevate non-admin data API access', async () => {
+    const adminSignInResponse = await appRequest('/api/admin/auth/sign-in/email', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        email: process.env.SUPERADMIN_EMAIL,
+        password: process.env.SUPERADMIN_PASSWORD,
+      }),
+    });
+    expect(adminSignInResponse.status).toBe(200);
+
+    // notes create is not allowed for session actors; it was used earlier with direct service access in setup.
+    const createResponse = await appRequest('/api/data/notes', {
+      method: 'POST',
+      headers: jsonHeaders(cookieJar),
+      body: JSON.stringify({
+        title: 'Should be blocked',
+        body: 'Admin cookie must not bypass app-facing policy',
+      }),
+    });
+    expect(createResponse.status).toBe(403);
   });
 
   test('admin validation errors return structured 400 details', async () => {
@@ -1107,9 +1166,11 @@ describe('Phase 0A integration hardening', () => {
   });
 
   test('generated tables still support CRUD over the data API', async () => {
-    const createResponse = await appRequest('/api/data/notes', {
+    const adminJar = await createAdminSession();
+
+    const createResponse = await appRequest('/api/admin/data/notes', {
       method: 'POST',
-      headers: jsonHeaders(cookieJar),
+      headers: jsonHeaders(adminJar),
       body: JSON.stringify({
         title: 'First note',
         body: 'Hello from the integration suite',
@@ -1119,29 +1180,29 @@ describe('Phase 0A integration hardening', () => {
     const created = await createResponse.json();
     expect(created.title).toBe('First note');
 
-    const listResponse = await appRequest('/api/data/notes', {
+    const listResponse = await appRequest('/api/admin/data/notes', {
       headers: {
         origin: appUrl,
-        cookie: cookieJar.toHeader(),
+        cookie: adminJar.toHeader(),
       },
     });
     expect(listResponse.status).toBe(200);
     const listBody = await listResponse.json();
     expect(listBody.items).toHaveLength(1);
 
-    const getResponse = await appRequest(`/api/data/notes/${created.id}`, {
+    const getResponse = await appRequest(`/api/admin/data/notes/${created.id}`, {
       headers: {
         origin: appUrl,
-        cookie: cookieJar.toHeader(),
+        cookie: adminJar.toHeader(),
       },
     });
     expect(getResponse.status).toBe(200);
     const fetched = await getResponse.json();
     expect(fetched.body).toBe('Hello from the integration suite');
 
-    const updateResponse = await appRequest(`/api/data/notes/${created.id}`, {
+    const updateResponse = await appRequest(`/api/admin/data/notes/${created.id}`, {
       method: 'PATCH',
-      headers: jsonHeaders(cookieJar),
+      headers: jsonHeaders(adminJar),
       body: JSON.stringify({
         body: 'Updated body',
       }),
@@ -1150,11 +1211,11 @@ describe('Phase 0A integration hardening', () => {
     const updated = await updateResponse.json();
     expect(updated.body).toBe('Updated body');
 
-    const deleteResponse = await appRequest(`/api/data/notes/${created.id}`, {
+    const deleteResponse = await appRequest(`/api/admin/data/notes/${created.id}`, {
       method: 'DELETE',
       headers: {
         origin: appUrl,
-        cookie: cookieJar.toHeader(),
+        cookie: adminJar.toHeader(),
       },
     });
     expect(deleteResponse.status).toBe(204);
@@ -1184,6 +1245,16 @@ describe('Phase 0A integration hardening', () => {
     });
     expect(adminAsUser.status).toBe(403);
 
+    const adminSignInResponse = await appRequest('/api/admin/auth/sign-in/email', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        email: process.env.SUPERADMIN_EMAIL,
+        password: process.env.SUPERADMIN_PASSWORD,
+      }),
+    });
+    expect(adminSignInResponse.status).toBe(200);
+
     const adminAsSuperadmin = await appRequest('/api/admin/data', {
       headers: {
         origin: appUrl,
@@ -1196,39 +1267,40 @@ describe('Phase 0A integration hardening', () => {
   });
 
   test('blocked built-in tables are hidden from listings and denied directly', async () => {
+    const regularUser = await createUserSession('builtin.blocked.user@authend.test', 'Builtin Blocked User');
     const listResponse = await appRequest('/api/data', {
       headers: {
         origin: appUrl,
-        cookie: cookieJar.toHeader(),
+        cookie: regularUser.jar.toHeader(),
       },
     });
     const body = await listResponse.json();
 
-    expect(body.tables).toContain('notes');
-    expect(body.tables).toContain('user');
-    expect(body.tables).toContain('session');
-    expect(body.tables).not.toContain('plugin_configs');
+    // Notes + builtin auth tables are superadmin-only (admin route), so they must not show up here.
+    expect(body.tables).toContain('articles');
+    expect(body.tables).not.toContain('notes');
+    expect(body.tables).not.toContain('_plugin_configs');
     expect(body.tables).not.toContain('verification');
 
-    const blockedMeta = await appRequest('/api/data/meta/plugin_configs', {
+    const blockedMeta = await appRequest('/api/data/meta/_plugin_configs', {
       headers: {
         origin: appUrl,
-        cookie: cookieJar.toHeader(),
+        cookie: regularUser.jar.toHeader(),
       },
     });
     expect(blockedMeta.status).toBe(403);
 
-    const blockedRead = await appRequest('/api/data/plugin_configs', {
+    const blockedRead = await appRequest('/api/data/_plugin_configs', {
       headers: {
         origin: appUrl,
-        cookie: cookieJar.toHeader(),
+        cookie: regularUser.jar.toHeader(),
       },
     });
     expect(blockedRead.status).toBe(403);
 
-    const blockedCreate = await appRequest('/api/data/plugin_configs', {
+    const blockedCreate = await appRequest('/api/data/_plugin_configs', {
       method: 'POST',
-      headers: jsonHeaders(cookieJar),
+      headers: jsonHeaders(regularUser.jar),
       body: JSON.stringify({
         plugin_id: 'username',
       }),
@@ -1237,10 +1309,11 @@ describe('Phase 0A integration hardening', () => {
   });
 
   test('allowlisted built-in session metadata is redacted', async () => {
-    const metaResponse = await appRequest('/api/data/meta/session', {
+    const adminJar = await createAdminSession();
+    const metaResponse = await appRequest('/api/admin/data/meta/session', {
       headers: {
         origin: appUrl,
-        cookie: cookieJar.toHeader(),
+        cookie: adminJar.toHeader(),
       },
     });
     expect(metaResponse.status).toBe(200);
@@ -1249,10 +1322,10 @@ describe('Phase 0A integration hardening', () => {
     expect(metaBody.fields.map((field: { name: string }) => field.name)).not.toContain('user_agent');
     expect(metaBody.fields.map((field: { name: string }) => field.name)).not.toContain('impersonated_by');
 
-    const listResponse = await appRequest('/api/data/session', {
+    const listResponse = await appRequest('/api/admin/data/session', {
       headers: {
         origin: appUrl,
-        cookie: cookieJar.toHeader(),
+        cookie: adminJar.toHeader(),
       },
     });
     expect(listResponse.status).toBe(200);
@@ -1365,7 +1438,7 @@ describe('Phase 0A integration hardening', () => {
   });
 
   test('API preview policy simulator matches runtime authorization for public and session callers', async () => {
-    const signInResponse = await appRequest('/api/auth/sign-in/email', {
+    const signInResponse = await appRequest('/api/admin/auth/sign-in/email', {
       method: 'POST',
       headers: jsonHeaders(),
       body: JSON.stringify({
@@ -1885,7 +1958,8 @@ describe('Phase 0A integration hardening', () => {
     const cleanReport = await schemaModule.getSchemaDriftReport();
     expect(cleanReport.drifted).toBe(false);
 
-    const generatedSchemaPath = resolve(import.meta.dir, '../generated/schema/generated.ts');
+    const generatedSchemaPath =
+      process.env.AUTHEND_GENERATED_SCHEMA_FILE ?? resolve(import.meta.dir, '../../../generated/schema/generated.ts');
     const generatedSchemaText = await Bun.file(generatedSchemaPath).text();
     expect(generatedSchemaText).toContain('pgEnum("release_notes_status_enum"');
     expect(generatedSchemaText).toContain('(table) => [');
@@ -1899,3 +1973,4 @@ describe('Phase 0A integration hardening', () => {
     expect(driftedReport.issues.some((issue: string) => issue.includes('release_notes.rogue_field'))).toBe(true);
   });
 });
+}

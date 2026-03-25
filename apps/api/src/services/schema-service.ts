@@ -13,7 +13,10 @@ import { readTextFile, writeTextFile } from "../lib/fs";
 import { applySqlMigration, writeGeneratedMigration } from "./migration-service";
 import { writeAuditLog } from "./audit-service";
 
-const generatedSchemaFile = resolve(import.meta.dir, "../../generated/schema/generated.ts");
+const generatedSchemaFile =
+  process.env.AUTHEND_GENERATED_SCHEMA_FILE
+    ? resolve(process.env.AUTHEND_GENERATED_SCHEMA_FILE)
+    : resolve(import.meta.dir, "../../generated/schema/generated.ts");
 
 function sqlDefault(field: FieldBlueprint) {
   if (!field.default) {
@@ -711,21 +714,21 @@ end $$;`);
 
 async function replaceMetadata(draft: SchemaDraft) {
   await sql.begin(async (transaction) => {
-    await transaction.unsafe(`delete from schema_relations`);
-    await transaction.unsafe(`delete from schema_fields`);
-    await transaction.unsafe(`delete from schema_tables`);
+    await transaction.unsafe(`delete from _schema_relations`);
+    await transaction.unsafe(`delete from _schema_fields`);
+    await transaction.unsafe(`delete from _schema_tables`);
 
     for (const table of draft.tables.map(withDefaultId)) {
       const tableId = crypto.randomUUID();
       await transaction.unsafe(
-        `insert into schema_tables (id, table_name, display_name, primary_key, definition, created_at, updated_at)
+        `insert into _schema_tables (id, table_name, display_name, primary_key, definition, created_at, updated_at)
          values ($1, $2, $3, $4, $5::jsonb, now(), now())`,
         [tableId, table.name, table.displayName, table.primaryKey, JSON.stringify(table)] as never[],
       );
 
       for (const field of table.fields) {
         await transaction.unsafe(
-          `insert into schema_fields (id, table_id, field_name, definition, created_at)
+          `insert into _schema_fields (id, table_id, field_name, definition, created_at)
            values ($1, $2, $3, $4::jsonb, now())`,
           [crypto.randomUUID(), tableId, field.name, JSON.stringify(field)] as never[],
         );
@@ -734,7 +737,7 @@ async function replaceMetadata(draft: SchemaDraft) {
 
     for (const relation of draft.relations) {
       await transaction.unsafe(
-        `insert into schema_relations (id, source_table, source_field, target_table, target_field, on_delete, on_update, definition, created_at)
+        `insert into _schema_relations (id, source_table, source_field, target_table, target_field, on_delete, on_update, definition, created_at)
          values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, now())`,
         [
           crypto.randomUUID(),

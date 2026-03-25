@@ -1,6 +1,6 @@
 import type { ApiPreviewOperation, ApiResource } from '@authend/shared';
 import { Hono } from 'hono';
-import { requireSuperAdmin, resolveRequestActor, type RequestActor } from '../middleware/auth';
+import { requireSuperAdmin, resolveAdminRequestActor, resolveRequestActor, type RequestActor } from '../middleware/auth';
 import { HttpError } from '../lib/http';
 import { apiKeyPermissionName, buildApiResource, listApiResources } from '../services/api-design-service';
 import { rateLimitDataRequest } from '../services/rate-limit-service';
@@ -155,7 +155,7 @@ function buildDataRouter(options: { adminOnly: boolean; rateLimited: boolean }) 
 
   return router
     .get('/', async (c) => {
-      const actor = await resolveRequestActor(c);
+      const actor = options.adminOnly ? await resolveAdminRequestActor(c) : await resolveRequestActor(c);
       if (options.rateLimited) {
         await applyDataRateLimit(c, actor);
       }
@@ -165,7 +165,7 @@ function buildDataRouter(options: { adminOnly: boolean; rateLimited: boolean }) 
     });
     })
     .get('/meta/:table', async (c) => {
-      const actor = await resolveRequestActor(c);
+      const actor = options.adminOnly ? await resolveAdminRequestActor(c) : await resolveRequestActor(c);
       if (options.rateLimited) {
         await applyDataRateLimit(c, actor);
       }
@@ -190,7 +190,7 @@ function buildDataRouter(options: { adminOnly: boolean; rateLimited: boolean }) 
     })
     .get('/:table', async (c) => {
       const table = c.req.param('table');
-      const actor = await resolveRequestActor(c);
+      const actor = options.adminOnly ? await resolveAdminRequestActor(c) : await resolveRequestActor(c);
       if (options.rateLimited) {
         await applyDataRateLimit(c, actor);
       }
@@ -207,7 +207,7 @@ function buildDataRouter(options: { adminOnly: boolean; rateLimited: boolean }) 
     })
     .post('/:table', async (c) => {
       const table = c.req.param('table');
-      const actor = await resolveRequestActor(c);
+      const actor = options.adminOnly ? await resolveAdminRequestActor(c) : await resolveRequestActor(c);
       if (options.rateLimited) {
         await applyDataRateLimit(c, actor);
       }
@@ -215,7 +215,7 @@ function buildDataRouter(options: { adminOnly: boolean; rateLimited: boolean }) 
       return c.json(await createRecord(table, await c.req.json(), { access }));
     })
     .get('/:table/:id', async (c) => {
-      const actor = await resolveRequestActor(c);
+      const actor = options.adminOnly ? await resolveAdminRequestActor(c) : await resolveRequestActor(c);
       if (options.rateLimited) {
         await applyDataRateLimit(c, actor);
       }
@@ -223,7 +223,7 @@ function buildDataRouter(options: { adminOnly: boolean; rateLimited: boolean }) 
       return c.json(await getRecord(c.req.param('table'), c.req.param('id'), { access }));
     })
     .patch('/:table/:id', async (c) => {
-      const actor = await resolveRequestActor(c);
+      const actor = options.adminOnly ? await resolveAdminRequestActor(c) : await resolveRequestActor(c);
       if (options.rateLimited) {
         await applyDataRateLimit(c, actor);
       }
@@ -231,7 +231,7 @@ function buildDataRouter(options: { adminOnly: boolean; rateLimited: boolean }) 
       return c.json(await updateRecord(c.req.param('table'), c.req.param('id'), await c.req.json(), { access }));
     })
     .delete('/:table/:id', async (c) => {
-      const actor = await resolveRequestActor(c);
+      const actor = options.adminOnly ? await resolveAdminRequestActor(c) : await resolveRequestActor(c);
       if (options.rateLimited) {
         await applyDataRateLimit(c, actor);
       }

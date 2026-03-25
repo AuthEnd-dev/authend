@@ -1,5 +1,5 @@
 import type { Context, Next } from 'hono';
-import { getAuth } from '../services/auth-service';
+import { getAdminAuth, getAuth } from '../services/auth-service';
 import { db } from '../db/client';
 import { HttpError } from '../lib/http';
 
@@ -92,6 +92,20 @@ export async function readSession(c: Context) {
   return session as SessionContext;
 }
 
+export async function readAdminSession(c: Context) {
+  const auth = await getAdminAuth();
+  const session = await auth.api.getSession({
+    headers: c.req.raw.headers,
+  });
+
+  if (!session?.user || !session.session) {
+    return null;
+  }
+
+  c.set('auth', session as SessionContext);
+  return session as SessionContext;
+}
+
 export async function requireSession(c: Context, next: Next) {
   const session = await readSession(c);
   if (!session) {
@@ -144,18 +158,6 @@ export async function resolveRequestActor(c: Context): Promise<RequestActor> {
     };
   }
 
-  const admin = await db.query.systemAdmins.findFirst({
-    where: (table, operators) => operators.eq(table.userId, session.user.id),
-  });
-
-  if (admin) {
-    return {
-      kind: 'superadmin',
-      subjectId: session.user.id,
-      session,
-    };
-  }
-
   return {
     kind: 'session',
     subjectId: session.user.id,
@@ -163,8 +165,41 @@ export async function resolveRequestActor(c: Context): Promise<RequestActor> {
   };
 }
 
+export async function resolveAdminRequestActor(c: Context): Promise<RequestActor> {
+  const apiKeyActor = await verifyRequestApiKey(c);
+  if (apiKeyActor) {
+    return apiKeyActor;
+  }
+
+  const session = await readAdminSession(c);
+  if (!session) {
+    return {
+      kind: 'public',
+      subjectId: null,
+    };
+  }
+
+  const admin = await db.query.systemAdmins.findFirst({
+    where: (table, operators) => operators.eq(table.userId, session.user.id),
+  });
+
+  if (!admin) {
+    return {
+      kind: 'session',
+      subjectId: session.user.id,
+      session,
+    };
+  }
+
+  return {
+    kind: 'superadmin',
+    subjectId: session.user.id,
+    session,
+  };
+}
+
 export async function requireSuperAdmin(c: Context, next: Next) {
-  const actor = await resolveRequestActor(c);
+  const actor = await resolveAdminRequestActor(c);
   if (actor.kind !== 'superadmin') {
     if (actor.kind === 'public') {
       throw new HttpError(401, 'Unauthorized');

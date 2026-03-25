@@ -7,7 +7,7 @@ export async function writeAuditLog(input: {
   payload?: Record<string, unknown>;
 }) {
   await sql`
-    insert into audit_logs (id, action, actor_user_id, target, payload, created_at)
+    insert into _audit_logs (id, action, actor_user_id, target, payload, created_at)
     values (
       ${crypto.randomUUID()},
       ${input.action},

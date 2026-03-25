@@ -46,7 +46,7 @@ export const relationJoinTypeSchema = z.enum([
 export type RelationJoinType = z.infer<typeof relationJoinTypeSchema>;
 
 export const fieldBlueprintSchema = z.object({
-  name: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/),
+  name: z.string().min(1).regex(/^_?[a-z][a-z0-9_]*$/),
   type: fieldTypeSchema,
   nullable: z.boolean().default(false),
   default: z.string().nullish(),
@@ -71,9 +71,9 @@ export const relationBlueprintSchema = z.object({
   sourceField: z.string().min(1),
   targetTable: z.string().min(1),
   targetField: z.string().min(1),
-  alias: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/).nullish(),
-  sourceAlias: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/).nullish(),
-  targetAlias: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/).nullish(),
+  alias: z.string().min(1).regex(/^_?[a-z][a-z0-9_]*$/).nullish(),
+  sourceAlias: z.string().min(1).regex(/^_?[a-z][a-z0-9_]*$/).nullish(),
+  targetAlias: z.string().min(1).regex(/^_?[a-z][a-z0-9_]*$/).nullish(),
   joinType: relationJoinTypeSchema.default("left"),
   onDelete: relationActionSchema.default("no action"),
   onUpdate: relationActionSchema.default("no action"),
@@ -234,9 +234,9 @@ function defaultTableApiConfig() {
 }
 
 export const tableApiConfigSchema = z.object({
-  routeSegment: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/).nullish(),
+  routeSegment: z.string().min(1).regex(/^_?[a-z][a-z0-9_]*$/).nullish(),
   tag: z.string().min(1).nullish(),
-  sdkName: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/).nullish(),
+  sdkName: z.string().min(1).regex(/^_?[a-z][a-z0-9_]*$/).nullish(),
   description: z.string().min(1).nullish(),
   authMode: apiAuthModeSchema.default("superadmin"),
   access: tableApiAccessSchema.default(() => defaultTableApiAccess()),
@@ -252,7 +252,7 @@ export const tableApiConfigSchema = z.object({
 export type TableApiConfig = z.infer<typeof tableApiConfigSchema>;
 
 export const tableBlueprintSchema = z.object({
-  name: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/),
+  name: z.string().min(1).regex(/^_?[a-z][a-z0-9_]*$/),
   displayName: z.string().min(1),
   primaryKey: z.string().min(1).default("id"),
   fields: z.array(fieldBlueprintSchema).min(1),

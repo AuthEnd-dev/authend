@@ -8,6 +8,7 @@ import { env } from './config/env';
 import { healthRouter } from './routes/health';
 import { setupRouter } from './routes/setup';
 import { authRouter } from './routes/auth';
+import { adminAuthRouter } from './routes/admin-auth';
 import { adminRouter } from './routes/admin';
 import { adminDataRouter, dataRouter } from './routes/data';
 import { systemRouter } from './routes/system';
@@ -96,6 +97,7 @@ export function createApp() {
   app.route('/', healthRouter);
   app.route('/api/setup', setupRouter);
   app.route('/api/auth', authRouter);
+  app.route('/api/admin/auth', adminAuthRouter);
   app.route('/api/admin', adminRouter);
   app.route('/api/admin/data', adminDataRouter);
   app.route('/api/system', systemRouter);

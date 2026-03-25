@@ -55,7 +55,7 @@ export async function writeSettingsSection<TSection extends SettingsSectionId>(
   const parsed = parseSettingsSection(section, value);
 
   await sql`
-    insert into system_settings ("key", "value", "created_at", "updated_at")
+    insert into _system_settings ("key", "value", "created_at", "updated_at")
     values (${section}, ${JSON.stringify(parsed)}::jsonb, now(), now())
     on conflict ("key") do update
     set "value" = excluded."value",

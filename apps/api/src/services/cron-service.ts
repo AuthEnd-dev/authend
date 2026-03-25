@@ -206,7 +206,7 @@ async function executeCronHandler(job: typeof cronJobs.$inferSelect) {
           : config.auditRetentionDays;
       const [result] = await sql<{ count: string }[]>`
         with deleted as (
-          delete from audit_logs
+          delete from _audit_logs
           where created_at < now() - (${retentionDays} || ' days')::interval
           returning 1
         )

@@ -67,9 +67,9 @@ describe("bootstrap script", () => {
       });
 
       try {
-        const [adminCount] = await sql<{ count: number }[]>`select count(*)::int as count from system_admins`;
+        const [adminCount] = await sql<{ count: number }[]>`select count(*)::int as count from _system_admins`;
         const [userCount] = await sql<{ count: number }[]>`select count(*)::int as count from "user"`;
-        const [pluginConfigCount] = await sql<{ count: number }[]>`select count(*)::int as count from plugin_configs`;
+        const [pluginConfigCount] = await sql<{ count: number }[]>`select count(*)::int as count from _plugin_configs`;
 
         expect(adminCount?.count).toBe(1);
         expect(userCount?.count).toBeGreaterThan(0);

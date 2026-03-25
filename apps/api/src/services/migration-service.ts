@@ -6,7 +6,10 @@ import { logger } from "../lib/logger";
 import { writeAuditLog } from "./audit-service";
 
 const coreMigrationDir = resolve(import.meta.dir, "../db/migrations/core");
-const generatedMigrationDir = resolve(import.meta.dir, "../../generated/migrations");
+const generatedMigrationDir =
+  process.env.AUTHEND_GENERATED_MIGRATIONS_DIR
+    ? resolve(process.env.AUTHEND_GENERATED_MIGRATIONS_DIR)
+    : resolve(import.meta.dir, "../../generated/migrations");
 
 export type MigrationFile = {
   key: string;
@@ -27,7 +30,7 @@ export async function ensureCoreSchema() {
     SELECT EXISTS (
       SELECT FROM information_schema.tables 
       WHERE table_schema = 'public' 
-      AND table_name = 'migration_runs'
+      AND table_name = '_migration_runs'
     )
   `;
 
@@ -119,7 +122,7 @@ export async function applySqlMigration(input: {
   await sql.begin(async (transaction) => {
     await transaction.unsafe(input.sqlText);
     await transaction.unsafe(
-      `insert into migration_runs (id, migration_key, title, sql, status, created_at, applied_at)
+      `insert into _migration_runs (id, migration_key, title, sql, status, created_at, applied_at)
        values ($1, $2, $3, $4, 'applied', now(), now())
        on conflict (migration_key) do update
        set title = excluded.title,
@@ -160,7 +163,7 @@ export async function rollbackSqlMigration(input: {
   await sql.begin(async (transaction) => {
     await transaction.unsafe(input.sqlText);
     await transaction.unsafe(
-      `insert into migration_runs (id, migration_key, title, sql, status, created_at, applied_at)
+      `insert into _migration_runs (id, migration_key, title, sql, status, created_at, applied_at)
        values ($1, $2, $3, $4, 'rolled_back', now(), now())
        on conflict (migration_key) do update
        set title = excluded.title,

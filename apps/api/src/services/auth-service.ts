@@ -49,7 +49,7 @@ async function runtimeContributions() {
   );
 }
 
-async function createAuth() {
+async function createAuth(kind: "app" | "admin") {
   const contributions = await runtimeContributions();
   const [{ config: generalSettings }, { config: authSettings }, { config: emailSettings }, { config: domainSettings }] = await Promise.all([
     readSettingsSection("general"),
@@ -58,17 +58,28 @@ async function createAuth() {
     readSettingsSection("domainsOrigins"),
   ]);
 
+  const appBaseUrl = generalSettings.appUrl || env.APP_URL;
+  const adminBaseUrl = generalSettings.adminUrl || env.ADMIN_URL || appBaseUrl;
+
   const trustedOrigins = Array.from(
     new Set(
-      [env.CORS_ORIGIN ?? env.ADMIN_DEV_URL, env.APP_URL, generalSettings.appUrl, generalSettings.adminUrl, ...domainSettings.trustedOrigins].filter(
+      [
+        env.CORS_ORIGIN ?? env.ADMIN_DEV_URL,
+        env.APP_URL,
+        generalSettings.appUrl,
+        generalSettings.adminUrl,
+        ...domainSettings.trustedOrigins,
+      ].filter(
         (value): value is string => typeof value === "string" && value.length > 0,
       ),
     ),
   );
 
+  const baseURL = kind === "app" ? `${appBaseUrl}/api/auth` : `${adminBaseUrl}/api/admin/auth`;
+
   return betterAuth({
     appName: generalSettings.appName || env.APP_NAME,
-    baseURL: (generalSettings.appUrl || env.APP_URL) + "/api/auth",
+    baseURL,
     secret: env.BETTER_AUTH_SECRET,
     trustedOrigins,
     database: drizzleAdapter(db, {
@@ -107,13 +118,20 @@ async function createAuth() {
 
 type BetterAuthInstance = Awaited<ReturnType<typeof createAuth>>;
 
-let authPromise: Promise<BetterAuthInstance> | null = null;
+let appAuthPromise: Promise<BetterAuthInstance> | null = null;
+let adminAuthPromise: Promise<BetterAuthInstance> | null = null;
 
 export async function getAuth() {
-  authPromise ??= createAuth();
-  return authPromise;
+  appAuthPromise ??= createAuth("app");
+  return appAuthPromise;
+}
+
+export async function getAdminAuth() {
+  adminAuthPromise ??= createAuth("admin");
+  return adminAuthPromise;
 }
 
 export async function invalidateAuth() {
-  authPromise = null;
+  appAuthPromise = null;
+  adminAuthPromise = null;
 }

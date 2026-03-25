@@ -7,7 +7,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-export const systemAdmins = pgTable("system_admins", {
+export const systemAdmins = pgTable("_system_admins", {
   userId: text("user_id").primaryKey(),
   email: text("email").notNull(),
   name: text("name").notNull(),
@@ -15,7 +15,7 @@ export const systemAdmins = pgTable("system_admins", {
 });
 
 export const pluginConfigs = pgTable(
-  "plugin_configs",
+  "_plugin_configs",
   {
     id: text("id").primaryKey(),
     pluginId: text("plugin_id").notNull(),
@@ -30,11 +30,11 @@ export const pluginConfigs = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("plugin_configs_plugin_id_idx").on(table.pluginId)],
+  (table) => [uniqueIndex("_plugin_configs_plugin_id_idx").on(table.pluginId)],
 );
 
 export const schemaTables = pgTable(
-  "schema_tables",
+  "_schema_tables",
   {
     id: text("id").primaryKey(),
     tableName: text("table_name").notNull(),
@@ -44,10 +44,10 @@ export const schemaTables = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("schema_tables_table_name_idx").on(table.tableName)],
+  (table) => [uniqueIndex("_schema_tables_table_name_idx").on(table.tableName)],
 );
 
-export const schemaFields = pgTable("schema_fields", {
+export const schemaFields = pgTable("_schema_fields", {
   id: text("id").primaryKey(),
   tableId: text("table_id").notNull().references(() => schemaTables.id, { onDelete: "cascade" }),
   fieldName: text("field_name").notNull(),
@@ -55,7 +55,7 @@ export const schemaFields = pgTable("schema_fields", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const schemaRelations = pgTable("schema_relations", {
+export const schemaRelations = pgTable("_schema_relations", {
   id: text("id").primaryKey(),
   sourceTable: text("source_table").notNull(),
   sourceField: text("source_field").notNull(),
@@ -68,7 +68,7 @@ export const schemaRelations = pgTable("schema_relations", {
 });
 
 export const migrationRuns = pgTable(
-  "migration_runs",
+  "_migration_runs",
   {
     id: text("id").primaryKey(),
     migrationKey: text("migration_key").notNull(),
@@ -78,10 +78,10 @@ export const migrationRuns = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     appliedAt: timestamp("applied_at", { withTimezone: true }),
   },
-  (table) => [uniqueIndex("migration_runs_key_idx").on(table.migrationKey)],
+  (table) => [uniqueIndex("_migration_runs_key_idx").on(table.migrationKey)],
 );
 
-export const auditLogs = pgTable("audit_logs", {
+export const auditLogs = pgTable("_audit_logs", {
   id: text("id").primaryKey(),
   action: text("action").notNull(),
   actorUserId: text("actor_user_id"),
@@ -91,17 +91,17 @@ export const auditLogs = pgTable("audit_logs", {
 });
 
 export const systemSettings = pgTable(
-  "system_settings",
+  "_system_settings",
   {
     key: text("key").primaryKey(),
     value: jsonb("value").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("system_settings_key_idx").on(table.key)],
+  (table) => [uniqueIndex("_system_settings_key_idx").on(table.key)],
 );
 
-export const backupRuns = pgTable("backup_runs", {
+export const backupRuns = pgTable("_backup_runs", {
   id: text("id").primaryKey(),
   status: text("status").notNull(),
   trigger: text("trigger").notNull(),
@@ -115,7 +115,7 @@ export const backupRuns = pgTable("backup_runs", {
 });
 
 export const cronJobs = pgTable(
-  "cron_jobs",
+  "_cron_jobs",
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
@@ -131,10 +131,10 @@ export const cronJobs = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("cron_jobs_name_idx").on(table.name)],
+  (table) => [uniqueIndex("_cron_jobs_name_idx").on(table.name)],
 );
 
-export const cronRuns = pgTable("cron_runs", {
+export const cronRuns = pgTable("_cron_runs", {
   id: text("id").primaryKey(),
   jobId: text("job_id").notNull().references(() => cronJobs.id, { onDelete: "cascade" }),
   status: text("status").notNull(),
@@ -146,7 +146,7 @@ export const cronRuns = pgTable("cron_runs", {
   durationMs: text("duration_ms"),
 });
 
-export const aiThreads = pgTable("ai_threads", {
+export const aiThreads = pgTable("_ai_threads", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
   actorUserId: text("actor_user_id").notNull(),
@@ -154,7 +154,7 @@ export const aiThreads = pgTable("ai_threads", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const aiMessages = pgTable("ai_messages", {
+export const aiMessages = pgTable("_ai_messages", {
   id: text("id").primaryKey(),
   threadId: text("thread_id").notNull().references(() => aiThreads.id, { onDelete: "cascade" }),
   role: text("role").notNull(),
@@ -164,7 +164,7 @@ export const aiMessages = pgTable("ai_messages", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const aiRuns = pgTable("ai_runs", {
+export const aiRuns = pgTable("_ai_runs", {
   id: text("id").primaryKey(),
   threadId: text("thread_id").notNull().references(() => aiThreads.id, { onDelete: "cascade" }),
   userMessageId: text("user_message_id").notNull(),
@@ -184,7 +184,7 @@ export const aiRuns = pgTable("ai_runs", {
 });
 
 export const storageFiles = pgTable(
-  "storage_files",
+  "_storage_files",
   {
     id: text("id").primaryKey(),
     objectKey: text("object_key").notNull(),
@@ -199,5 +199,5 @@ export const storageFiles = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("storage_files_object_key_idx").on(table.objectKey)],
+  (table) => [uniqueIndex("_storage_files_object_key_idx").on(table.objectKey)],
 );

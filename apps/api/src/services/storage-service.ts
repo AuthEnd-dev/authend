@@ -137,7 +137,7 @@ async function upsertStorageFileRecord(input: {
   const attachmentRecordId = input.attachment?.recordId?.trim() || null;
   const attachmentField = input.attachment?.field?.trim() || null;
   await sql`
-    insert into storage_files (
+    insert into _storage_files (
       id,
       object_key,
       visibility,
@@ -449,14 +449,14 @@ export async function removeStoredFile(key: string) {
         throw error;
       }
     }
-    await sql`delete from storage_files where object_key = ${key}`;
+    await sql`delete from _storage_files where object_key = ${key}`;
     return;
   }
 
   const client = createBunS3Client(config);
   const s3Object = client.file(key) as any;
   await s3Object.delete();
-  await sql`delete from storage_files where object_key = ${key}`;
+  await sql`delete from _storage_files where object_key = ${key}`;
 }
 
 export async function listStorageFileRecords(input?: { table?: string; recordId?: string; field?: string; limit?: number }) {
@@ -475,7 +475,7 @@ export async function listStorageFileRecords(input?: { table?: string; recordId?
       attachment_field as "attachmentField",
       created_at as "createdAt",
       updated_at as "updatedAt"
-    from storage_files
+    from _storage_files
     where (${input?.table ?? null}::text is null or attachment_table = ${input?.table ?? null})
       and (${input?.recordId ?? null}::text is null or attachment_record_id = ${input?.recordId ?? null})
       and (${input?.field ?? null}::text is null or attachment_field = ${input?.field ?? null})
@@ -504,7 +504,7 @@ export async function getStorageFileRecordById(id: string) {
       attachment_field as "attachmentField",
       created_at as "createdAt",
       updated_at as "updatedAt"
-    from storage_files
+    from _storage_files
     where id = ${id}
     limit 1
   `;

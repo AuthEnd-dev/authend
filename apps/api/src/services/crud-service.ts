@@ -80,8 +80,8 @@ const builtinTables: Record<string, TableDescriptor> = {
     mutableSchema: false,
     ownerPluginId: null,
   },
-  plugin_configs: {
-    table: "plugin_configs",
+  _plugin_configs: {
+    table: "_plugin_configs",
     primaryKey: "id",
     fields: [
       { name: "id", type: "text", nullable: false, unique: true, indexed: false },
@@ -101,8 +101,8 @@ const builtinTables: Record<string, TableDescriptor> = {
     mutableSchema: false,
     ownerPluginId: null,
   },
-  migration_runs: {
-    table: "migration_runs",
+  _migration_runs: {
+    table: "_migration_runs",
     primaryKey: "id",
     fields: [
       { name: "id", type: "text", nullable: false, unique: true, indexed: false },
@@ -116,8 +116,8 @@ const builtinTables: Record<string, TableDescriptor> = {
     mutableSchema: false,
     ownerPluginId: null,
   },
-  audit_logs: {
-    table: "audit_logs",
+  _audit_logs: {
+    table: "_audit_logs",
     primaryKey: "id",
     fields: [
       { name: "id", type: "text", nullable: false, unique: true, indexed: false },
@@ -131,8 +131,8 @@ const builtinTables: Record<string, TableDescriptor> = {
     mutableSchema: false,
     ownerPluginId: null,
   },
-  system_settings: {
-    table: "system_settings",
+  _system_settings: {
+    table: "_system_settings",
     primaryKey: "key",
     fields: [
       { name: "key", type: "text", nullable: false, unique: true, indexed: true },
@@ -144,8 +144,8 @@ const builtinTables: Record<string, TableDescriptor> = {
     mutableSchema: false,
     ownerPluginId: null,
   },
-  backup_runs: {
-    table: "backup_runs",
+  _backup_runs: {
+    table: "_backup_runs",
     primaryKey: "id",
     fields: [
       { name: "id", type: "text", nullable: false, unique: true, indexed: false },
@@ -163,8 +163,8 @@ const builtinTables: Record<string, TableDescriptor> = {
     mutableSchema: false,
     ownerPluginId: null,
   },
-  cron_jobs: {
-    table: "cron_jobs",
+  _cron_jobs: {
+    table: "_cron_jobs",
     primaryKey: "id",
     fields: [
       { name: "id", type: "text", nullable: false, unique: true, indexed: false },
@@ -185,8 +185,8 @@ const builtinTables: Record<string, TableDescriptor> = {
     mutableSchema: false,
     ownerPluginId: null,
   },
-  cron_runs: {
-    table: "cron_runs",
+  _cron_runs: {
+    table: "_cron_runs",
     primaryKey: "id",
     fields: [
       { name: "id", type: "text", nullable: false, unique: true, indexed: false },
@@ -203,8 +203,8 @@ const builtinTables: Record<string, TableDescriptor> = {
     mutableSchema: false,
     ownerPluginId: null,
   },
-  ai_threads: {
-    table: "ai_threads",
+  _ai_threads: {
+    table: "_ai_threads",
     primaryKey: "id",
     fields: [
       { name: "id", type: "text", nullable: false, unique: true, indexed: false },
@@ -217,8 +217,8 @@ const builtinTables: Record<string, TableDescriptor> = {
     mutableSchema: false,
     ownerPluginId: null,
   },
-  ai_messages: {
-    table: "ai_messages",
+  _ai_messages: {
+    table: "_ai_messages",
     primaryKey: "id",
     fields: [
       { name: "id", type: "text", nullable: false, unique: true, indexed: false },
@@ -233,8 +233,8 @@ const builtinTables: Record<string, TableDescriptor> = {
     mutableSchema: false,
     ownerPluginId: null,
   },
-  ai_runs: {
-    table: "ai_runs",
+  _ai_runs: {
+    table: "_ai_runs",
     primaryKey: "id",
     fields: [
       { name: "id", type: "text", nullable: false, unique: true, indexed: false },
@@ -258,8 +258,8 @@ const builtinTables: Record<string, TableDescriptor> = {
     mutableSchema: false,
     ownerPluginId: null,
   },
-  storage_files: {
-    table: "storage_files",
+  _storage_files: {
+    table: "_storage_files",
     primaryKey: "id",
     fields: [
       { name: "id", type: "text", nullable: false, unique: true, indexed: false },
@@ -295,7 +295,7 @@ const builtinTableExposurePolicies: Partial<Record<keyof typeof builtinTables, B
     visibleInDataApi: true,
     redactedFields: ["ip_address", "user_agent", "impersonated_by"],
   },
-  storage_files: {
+  _storage_files: {
     visibleInDataApi: true,
     redactedFields: [],
   },

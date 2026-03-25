@@ -208,12 +208,12 @@ async function listExistingDatabaseTables() {
 
 export async function ensurePluginConfigStateSchema() {
   await sql.unsafe(`
-alter table "plugin_configs" add column if not exists "version" text not null default '1.0.0';
-alter table "plugin_configs" add column if not exists "capability_state" jsonb not null default '{}'::jsonb;
-alter table "plugin_configs" add column if not exists "dependency_state" jsonb not null default '[]'::jsonb;
-alter table "plugin_configs" add column if not exists "health" jsonb not null default '{}'::jsonb;
-alter table "plugin_configs" add column if not exists "provisioning_state" jsonb not null default '{}'::jsonb;
-alter table "plugin_configs" add column if not exists "extension_bindings" jsonb not null default '{}'::jsonb;
+alter table "_plugin_configs" add column if not exists "version" text not null default '1.0.0';
+alter table "_plugin_configs" add column if not exists "capability_state" jsonb not null default '{}'::jsonb;
+alter table "_plugin_configs" add column if not exists "dependency_state" jsonb not null default '[]'::jsonb;
+alter table "_plugin_configs" add column if not exists "health" jsonb not null default '{}'::jsonb;
+alter table "_plugin_configs" add column if not exists "provisioning_state" jsonb not null default '{}'::jsonb;
+alter table "_plugin_configs" add column if not exists "extension_bindings" jsonb not null default '{}'::jsonb;
   `);
 }
 

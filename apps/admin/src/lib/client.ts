@@ -1,3 +1,4 @@
+import { createAuthClient } from 'better-auth/react';
 import { createAuthendClient } from '@authend/sdk';
 import type {
   AiMessageCreate,
@@ -29,7 +30,11 @@ import type {
 
 const baseURL = import.meta.env.VITE_API_URL ?? 'http://localhost:7002';
 
-const sdkClient = createAuthendClient({ baseURL, dataBasePath: '/api/admin/data' });
+const adminAuthClient = createAuthClient({
+  baseURL: `${baseURL}/api/admin/auth`,
+});
+
+const sdkClient = createAuthendClient({ baseURL, dataBasePath: '/api/admin/data', authClient: adminAuthClient });
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);

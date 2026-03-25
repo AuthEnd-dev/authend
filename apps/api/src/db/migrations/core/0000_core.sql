@@ -60,14 +60,14 @@ create table if not exists "verification" (
 
 create index if not exists "verification_identifier_idx" on "verification" ("identifier");
 
-create table if not exists "system_admins" (
+create table if not exists "_system_admins" (
   "user_id" text primary key,
   "email" text not null,
   "name" text not null,
   "created_at" timestamptz not null default now()
 );
 
-create table if not exists "plugin_configs" (
+create table if not exists "_plugin_configs" (
   "id" text primary key,
   "plugin_id" text not null unique,
   "enabled" boolean not null default false,
@@ -82,7 +82,7 @@ create table if not exists "plugin_configs" (
   "updated_at" timestamptz not null default now()
 );
 
-create table if not exists "schema_tables" (
+create table if not exists "_schema_tables" (
   "id" text primary key,
   "table_name" text not null unique,
   "display_name" text not null,
@@ -92,15 +92,15 @@ create table if not exists "schema_tables" (
   "updated_at" timestamptz not null default now()
 );
 
-create table if not exists "schema_fields" (
+create table if not exists "_schema_fields" (
   "id" text primary key,
-  "table_id" text not null references "schema_tables"("id") on delete cascade,
+  "table_id" text not null references "_schema_tables"("id") on delete cascade,
   "field_name" text not null,
   "definition" jsonb not null,
   "created_at" timestamptz not null default now()
 );
 
-create table if not exists "schema_relations" (
+create table if not exists "_schema_relations" (
   "id" text primary key,
   "source_table" text not null,
   "source_field" text not null,
@@ -112,7 +112,7 @@ create table if not exists "schema_relations" (
   "created_at" timestamptz not null default now()
 );
 
-create table if not exists "migration_runs" (
+create table if not exists "_migration_runs" (
   "id" text primary key,
   "migration_key" text not null unique,
   "title" text not null,
@@ -122,7 +122,7 @@ create table if not exists "migration_runs" (
   "applied_at" timestamptz
 );
 
-create table if not exists "audit_logs" (
+create table if not exists "_audit_logs" (
   "id" text primary key,
   "action" text not null,
   "actor_user_id" text,
@@ -131,14 +131,14 @@ create table if not exists "audit_logs" (
   "created_at" timestamptz not null default now()
 );
 
-create table if not exists "system_settings" (
+create table if not exists "_system_settings" (
   "key" text primary key,
   "value" jsonb not null default '{}'::jsonb,
   "created_at" timestamptz not null default now(),
   "updated_at" timestamptz not null default now()
 );
 
-create table if not exists "backup_runs" (
+create table if not exists "_backup_runs" (
   "id" text primary key,
   "status" text not null,
   "trigger" text not null,
@@ -151,7 +151,7 @@ create table if not exists "backup_runs" (
   "completed_at" timestamptz
 );
 
-create table if not exists "cron_jobs" (
+create table if not exists "_cron_jobs" (
   "id" text primary key,
   "name" text not null unique,
   "description" text,
@@ -167,9 +167,9 @@ create table if not exists "cron_jobs" (
   "updated_at" timestamptz not null default now()
 );
 
-create table if not exists "cron_runs" (
+create table if not exists "_cron_runs" (
   "id" text primary key,
-  "job_id" text not null references "cron_jobs"("id") on delete cascade,
+  "job_id" text not null references "_cron_jobs"("id") on delete cascade,
   "status" text not null,
   "trigger" text not null,
   "output" jsonb not null default '{}'::jsonb,
@@ -179,7 +179,7 @@ create table if not exists "cron_runs" (
   "duration_ms" text
 );
 
-create table if not exists "ai_threads" (
+create table if not exists "_ai_threads" (
   "id" text primary key,
   "title" text not null,
   "actor_user_id" text not null,
@@ -187,9 +187,9 @@ create table if not exists "ai_threads" (
   "updated_at" timestamptz not null default now()
 );
 
-create table if not exists "ai_messages" (
+create table if not exists "_ai_messages" (
   "id" text primary key,
-  "thread_id" text not null references "ai_threads"("id") on delete cascade,
+  "thread_id" text not null references "_ai_threads"("id") on delete cascade,
   "role" text not null,
   "content" text not null,
   "context" jsonb,
@@ -197,9 +197,9 @@ create table if not exists "ai_messages" (
   "created_at" timestamptz not null default now()
 );
 
-create table if not exists "ai_runs" (
+create table if not exists "_ai_runs" (
   "id" text primary key,
-  "thread_id" text not null references "ai_threads"("id") on delete cascade,
+  "thread_id" text not null references "_ai_threads"("id") on delete cascade,
   "user_message_id" text not null,
   "assistant_message_id" text,
   "status" text not null,
