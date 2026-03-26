@@ -61,13 +61,13 @@ function flattenApiKeyPermissions(permissions: Record<string, string[]> | null |
   return flattened;
 }
 
-function readApiKeyHeader(c: Context) {
-  const direct = c.req.header('x-api-key');
-  if (direct) {
-    return direct;
+export function readApiKeyFromHeaders(headers: Headers) {
+  const direct = headers.get('x-api-key');
+  if (direct?.trim()) {
+    return direct.trim();
   }
 
-  const authorization = c.req.header('authorization');
+  const authorization = headers.get('authorization');
   if (authorization) {
     const match = authorization.match(/^ApiKey\s+(.+)$/i);
     if (match) {
@@ -76,6 +76,10 @@ function readApiKeyHeader(c: Context) {
   }
 
   return null;
+}
+
+function readApiKeyHeader(c: Context) {
+  return readApiKeyFromHeaders(c.req.raw.headers);
 }
 
 export async function readSession(c: Context) {
@@ -115,12 +119,7 @@ export async function requireSession(c: Context, next: Next) {
   await next();
 }
 
-export async function verifyRequestApiKey(c: Context) {
-  const presentedKey = readApiKeyHeader(c);
-  if (!presentedKey) {
-    return null;
-  }
-
+export async function verifyApiKeyString(presentedKey: string): Promise<ApiKeyActor> {
   const auth = await getAuth();
   const result = await (auth.api as typeof auth.api & {
     verifyApiKey: (input: { body: { key: string } }) => Promise<VerifyApiKeyResult>;
@@ -141,6 +140,44 @@ export async function verifyRequestApiKey(c: Context) {
     subjectId: key.referenceId ?? null,
     permissions: flattenApiKeyPermissions(key.permissions),
     keyId: key.id,
+  };
+}
+
+export async function verifyRequestApiKey(c: Context) {
+  const presentedKey = readApiKeyHeader(c);
+  if (!presentedKey) {
+    return null;
+  }
+
+  return verifyApiKeyString(presentedKey);
+}
+
+/** Resolve app-facing actor from a raw Request (used for WebSocket upgrade on `/api/realtime`). */
+export async function resolveRequestActorFromRequest(req: Request): Promise<RequestActor> {
+  const url = new URL(req.url);
+  const queryKey = url.searchParams.get('x-api-key') ?? url.searchParams.get('apiKey');
+  const headerKey = readApiKeyFromHeaders(req.headers);
+  const presentedKey = headerKey ?? queryKey?.trim() ?? null;
+  if (presentedKey) {
+    return verifyApiKeyString(presentedKey);
+  }
+
+  const auth = await getAuth();
+  const session = await auth.api.getSession({
+    headers: req.headers,
+  });
+
+  if (!session?.user || !session.session) {
+    return {
+      kind: 'public',
+      subjectId: null,
+    };
+  }
+
+  return {
+    kind: 'session',
+    subjectId: session.user.id,
+    session: session as SessionContext,
   };
 }
 

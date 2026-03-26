@@ -200,6 +200,7 @@ export function Shell() {
   if (path.startsWith('/data')) activeSection = 'database';
   else if (path.startsWith('/storage-files')) activeSection = 'storage';
   else if (path.startsWith('/audit')) activeSection = 'logs';
+  else if (path.startsWith('/realtime')) activeSection = 'realtime';
   else if (path.startsWith('/plugins')) activeSection = 'plugins';
   else activeSection = 'settings';
 

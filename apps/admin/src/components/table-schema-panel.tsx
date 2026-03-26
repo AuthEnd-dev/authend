@@ -26,6 +26,7 @@ import type {
 import { client } from "../lib/client";
 import { SidePanel } from "./ui/side-panel";
 import { Button } from "./ui/button";
+import { TooltipComponent as Tooltip } from "./ui/tooltip";
 import { Input } from "./ui/input";
 import { getErrorMessage, useFeedback } from "./ui/feedback";
 import { ChevronDown, ChevronRight, Code2, Link2, Lock, Plus, Route, Settings2, SlidersHorizontal, Trash2 } from "lucide-react";
@@ -701,6 +702,7 @@ export function TableSchemaPanel({
         tag: apiConfig.tag || undefined,
         description: apiConfig.description || undefined,
       },
+      hooks: [],
     };
   };
 
@@ -1176,14 +1178,16 @@ export function TableSchemaPanel({
                             .join(" • ")}
                         </span>
                       </button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => handleRemoveField(index)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <Tooltip content="Remove field">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => handleRemoveField(index)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </Tooltip>
                     </div>
 
                     {!collapsedFields[index] && (
@@ -1358,9 +1362,11 @@ export function TableSchemaPanel({
                           <span className="truncate font-mono text-xs font-semibold">{relationLabel(relation)}</span>
                           <span className="text-[11px] text-muted-foreground">{relationSummary}</span>
                         </button>
-                        <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => handleRemoveRelation(index)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <Tooltip content="Remove relation">
+                          <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => handleRemoveRelation(index)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </Tooltip>
                       </div>
 
                       {!collapsedRelations[index] && (

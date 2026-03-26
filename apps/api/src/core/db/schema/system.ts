@@ -1,5 +1,6 @@
 import {
   boolean,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -201,3 +202,32 @@ export const storageFiles = pgTable(
   },
   (table) => [uniqueIndex("_storage_files_object_key_idx").on(table.objectKey)],
 );
+
+export const webhooks = pgTable(
+  "_webhooks",
+  {
+    id: text("id").primaryKey(),
+    url: text("url").notNull(),
+    description: text("description").notNull().default(""),
+    secret: text("secret").notNull(),
+    events: jsonb("events").notNull().default([]),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+);
+
+export const webhookDeliveries = pgTable("_webhook_deliveries", {
+  id: text("id").primaryKey(),
+  webhookId: text("webhook_id").notNull().references(() => webhooks.id, { onDelete: "cascade" }),
+  eventType: text("event_type").notNull(),
+  payload: jsonb("payload").notNull().default({}),
+  status: text("status").notNull().default("pending"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+  httpStatus: integer("http_status"),
+  response: text("response"),
+  lastError: text("last_error"),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

@@ -195,11 +195,22 @@ export const client = {
         }),
     },
     storage: {
-      listFiles: (query?: { table?: string; recordId?: string; field?: string; limit?: number }) => {
+      listFiles: (query?: {
+        table?: string;
+        recordId?: string;
+        field?: string;
+        limit?: number;
+        search?: string;
+        prefix?: string;
+        visibility?: 'public' | 'private';
+      }) => {
         const params = new URLSearchParams();
         if (query?.table) params.set('table', query.table);
         if (query?.recordId) params.set('recordId', query.recordId);
         if (query?.field) params.set('field', query.field);
+        if (query?.search) params.set('search', query.search);
+        if (query?.prefix) params.set('prefix', query.prefix);
+        if (query?.visibility) params.set('visibility', query.visibility);
         if (typeof query?.limit === 'number') params.set('limit', String(query.limit));
         const suffix = params.size > 0 ? `?${params.toString()}` : '';
         return request<Array<Record<string, unknown>>>(`/api/storage/files${suffix}`);
@@ -220,6 +231,21 @@ export const client = {
         request<void>(`/api/storage/${encodeURIComponent(key)}`, {
           method: 'DELETE',
         }),
+    },
+    realtime: {
+      stats: () =>
+        request<{
+          connections: number;
+          subscriptions: number;
+          eventsSentTotal: number;
+          byTable: Record<string, number>;
+        }>('/api/admin/realtime/stats'),
+    },
+    webhooks: {
+      create: (payload: any) => request<any>('/api/admin/webhooks', { method: 'POST', body: JSON.stringify(payload) }),
+      update: (id: string, payload: any) => request<any>(`/api/admin/webhooks/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+      delete: (id: string) => request<void>(`/api/admin/webhooks/${id}`, { method: 'DELETE' }),
+      retry: (id: string, deliveryId: string) => request<any>(`/api/admin/webhooks/${id}/deliveries/${deliveryId}/retry`, { method: 'POST' }),
     },
   },
 };

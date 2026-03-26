@@ -29,6 +29,34 @@ export const fieldTypeSchema = z.enum([
 
 export type FieldType = z.infer<typeof fieldTypeSchema>;
 
+export const tableHookTypeSchema = z.enum(["webhook", "recipe"]);
+
+export type TableHookType = z.infer<typeof tableHookTypeSchema>;
+
+export const tableHookEventTypeSchema = z.enum([
+  "beforeCreate",
+  "afterCreate",
+  "beforeUpdate",
+  "afterUpdate",
+  "beforeDelete",
+  "afterDelete",
+]);
+
+export type TableHookEventType = z.infer<typeof tableHookEventTypeSchema>;
+
+export const tableHookSchema = z.object({
+  id: z.string(),
+  eventType: tableHookEventTypeSchema,
+  type: tableHookTypeSchema,
+  blocking: z.boolean().default(true),
+  enabled: z.boolean().default(true),
+  url: z.string().url().nullish(),
+  recipeId: z.string().nullish(),
+  config: z.record(z.string(), z.unknown()).default({}),
+});
+
+export type TableHook = z.infer<typeof tableHookSchema>;
+
 export const relationActionSchema = z.enum([
   "no action",
   "restrict",
@@ -258,6 +286,7 @@ export const tableBlueprintSchema = z.object({
   fields: z.array(fieldBlueprintSchema).min(1),
   indexes: z.array(z.array(z.string().min(1)).min(1)).default([]),
   api: tableApiConfigSchema.default(() => defaultTableApiConfig()),
+  hooks: z.array(tableHookSchema).default([]),
 });
 
 export type TableBlueprint = z.infer<typeof tableBlueprintSchema>;
@@ -554,6 +583,7 @@ export const tableDescriptorSchema = z.object({
   mutableSchema: z.boolean(),
   ownerPluginId: pluginIdSchema.nullish(),
   pagination: apiPaginationSchema.optional(),
+  hooks: z.array(tableHookSchema).default([]),
 });
 
 export type TableDescriptor = z.infer<typeof tableDescriptorSchema>;
@@ -908,6 +938,90 @@ export const aiMessageCreateSchema = z.object({
 
 export type AiMessageCreate = z.infer<typeof aiMessageCreateSchema>;
 
+// ─── Webhooks ────────────────────────────────────────────────────────────────
+
+export const webhookEventTypeSchema = z.enum([
+  "data.record.created",
+  "data.record.updated",
+  "data.record.deleted",
+  "auth.user.created",
+  "auth.user.deleted",
+  "auth.user.signed_in",
+  "auth.user.signed_out",
+  "auth.session.created",
+  "auth.session.deleted",
+  "schema.applied",
+  "plugin.enabled",
+  "plugin.disabled",
+]);
+
+export type WebhookEventType = z.infer<typeof webhookEventTypeSchema>;
+
+export const webhookSchema = z.object({
+  id: z.string(),
+  url: z.string().url(),
+  description: z.string().default(""),
+  secret: z.string().min(1),
+  events: z.array(webhookEventTypeSchema).min(1),
+  enabled: z.boolean().default(true),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type Webhook = z.infer<typeof webhookSchema>;
+
+export const webhookInputSchema = z.object({
+  url: z.string().url(),
+  description: z.string().default(""),
+  secret: z.string().min(16).max(256).optional(),
+  events: z.array(webhookEventTypeSchema).min(1),
+  enabled: z.boolean().default(true),
+});
+
+export type WebhookInput = z.infer<typeof webhookInputSchema>;
+
+export const webhookDeliveryStatusSchema = z.enum(["pending", "succeeded", "failed", "dead"]);
+
+export type WebhookDeliveryStatus = z.infer<typeof webhookDeliveryStatusSchema>;
+
+export const webhookDeliverySchema = z.object({
+  id: z.string(),
+  webhookId: z.string(),
+  eventType: webhookEventTypeSchema,
+  payload: z.record(z.string(), z.unknown()).default({}),
+  status: webhookDeliveryStatusSchema,
+  attemptCount: z.number().int().nonnegative().default(0),
+  nextAttemptAt: z.string().nullish(),
+  httpStatus: z.number().int().nullish(),
+  response: z.string().nullish(),
+  lastError: z.string().nullish(),
+  deliveredAt: z.string().nullish(),
+  createdAt: z.string(),
+});
+
+export type WebhookDelivery = z.infer<typeof webhookDeliverySchema>;
+
+export const webhooksSettingsSchema = z.object({
+  maxAttempts: z.number().int().positive().max(10).default(5),
+  timeoutSeconds: z.number().int().positive().max(30).default(10),
+  retainDeliveryDays: z.number().int().positive().max(365).default(30),
+});
+
+export type WebhooksSettings = z.infer<typeof webhooksSettingsSchema>;
+
+export const webhooksSettingsResponseSchema = z.object({
+  section: z.literal("webhooks"),
+  config: webhooksSettingsSchema,
+  updatedAt: z.string().nullish(),
+  webhooks: z.array(webhookSchema).default([]),
+  recentDeliveries: z.array(webhookDeliverySchema).default([]),
+  diagnostics: z.record(z.string(), z.unknown()).default({}),
+});
+
+export type WebhooksSettingsResponse = z.infer<typeof webhooksSettingsResponseSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const settingsSectionIdSchema = z.enum([
   "general",
   "authentication",
@@ -923,6 +1037,7 @@ export const settingsSectionIdSchema = z.enum([
   "environmentsSecrets",
   "observability",
   "dangerZone",
+  "webhooks",
 ]);
 
 export type SettingsSectionId = z.infer<typeof settingsSectionIdSchema>;
@@ -1017,6 +1132,10 @@ export const storageSettingsSchema = z.object({
   signedUrlTtlSeconds: z.number().int().positive().max(604800).default(900),
   retentionDays: z.number().int().positive().max(3650).nullish(),
   defaultVisibility: z.enum(["public", "private"]).default("private"),
+  /** When true, GET /api/storage/public/* serves objects whose metadata visibility is public without a session. */
+  allowAnonymousPublicRead: z.boolean().default(true),
+  /** When true, uploads declaring image/* are rejected if file magic bytes do not match the declared type. */
+  validateImageMagicBytes: z.boolean().default(true),
 });
 
 export type StorageSettings = z.infer<typeof storageSettingsSchema>;
@@ -1111,6 +1230,7 @@ export const settingsSectionSchemas = {
   environmentsSecrets: environmentsSecretsSettingsSchema,
   observability: observabilitySettingsSchema,
   dangerZone: dangerZoneSettingsSchema,
+  webhooks: webhooksSettingsSchema,
 } as const;
 
 export type SettingsSectionConfigMap = {
@@ -1128,6 +1248,7 @@ export type SettingsSectionConfigMap = {
   environmentsSecrets: EnvironmentsSecretsSettings;
   observability: ObservabilitySettings;
   dangerZone: DangerZoneSettings;
+  webhooks: WebhooksSettings;
 };
 
 export const settingsSectionStateSchema = z.object({

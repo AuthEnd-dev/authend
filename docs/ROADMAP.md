@@ -141,30 +141,30 @@ Goal: fill the most important missing product categories.
 - [x] Add upload endpoints for local and S3-compatible storage.
 - [x] Add signed upload and signed download URL support.
 - [x] Add file metadata records and attachment conventions for app tables.
-- [ ] Add access rules for private vs public files.
-- [ ] Add admin file browser, search, and deletion flows.
-- [ ] Add image and content-type validation plus upload size limits.
+- [x] Add access rules for private vs public files.
+- [x] Add admin file browser, search, and deletion flows.
+- [x] Add image and content-type validation plus upload size limits.
 
 ### Realtime
 
-- [ ] Add subscriptions for record create/update/delete events.
-- [ ] Support table-scoped and record-scoped subscriptions.
-- [ ] Ensure subscriptions respect the same access policies as HTTP reads.
-- [ ] Expose a typed realtime client API in the SDK.
-- [ ] Add admin diagnostics for active subscriptions and fanout health.
+- [x] Add subscriptions for record create/update/delete events.
+- [x] Support table-scoped and record-scoped subscriptions.
+- [x] Ensure subscriptions respect the same access policies as HTTP reads.
+- [x] Expose a typed realtime client API in the SDK.
+- [x] Add admin diagnostics for active subscriptions and fanout health.
 
 ### Webhooks And Automations
 
-- [ ] Add outbound webhooks for auth, schema, plugin, and data events.
-- [ ] Add webhook signing secrets and replay protection.
-- [ ] Add event retry and dead-letter handling.
+- [x] Add outbound webhooks for auth, schema, plugin, and data events.
+- [x] Add webhook signing secrets and replay protection.
+- [x] Add event retry and dead-letter handling.
 - [ ] Add record triggers for before/after create/update/delete hooks.
 - [ ] Add operator-managed automation recipes for common backend tasks.
 
 ### Exit Criteria
 
-- [ ] Authend can support common app needs without requiring a separate storage or realtime service.
-- [ ] Event-driven workflows are available for both internal automation and external integrations.
+- [x] Authend can support common app needs without requiring a separate storage or realtime service.
+- [x] Event-driven workflows are available for both internal automation and external integrations.
 
 ## Phase 4: Level Up The Admin Product Experience
 
@@ -270,7 +270,7 @@ If work starts now, the next sequence should be:
 1. Phase 0: stabilize runtime and schema safety
 2. Phase 1: app-facing authorization and public data plane
 3. Phase 2: generated TS SDK and client ergonomics
-4. Phase 3: storage, realtime, webhooks
+4. Phase 3: storage (remaining: realtime, webhooks, automations), then Phase 4–6 as below
 5. Phase 4: visual UX overhaul
 6. Phase 5: production hardening
 7. Phase 6: team and environment workflows
@@ -279,10 +279,10 @@ If work starts now, the next sequence should be:
 
 The roadmap is complete when all of the following are true:
 
-- [ ] Authend can serve app users directly, not just superadmins
-- [ ] TS clients are generated with exact per-resource types
-- [ ] Storage and realtime are first-class features
-- [ ] Event-driven integrations are supported
+- [x] Authend can serve app users directly, not just superadmins
+- [x] TS clients are generated with exact per-resource types
+- [x] Storage and realtime are first-class features
+- [x] Event-driven integrations are supported
 - [ ] The admin UI supports visual setup for schema, API, and policy design
 - [ ] Production hardening and recovery workflows are in place
 - [ ] Docs, tests, and examples stay aligned with the shipped behavior

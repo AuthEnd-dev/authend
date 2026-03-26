@@ -248,6 +248,37 @@ export type TypedDataClient<TSchema extends AuthendSchemaShape | undefined> = Ba
       }
     : {});
 
+export type AuthendRealtimeEventMessage = {
+  type: 'event';
+  name: 'record.created' | 'record.updated' | 'record.deleted';
+  table: string;
+  id: string;
+  record: Record<string, unknown>;
+};
+
+export type AuthendRealtimeConnection = {
+  readonly ws: WebSocket;
+  subscribeTable: (table: string) => void;
+  subscribeRecord: (table: string, id: string) => void;
+  unsubscribeTable: (table: string) => void;
+  unsubscribeRecord: (table: string, id: string) => void;
+  ping: () => void;
+  close: (code?: number, reason?: string) => void;
+};
+
+export type AuthendRealtimeClient = {
+  /**
+   * Opens a WebSocket to `/api/realtime` (or `realtimeBasePath`). Uses cookies when `credentials` apply,
+   * or appends `x-api-key` when an API key is configured on the client.
+   */
+  connect: (handlers?: {
+    onEvent?: (event: AuthendRealtimeEventMessage) => void;
+    onServerError?: (message: string) => void;
+    onOpen?: () => void;
+    onClose?: (ev: CloseEvent) => void;
+  }) => AuthendRealtimeConnection;
+};
+
 type AuthendClientBaseOptions = {
   baseURL: string;
   fetch?: typeof fetch;
@@ -255,6 +286,7 @@ type AuthendClientBaseOptions = {
   authClient?: AuthendAuthClient;
   dataBasePath?: string;
   storageBasePath?: string;
+  realtimeBasePath?: string;
   apiKey?: AuthendApiKeyProvider;
   apiKeyHeaderName?: string;
 };
@@ -316,12 +348,14 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape>(
   auth: AuthendAuthClient;
   data: TypedDataClient<TSchema>;
   storage: AuthendStorageClient;
+  realtime: AuthendRealtimeClient;
 };
 
 export function createAuthendClient(options: AuthendClientOptionsWithoutSchema): {
   auth: AuthendAuthClient;
   data: TypedDataClient<undefined>;
   storage: AuthendStorageClient;
+  realtime: AuthendRealtimeClient;
 };
 
 export function createAuthendClient<TSchema extends AuthendSchemaShape>(
@@ -329,6 +363,7 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape>(
 ) {
   const dataBasePath = options.dataBasePath ?? '/api/data';
   const storageBasePath = options.storageBasePath ?? '/api/storage';
+  const realtimeBasePath = options.realtimeBasePath ?? '/api/realtime';
   const apiKeyHeaderName = options.apiKeyHeaderName ?? 'x-api-key';
   const auth =
     options.authClient ??
@@ -592,6 +627,55 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape>(
     },
   });
 
+  const realtime: AuthendRealtimeClient = {
+    connect: (handlers) => {
+      const base = new URL(options.baseURL);
+      const proto = base.protocol === 'https:' ? 'wss:' : 'ws:';
+      const key = resolveApiKey();
+      const qs = key ? `?x-api-key=${encodeURIComponent(key)}` : '';
+      const ws = new WebSocket(`${proto}//${base.host}${realtimeBasePath}${qs}`);
+
+      ws.addEventListener('message', (ev) => {
+        try {
+          const msg = JSON.parse(String((ev as MessageEvent).data)) as Record<string, unknown>;
+          if (msg.type === 'event' && handlers?.onEvent) {
+            handlers.onEvent(msg as unknown as AuthendRealtimeEventMessage);
+          }
+          if (msg.type === 'error' && handlers?.onServerError) {
+            handlers.onServerError(String(msg.message ?? 'Unknown error'));
+          }
+        } catch {
+          /* ignore non-JSON frames */
+        }
+      });
+
+      ws.addEventListener('open', () => handlers?.onOpen?.());
+      ws.addEventListener('close', (ev) => handlers?.onClose?.(ev));
+
+      return {
+        ws,
+        subscribeTable: (table: string) => {
+          ws.send(JSON.stringify({ type: 'subscribe', scope: 'table', table }));
+        },
+        subscribeRecord: (table: string, id: string) => {
+          ws.send(JSON.stringify({ type: 'subscribe', scope: 'record', table, id }));
+        },
+        unsubscribeTable: (table: string) => {
+          ws.send(JSON.stringify({ type: 'unsubscribe', scope: 'table', table }));
+        },
+        unsubscribeRecord: (table: string, id: string) => {
+          ws.send(JSON.stringify({ type: 'unsubscribe', scope: 'record', table, id }));
+        },
+        ping: () => {
+          ws.send(JSON.stringify({ type: 'ping' }));
+        },
+        close: (code, reason) => {
+          ws.close(code, reason);
+        },
+      };
+    },
+  };
+
   const storage: AuthendStorageClient = {
     upload: async (input) => {
       const formData = new FormData();
@@ -626,6 +710,7 @@ export function createAuthendClient<TSchema extends AuthendSchemaShape>(
     auth,
     data,
     storage,
+    realtime,
   };
 }
 

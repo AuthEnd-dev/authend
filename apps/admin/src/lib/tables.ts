@@ -14,4 +14,6 @@ export const SYSTEM_TABLES = [
   '_schema_tables',
   '_schema_fields',
   '_schema_relations',
+  '_webhooks',
+  '_webhook_deliveries',
 ];

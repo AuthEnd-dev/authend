@@ -3,6 +3,12 @@ import { createApp } from './core/app';
 import { bootstrapSystem } from './core/services/bootstrap-service';
 import { logger } from './core/lib/logger';
 import { startCronScheduler } from './core/services/cron-service';
+import { setDataMutationSubscriber } from './core/services/crud-service';
+import {
+  broadcastDataMutation,
+  createRealtimeWebSocketHandlers,
+  tryUpgradeRealtime,
+} from './core/services/realtime-service';
 
 type RegisteredRoute = {
   method?: string;
@@ -36,12 +42,24 @@ function printPrettyRoutes(routes: RegisteredRoute[]) {
 await bootstrapSystem();
 startCronScheduler();
 
+setDataMutationSubscriber(broadcastDataMutation);
+
 const app = createApp();
 const routes = (app as { routes?: RegisteredRoute[] }).routes ?? [];
 
 Bun.serve({
   port: env.PORT,
-  fetch: app.fetch,
+  fetch: async (req, server) => {
+    const outcome = await tryUpgradeRealtime(req, server);
+    if (outcome === 'skip') {
+      return app.fetch(req);
+    }
+    if (outcome instanceof Response) {
+      return outcome;
+    }
+    return undefined;
+  },
+  websocket: createRealtimeWebSocketHandlers(),
 });
 
 logger.info('server.started', {

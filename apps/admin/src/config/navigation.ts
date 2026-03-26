@@ -1,4 +1,4 @@
-import { Blocks, Database, HardDrive, ScrollText, Settings } from 'lucide-react';
+import { Blocks, Database, HardDrive, Radio, ScrollText, Settings } from 'lucide-react';
 import { settingsNavItems } from '../pages/settings';
 
 export const routeGroups = {
@@ -11,6 +11,7 @@ export const primaryNav = [
   { id: 'database', icon: Database, label: 'Database', to: '/data' },
   { id: 'storage', icon: HardDrive, label: 'Storage', to: '/storage-files' },
   { id: 'logs', icon: ScrollText, label: 'Logs', to: '/audit' },
+  { id: 'realtime', icon: Radio, label: 'Realtime', to: '/realtime' },
   { id: 'plugins', icon: Blocks, label: 'Plugins', to: '/plugins' },
   { id: 'settings', icon: Settings, label: 'Settings', to: '/general' },
 ] as const;

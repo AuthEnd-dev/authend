@@ -52,7 +52,11 @@ function canAccessOperation(resource: ApiResource, actor: RequestActor, operatio
   return true;
 }
 
-async function authoriseDataOperation(tableInput: string, actor: RequestActor, operation: ApiPreviewOperation['key']) {
+export async function authoriseDataOperationWithActor(
+  tableInput: string,
+  actor: RequestActor,
+  operation: ApiPreviewOperation['key'],
+) {
   await getClientTableDescriptor(tableInput, { actorKind: actor.kind, subjectId: actor.subjectId });
   const resource = await buildApiResource(tableInput);
 
@@ -194,7 +198,7 @@ function buildDataRouter(options: { adminOnly: boolean; rateLimited: boolean }) 
       if (options.rateLimited) {
         await applyDataRateLimit(c, actor);
       }
-      const { resource, access } = await authoriseDataOperation(table, actor, 'list');
+      const { resource, access } = await authoriseDataOperationWithActor(table, actor, 'list');
       return c.json(
         await listRecords(table, new URL(c.req.url).searchParams, {
           pagination: resource.query.pagination,
@@ -211,7 +215,7 @@ function buildDataRouter(options: { adminOnly: boolean; rateLimited: boolean }) 
       if (options.rateLimited) {
         await applyDataRateLimit(c, actor);
       }
-      const { access } = await authoriseDataOperation(table, actor, 'create');
+      const { access } = await authoriseDataOperationWithActor(table, actor, 'create');
       return c.json(await createRecord(table, await c.req.json(), { access }));
     })
     .get('/:table/:id', async (c) => {
@@ -219,7 +223,7 @@ function buildDataRouter(options: { adminOnly: boolean; rateLimited: boolean }) 
       if (options.rateLimited) {
         await applyDataRateLimit(c, actor);
       }
-      const { access } = await authoriseDataOperation(c.req.param('table'), actor, 'get');
+      const { access } = await authoriseDataOperationWithActor(c.req.param('table'), actor, 'get');
       return c.json(await getRecord(c.req.param('table'), c.req.param('id'), { access }));
     })
     .patch('/:table/:id', async (c) => {
@@ -227,7 +231,7 @@ function buildDataRouter(options: { adminOnly: boolean; rateLimited: boolean }) 
       if (options.rateLimited) {
         await applyDataRateLimit(c, actor);
       }
-      const { access } = await authoriseDataOperation(c.req.param('table'), actor, 'update');
+      const { access } = await authoriseDataOperationWithActor(c.req.param('table'), actor, 'update');
       return c.json(await updateRecord(c.req.param('table'), c.req.param('id'), await c.req.json(), { access }));
     })
     .delete('/:table/:id', async (c) => {
@@ -235,7 +239,7 @@ function buildDataRouter(options: { adminOnly: boolean; rateLimited: boolean }) 
       if (options.rateLimited) {
         await applyDataRateLimit(c, actor);
       }
-      const { access } = await authoriseDataOperation(c.req.param('table'), actor, 'delete');
+      const { access } = await authoriseDataOperationWithActor(c.req.param('table'), actor, 'delete');
       await deleteRecord(c.req.param('table'), c.req.param('id'), { access });
       return c.body(null, 204);
     });

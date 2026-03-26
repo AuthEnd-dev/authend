@@ -96,6 +96,43 @@ function buildPublicUrl(baseUrl: string | null | undefined, key: string) {
   return `${baseUrl.replace(/\/+$/, '')}/${key}`;
 }
 
+/** Reject spoofed image uploads when declared MIME is image/* (PNG, JPEG, GIF, WebP). */
+export function validateImageMagicBytes(buffer: Buffer, mimeType: string) {
+  if (!mimeType.startsWith('image/')) {
+    return;
+  }
+  const mime = mimeType.toLowerCase();
+  if (mime === 'image/png') {
+    if (buffer.length < 8 || buffer[0] !== 0x89 || buffer[1] !== 0x50 || buffer[2] !== 0x4e || buffer[3] !== 0x47) {
+      throw new HttpError(400, 'File content does not match declared PNG image');
+    }
+    return;
+  }
+  if (mime === 'image/jpeg' || mime === 'image/jpg') {
+    if (buffer.length < 3 || buffer[0] !== 0xff || buffer[1] !== 0xd8 || buffer[2] !== 0xff) {
+      throw new HttpError(400, 'File content does not match declared JPEG image');
+    }
+    return;
+  }
+  if (mime === 'image/gif') {
+    const head = buffer.subarray(0, 6).toString('ascii');
+    if (head !== 'GIF89a' && head !== 'GIF87a') {
+      throw new HttpError(400, 'File content does not match declared GIF image');
+    }
+    return;
+  }
+  if (mime === 'image/webp') {
+    if (
+      buffer.length < 12 ||
+      buffer.toString('ascii', 0, 4) !== 'RIFF' ||
+      buffer.toString('ascii', 8, 12) !== 'WEBP'
+    ) {
+      throw new HttpError(400, 'File content does not match declared WebP image');
+    }
+    return;
+  }
+}
+
 function createLocalDownloadSignature(secret: string, key: string, expiresAtUnix: number) {
   return createHmac('sha256', secret).update(`${key}:${expiresAtUnix}`).digest('hex');
 }
@@ -217,6 +254,10 @@ export async function uploadFile(input: UploadInput): Promise<UploadResult> {
   const key = joinKey(input.prefix, objectName);
   const body = Buffer.from(await input.file.arrayBuffer());
 
+  if (config.validateImageMagicBytes) {
+    validateImageMagicBytes(body, mimeType);
+  }
+
   if (config.driver === 'local') {
     const root = resolve(process.cwd(), config.rootPath);
     const absolutePath = resolve(root, key);
@@ -310,6 +351,11 @@ export async function createSignedUploadUrl(input: SignedUploadInput) {
   const expiresIn = Math.max(30, Math.min(input.expiresIn ?? config.signedUrlTtlSeconds, 604800));
   const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
+  const declaredType = input.contentType?.trim() || 'application/octet-stream';
+  if (config.allowedMimeTypes.length > 0 && !config.allowedMimeTypes.includes(declaredType)) {
+    throw new HttpError(415, `MIME type not allowed for signed upload: ${declaredType}`);
+  }
+
   if (config.driver === 'local') {
     throw new HttpError(400, 'Signed upload URLs are only supported for s3 driver');
   }
@@ -319,7 +365,7 @@ export async function createSignedUploadUrl(input: SignedUploadInput) {
   const url = await s3Object.presign({
     method: 'PUT',
     expiresIn,
-    type: input.contentType || 'application/octet-stream',
+    type: declaredType,
   });
 
   return {
@@ -379,6 +425,44 @@ export async function readLocalStoredFile(key: string) {
     throw new HttpError(404, 'Storage file not found');
   }
   return file;
+}
+
+/**
+ * Stream a stored object without authentication when settings allow it and metadata marks the object public.
+ * Missing rows or private visibility return 404 to avoid leaking object existence.
+ */
+export async function readPublicObject(key: string): Promise<{ body: Buffer | ReturnType<typeof Bun.file>; mimeType: string }> {
+  const config = await getStorageConfig();
+  if (!config.allowAnonymousPublicRead) {
+    throw new HttpError(403, 'Anonymous access to public objects is disabled');
+  }
+
+  const rows = await sql<{ visibility: string; mime_type: string | null }[]>`
+    select visibility, mime_type
+    from _storage_files
+    where object_key = ${key}
+    limit 1
+  `;
+  const row = rows[0];
+  if (!row || row.visibility !== 'public') {
+    throw new HttpError(404, 'Not found');
+  }
+
+  const mimeType = row.mime_type?.trim() || 'application/octet-stream';
+
+  if (config.driver === 'local') {
+    const file = await readLocalStoredFile(key);
+    return { body: file, mimeType };
+  }
+
+  const client = createBunS3Client(config);
+  const s3Object = client.file(key) as { arrayBuffer: () => Promise<ArrayBuffer> };
+  try {
+    const ab = await s3Object.arrayBuffer();
+    return { body: Buffer.from(ab), mimeType };
+  } catch {
+    throw new HttpError(404, 'Not found');
+  }
 }
 
 export async function headStoredFile(key: string): Promise<StorageHeadResult> {
@@ -459,8 +543,24 @@ export async function removeStoredFile(key: string) {
   await sql`delete from _storage_files where object_key = ${key}`;
 }
 
-export async function listStorageFileRecords(input?: { table?: string; recordId?: string; field?: string; limit?: number }) {
-  const limit = Math.max(1, Math.min(input?.limit ?? 50, 200));
+export async function listStorageFileRecords(input?: {
+  table?: string;
+  recordId?: string;
+  field?: string;
+  limit?: number;
+  /** Case-insensitive substring match on object_key. */
+  search?: string;
+  visibility?: 'public' | 'private';
+  /** Only keys in this path prefix (folder), e.g. `uploads/2024`. */
+  prefix?: string;
+}) {
+  const limit = Math.max(1, Math.min(input?.limit ?? 50, 500));
+  const searchTrim = input?.search?.trim() ?? '';
+  const searchParam = searchTrim.length > 0 ? searchTrim : null;
+  const visibilityParam = input?.visibility ?? null;
+  const prefixTrim = input?.prefix?.trim() ?? '';
+  const prefixParam = prefixTrim.length > 0 ? prefixTrim : null;
+
   const rows = await sql<StorageFileRecord[]>`
     select
       id,
@@ -479,6 +579,14 @@ export async function listStorageFileRecords(input?: { table?: string; recordId?
     where (${input?.table ?? null}::text is null or attachment_table = ${input?.table ?? null})
       and (${input?.recordId ?? null}::text is null or attachment_record_id = ${input?.recordId ?? null})
       and (${input?.field ?? null}::text is null or attachment_field = ${input?.field ?? null})
+      and (${searchParam}::text is null or position(lower(${searchParam}) in lower(object_key)) > 0)
+      and (${visibilityParam}::text is null or visibility = ${visibilityParam})
+      and (
+        case
+          when ${prefixParam}::text is null then true
+          else (object_key = ${prefixParam} or object_key like (${prefixParam}::text || '/%'))
+        end
+      )
     order by created_at desc
     limit ${String(limit)}
   `;

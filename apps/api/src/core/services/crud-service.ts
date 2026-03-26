@@ -1,8 +1,88 @@
-import type { ApiAccessActor, ApiFieldAccess, ApiPaginationConfig, ApiSortingConfig, FieldBlueprint, TableApiConfig, TableDescriptor } from "@authend/shared";
+import type { ApiAccessActor, ApiFieldAccess, ApiPaginationConfig, ApiSortingConfig, FieldBlueprint, TableApiConfig, TableDescriptor, TableHook, TableHookEventType } from "@authend/shared";
 import { getSchemaDraft } from "./schema-service";
 import { HttpError } from "../lib/http";
+import { logger } from "../lib/logger";
 import { sql } from "../db/client";
 import { listPluginCapabilityManifests } from "./plugin-service";
+import { dispatchWebhookEvent } from "./webhook-service";
+import { executeAutomationRecipe, type AutomationPayload } from "./automation-service";
+import { sendEmail } from "../lib/email";
+import crypto from "crypto";
+
+export type DataMutationPayload =
+  | { kind: "created"; table: string; id: string }
+  | { kind: "updated"; table: string; id: string }
+  | { kind: "deleted"; table: string; id: string; rawRecord: Record<string, unknown> };
+
+type DataRecord = Record<string, unknown>;
+
+let dataMutationSubscriber: ((payload: DataMutationPayload) => void) | null = null;
+
+export function setDataMutationSubscriber(fn: typeof dataMutationSubscriber) {
+  dataMutationSubscriber = fn;
+}
+
+function emitDataMutationIfConfigured(payload: DataMutationPayload) {
+  queueMicrotask(() => {
+    try {
+      dataMutationSubscriber?.(payload);
+    } catch (error) {
+      logger.error("data.mutation.subscriber.failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  // Dispatch outbound webhook event
+  queueMicrotask(() => {
+    const eventType =
+      payload.kind === "created" ? "data.record.created" as const :
+      payload.kind === "updated" ? "data.record.updated" as const :
+      "data.record.deleted" as const;
+
+    void dispatchWebhookEvent(eventType, {
+      table: payload.table,
+      id: payload.id,
+    }).catch((error) => {
+      logger.error("webhook.dispatch.failed", {
+        eventType,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  });
+}
+
+async function executeTableHooks(
+  hooks: TableHook[],
+  eventType: TableHookEventType,
+  table: string,
+  data: any,
+) {
+  const activeHooks = hooks.filter((h) => h.enabled && h.eventType === eventType);
+  if (activeHooks.length === 0) return;
+
+  for (const hook of activeHooks) {
+    try {
+      if (hook.type === "webhook") {
+        const response = await fetch(hook.url!, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventType, table, data }),
+        });
+
+        if (!response.ok && hook.blocking) {
+          const text = await response.text();
+          throw new HttpError(response.status, `Hook ${hook.id} failed: ${text}`);
+        }
+      } else if (hook.type === "recipe") {
+        await executeAutomationRecipe(hook.recipeId!, { eventType, table, data }, hook.config);
+      }
+    } catch (error) {
+      logger.error("table.hook.failed", { hookId: hook.id, eventType, error: error instanceof Error ? error.message : String(error) });
+      if (hook.blocking) throw error;
+    }
+  }
+}
 
 type BuiltinTableExposurePolicy = {
   visibleInDataApi: boolean;
@@ -28,6 +108,7 @@ const builtinTables: Record<string, TableDescriptor> = {
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
   },
   session: {
     table: "session",
@@ -47,6 +128,7 @@ const builtinTables: Record<string, TableDescriptor> = {
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
   },
   account: {
     table: "account",
@@ -65,6 +147,7 @@ const builtinTables: Record<string, TableDescriptor> = {
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
   },
   verification: {
     table: "verification",
@@ -79,6 +162,7 @@ const builtinTables: Record<string, TableDescriptor> = {
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
   },
   _plugin_configs: {
     table: "_plugin_configs",
@@ -100,6 +184,7 @@ const builtinTables: Record<string, TableDescriptor> = {
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
   },
   _migration_runs: {
     table: "_migration_runs",
@@ -115,6 +200,7 @@ const builtinTables: Record<string, TableDescriptor> = {
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
   },
   _audit_logs: {
     table: "_audit_logs",
@@ -130,6 +216,7 @@ const builtinTables: Record<string, TableDescriptor> = {
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
   },
   _system_settings: {
     table: "_system_settings",
@@ -143,6 +230,7 @@ const builtinTables: Record<string, TableDescriptor> = {
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
   },
   _backup_runs: {
     table: "_backup_runs",
@@ -162,6 +250,7 @@ const builtinTables: Record<string, TableDescriptor> = {
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
   },
   _cron_jobs: {
     table: "_cron_jobs",
@@ -184,6 +273,7 @@ const builtinTables: Record<string, TableDescriptor> = {
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
   },
   _cron_runs: {
     table: "_cron_runs",
@@ -202,6 +292,7 @@ const builtinTables: Record<string, TableDescriptor> = {
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
   },
   _ai_threads: {
     table: "_ai_threads",
@@ -216,6 +307,7 @@ const builtinTables: Record<string, TableDescriptor> = {
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
   },
   _ai_messages: {
     table: "_ai_messages",
@@ -232,6 +324,7 @@ const builtinTables: Record<string, TableDescriptor> = {
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
   },
   _ai_runs: {
     table: "_ai_runs",
@@ -257,6 +350,7 @@ const builtinTables: Record<string, TableDescriptor> = {
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
   },
   _storage_files: {
     table: "_storage_files",
@@ -278,6 +372,47 @@ const builtinTables: Record<string, TableDescriptor> = {
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
+  },
+  _webhooks: {
+    table: "_webhooks",
+    primaryKey: "id",
+    fields: [
+      { name: "id", type: "text", nullable: false, unique: true, indexed: false },
+      { name: "url", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "description", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "secret", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "events", type: "jsonb", nullable: false, unique: false, indexed: false },
+      { name: "enabled", type: "boolean", nullable: false, unique: false, indexed: false },
+      { name: "created_at", type: "timestamp", nullable: false, unique: false, indexed: false },
+      { name: "updated_at", type: "timestamp", nullable: false, unique: false, indexed: false },
+    ],
+    source: "builtin",
+    mutableSchema: false,
+    ownerPluginId: null,
+    hooks: [],
+  },
+  _webhook_deliveries: {
+    table: "_webhook_deliveries",
+    primaryKey: "id",
+    fields: [
+      { name: "id", type: "text", nullable: false, unique: true, indexed: false },
+      { name: "webhook_id", type: "text", nullable: false, unique: false, indexed: true },
+      { name: "event_type", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "payload", type: "jsonb", nullable: false, unique: false, indexed: false },
+      { name: "status", type: "text", nullable: false, unique: false, indexed: false },
+      { name: "attempt_count", type: "integer", nullable: false, unique: false, indexed: false },
+      { name: "next_attempt_at", type: "timestamp", nullable: true, unique: false, indexed: false },
+      { name: "http_status", type: "integer", nullable: true, unique: false, indexed: false },
+      { name: "response", type: "text", nullable: true, unique: false, indexed: false },
+      { name: "last_error", type: "text", nullable: true, unique: false, indexed: false },
+      { name: "delivered_at", type: "timestamp", nullable: true, unique: false, indexed: false },
+      { name: "created_at", type: "timestamp", nullable: false, unique: false, indexed: false },
+    ],
+    source: "builtin",
+    mutableSchema: false,
+    ownerPluginId: null,
+    hooks: [],
   },
 };
 
@@ -296,6 +431,14 @@ const builtinTableExposurePolicies: Partial<Record<keyof typeof builtinTables, B
     redactedFields: ["ip_address", "user_agent", "impersonated_by"],
   },
   _storage_files: {
+    visibleInDataApi: true,
+    redactedFields: [],
+  },
+  _webhooks: {
+    visibleInDataApi: true,
+    redactedFields: ["secret"],
+  },
+  _webhook_deliveries: {
     visibleInDataApi: true,
     redactedFields: [],
   },
@@ -520,6 +663,7 @@ async function introspectTableDescriptor(tableName: string): Promise<TableDescri
     source: "builtin",
     mutableSchema: false,
     ownerPluginId: null,
+    hooks: [],
   };
 }
 
@@ -555,6 +699,7 @@ async function resolveTableResource(tableInput: string) {
         source: "plugin" as const,
         mutableSchema: false,
         ownerPluginId: pluginModel.manifest.id,
+        hooks: [],
       },
       config: null,
     };
@@ -583,6 +728,7 @@ async function resolveTableResource(tableInput: string) {
       source: "generated" as const,
       mutableSchema: true,
       ownerPluginId: null,
+      hooks: current.hooks || [],
     },
     config: current.api ?? null,
   };
@@ -1109,58 +1255,101 @@ export async function getRecord(table: string, id: string, options: MutationReco
 export async function createRecord(table: string, payload: Record<string, unknown>, options: MutationRecordOptions = {}) {
   const resource = await resolveTableResource(table);
   assertDataApiReadable(resource);
+  assertWritableDescriptor(resource.descriptor, options.access);
+
+  // Execute before hooks
+  await executeTableHooks(resource.descriptor.hooks, "beforeCreate", table, payload);
+
   const { descriptor } = resource;
-  assertWritableDescriptor(descriptor, options.access);
   const nextPayload = { ...payload };
+
+  // Generate ID if missing and it's a text/uuid primary key
+  if (descriptor.primaryKey && !nextPayload[descriptor.primaryKey]) {
+    const primaryField = descriptor.fields.find((field: any) => field.name === descriptor.primaryKey);
+    if (primaryField && (primaryField.type === "text" || primaryField.type === "uuid")) {
+      nextPayload[descriptor.primaryKey] = crypto.randomUUID();
+    }
+  }
+
   if (options.access?.ownershipField && !options.access.bypassOwnership) {
     if (!options.access.subjectId) {
       throw new HttpError(403, "Owner-scoped access requires an authenticated subject");
     }
     nextPayload[options.access.ownershipField] = options.access.subjectId;
   }
-  const allowedFields = descriptor.fields;
+
   const actorKind = options.access?.actorKind ?? "public";
-  const columns = Object.keys(nextPayload).filter((column) => allowedFields.some((field) => field.name === column));
+  const columns = Object.keys(nextPayload).filter((column) => descriptor.fields.some((field) => field.name === column));
   const blockedColumns = columns.filter((column) => !fieldIsWritable(column, descriptor, resource.config, "create", actorKind));
+
   if (blockedColumns.length > 0) {
     throw new HttpError(403, `Cannot set protected field${blockedColumns.length === 1 ? "" : "s"} ${blockedColumns.join(", ")}`);
   }
+
   if (columns.length === 0) {
     throw new HttpError(400, "No writable fields provided");
   }
+
   const values = columns.map((column) => serialiseValue(nextPayload[column]));
   const placeholders = columns
-    .map((column, index) => placeholderForField(allowedFields.find((field) => field.name === column)!, index + 1))
+    .map((column, index) => {
+      const field = descriptor.fields.find((f) => f.name === column)!;
+      return placeholderForField(field, index + 1);
+    })
     .join(", ");
-  const [record] = await sql.unsafe<Record<string, unknown>[]>(
+
+  const [record] = await sql.unsafe<DataRecord[]>(
     `insert into ${quoteIdentifier(descriptor.table)} (${columns.map(quoteIdentifier).join(", ")})
      values (${placeholders})
-     returning *`,
+     returning ${selectColumnsSql(descriptor)}`,
     unsafeParams(values),
   );
+
+  if (!record) {
+    throw new HttpError(500, "Failed to create record");
+  }
+
+  emitDataMutationIfConfigured({
+    kind: "created",
+    table,
+    id: String(record[descriptor.primaryKey]),
+  });
+
+  // Execute after hooks (async)
+  void executeTableHooks(resource.descriptor.hooks, "afterCreate", table, record).catch(() => {});
+
   return sanitiseRecordForTable(descriptor.table, record, options.access);
 }
 
 export async function updateRecord(table: string, id: string, payload: Record<string, unknown>, options: MutationRecordOptions = {}) {
   const resource = await resolveTableResource(table);
   assertDataApiReadable(resource);
+  assertWritableDescriptor(resource.descriptor, options.access);
+
+  // Execute before hooks
+  await executeTableHooks(resource.descriptor.hooks, "beforeUpdate", table, { id, data: payload });
+
   const { descriptor } = resource;
-  assertWritableDescriptor(descriptor, options.access);
   const nextPayload = { ...payload };
   if (options.access?.ownershipField && !options.access.bypassOwnership) {
     delete nextPayload[options.access.ownershipField];
   }
+
   const actorKind = options.access?.actorKind ?? "public";
   const columns = Object.keys(nextPayload).filter(
     (column) => column !== descriptor.primaryKey && descriptor.fields.some((field) => field.name === column),
   );
   const blockedColumns = columns.filter((column) => !fieldIsWritable(column, descriptor, resource.config, "update", actorKind));
+
   if (blockedColumns.length > 0) {
     throw new HttpError(403, `Cannot update protected field${blockedColumns.length === 1 ? "" : "s"} ${blockedColumns.join(", ")}`);
   }
+
   if (columns.length === 0) {
-    throw new HttpError(400, "No writable fields provided");
+    const existing = await getRecord(table, id, options);
+    return existing;
   }
+
   const values = columns.map((column) => serialiseValue(nextPayload[column]));
   const assignments = columns
     .map((column, index) => {
@@ -1168,40 +1357,93 @@ export async function updateRecord(table: string, id: string, payload: Record<st
       return `${quoteIdentifier(column)} = ${placeholderForField(field, index + 1)}`;
     })
     .join(", ");
+
   values.push(id);
   const whereClauses = [`${quoteIdentifier(descriptor.primaryKey)} = $${values.length}`];
   applyOwnershipFilter(descriptor, whereClauses, values, options.access);
-  const [record] = await sql.unsafe<Record<string, unknown>[]>(
+
+  const [record] = await sql.unsafe<DataRecord[]>(
     `update ${quoteIdentifier(descriptor.table)}
      set ${assignments}
      where ${whereClauses.join(" and ")}
-     returning *`,
+     returning ${selectColumnsSql(descriptor)}`,
     unsafeParams(values),
   );
+
   if (!record) {
     throw new HttpError(404, "Record not found");
   }
+
+  emitDataMutationIfConfigured({
+    kind: "updated",
+    table,
+    id: String(record[descriptor.primaryKey]),
+  });
+
+  // Execute after hooks (async)
+  void executeTableHooks(resource.descriptor.hooks, "afterUpdate", table, record).catch(() => {});
+
   return sanitiseRecordForTable(descriptor.table, record, options.access);
 }
 
 export async function deleteRecord(table: string, id: string, options: MutationRecordOptions = {}) {
   const resource = await resolveTableResource(table);
-  assertDataApiReadable(resource, options.access);
+  assertDataApiReadable(resource);
+  assertWritableDescriptor(resource.descriptor, options.access);
+
+  // Execute before hooks
+  await executeTableHooks(resource.descriptor.hooks, "beforeDelete", table, { id });
+
   const { descriptor } = resource;
-  assertWritableDescriptor(descriptor, options.access);
-  const whereClauses = [`${quoteIdentifier(descriptor.primaryKey)} = $1`];
   const values: unknown[] = [id];
+  const whereClauses = [`${quoteIdentifier(descriptor.primaryKey)} = $1`];
   applyOwnershipFilter(descriptor, whereClauses, values, options.access);
-  const [record] = await sql.unsafe<Record<string, unknown>[]>(
+
+  const [record] = await sql.unsafe<DataRecord[]>(
     `delete from ${quoteIdentifier(descriptor.table)}
      where ${whereClauses.join(" and ")}
-     returning *`,
+     returning ${selectColumnsSql(descriptor)}`,
     unsafeParams(values),
   );
+
   if (!record) {
     throw new HttpError(404, "Record not found");
   }
-  return record;
+
+  // Execute after hooks (async)
+  void executeTableHooks(resource.descriptor.hooks, "afterDelete", table, record).catch(() => {});
+
+  emitDataMutationIfConfigured({
+    kind: "deleted",
+    table,
+    id: String(record[descriptor.primaryKey]),
+    rawRecord: record,
+  });
+
+  return { success: true };
+}
+
+/**
+ * Shape a deleted row for a subscriber using the same field visibility rules as HTTP reads.
+ * Returns null when the actor would not have been able to read that row.
+ */
+export async function projectDeletedRecordForFanout(
+  table: string,
+  rawRecord: Record<string, unknown>,
+  access: RecordAccessContext,
+): Promise<Record<string, unknown> | null> {
+  const resource = await resolveTableResource(table);
+  try {
+    assertDataApiReadable(resource, access);
+  } catch {
+    return null;
+  }
+  if (!access.bypassOwnership && access.ownershipField && access.subjectId) {
+    if (rawRecord[access.ownershipField] !== access.subjectId) {
+      return null;
+    }
+  }
+  return sanitiseRecordForTable(table, rawRecord, access);
 }
 
 export async function listBrowsableTables(actor?: ApiAccessActor) {

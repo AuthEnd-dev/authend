@@ -32,6 +32,7 @@ import {
   ChevronsRight,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { TooltipComponent as Tooltip } from '../components/ui/tooltip';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { SidePanel } from '../components/ui/side-panel';
@@ -961,13 +962,15 @@ export function DataPage() {
         header: '',
         cell: () => (
           <div className="flex justify-end pr-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-            >
-              <ArrowRight className="w-4 h-4 text-muted-foreground" />
-            </Button>
+            <Tooltip content="View record details">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+              >
+                <ArrowRight className="w-4 h-4 text-muted-foreground" />
+              </Button>
+            </Tooltip>
           </div>
         ),
         enableSorting: false,
@@ -1015,24 +1018,27 @@ export function DataPage() {
             <span className="text-muted-foreground/40 font-light translate-y-px">/</span>
             {tableName}
           </h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground max-w-fit px-1.5 ml-2 hover:bg-muted/60 disabled:opacity-40"
-            onClick={() => setSchemaOpen(true)}
-            disabled={!tableMeta}
-            title={tableMeta ? 'Edit table schema' : 'Loading table metadata...'}
-          >
-            <Settings className="w-3.5 h-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground max-w-fit px-1.5 hover:bg-muted/60"
-            onClick={() => refetch()}
-          >
-            <RotateCw className={`w-3.5 h-3.5 ${isFetching && !isPlaceholderData ? 'animate-spin opacity-50' : isFetching ? 'opacity-50' : ''}`} />
-          </Button>
+          <Tooltip content={tableMeta ? 'Edit table schema' : 'Loading table metadata...'}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground max-w-fit px-1.5 ml-2 hover:bg-muted/60 disabled:opacity-40"
+              onClick={() => setSchemaOpen(true)}
+              disabled={!tableMeta}
+            >
+              <Settings className="w-3.5 h-3.5" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Refresh data">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground max-w-fit px-1.5 hover:bg-muted/60"
+              onClick={() => refetch()}
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${isFetching && !isPlaceholderData ? 'animate-spin opacity-50' : isFetching ? 'opacity-50' : ''}`} />
+            </Button>
+          </Tooltip>
         </div>
         <div className="flex gap-2.5">
           <Button

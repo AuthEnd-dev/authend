@@ -4,6 +4,7 @@ import { resolveRequestActor } from "../middleware/auth";
 import {
   createFolder,
   readLocalStoredFile,
+  readPublicObject,
   createSignedDownloadUrl,
   createSignedUploadUrl,
   getStorageFileRecordById,
@@ -22,7 +23,22 @@ function parseOptionalString(value: unknown) {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-export const storageRouter = new Hono().post("/upload", async (c) => {
+export const storageRouter = new Hono()
+  .get("/public/*", async (c) => {
+    const raw = c.req.param("*") ?? "";
+    const key = decodeURIComponent(raw.replace(/^\/+/, ""));
+    if (!key) {
+      throw new HttpError(400, "key is required");
+    }
+    const { body, mimeType } = await readPublicObject(key);
+    return new Response(body, {
+      headers: {
+        "Content-Type": mimeType,
+        "Cache-Control": "public, max-age=3600",
+      },
+    });
+  })
+  .post("/upload", async (c) => {
   const actor = await resolveRequestActor(c);
   if (actor.kind === "public") {
     throw new HttpError(401, "Authentication required");
@@ -168,11 +184,17 @@ export const storageRouter = new Hono().post("/upload", async (c) => {
       throw new HttpError(401, "Authentication required");
     }
     const query = c.req.query();
+    const visibilityRaw = parseOptionalString(query.visibility);
+    const visibility =
+      visibilityRaw === "public" || visibilityRaw === "private" ? visibilityRaw : undefined;
     return c.json(
       await listStorageFileRecords({
         table: parseOptionalString(query.table),
         recordId: parseOptionalString(query.recordId),
         field: parseOptionalString(query.field),
+        search: parseOptionalString(query.search),
+        prefix: parseOptionalString(query.prefix),
+        visibility,
         limit: query.limit ? Number(query.limit) : undefined,
       }),
     );

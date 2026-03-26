@@ -8,11 +8,15 @@ import {
 } from "@authend/shared";
 import { db, sql } from "../db/client";
 import { schemaFields, schemaRelations, schemaTables } from "../db/schema/system";
+import { logger } from "../lib/logger";
 import { HttpError } from "../lib/http";
 import { readTextFile, writeTextFile } from "../lib/fs";
 import { applySqlMigration, writeGeneratedMigration } from "./migration-service";
 import { writeAuditLog } from "./audit-service";
 import { getTableDescriptor } from "./crud-service";
+import { dispatchWebhookEvent } from "./webhook-service";
+
+import { getExtensionSchemaDraft } from "../../extensions/schema";
 
 const generatedSchemaFile =
   process.env.AUTHEND_GENERATED_SCHEMA_FILE
@@ -229,8 +233,65 @@ ${indexEntries.join("\n")}
 }
 
 function renderSchemaModule(draft: SchemaDraft) {
-  const imports = `import { bigint, boolean, date, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+  const tableNames = new Set(draft.tables.map((table) => table.name));
+  const referencedTables = new Set<string>();
+
+  for (const table of draft.tables) {
+    for (const field of table.fields) {
+      if (field.references) {
+        referencedTables.add(field.references.table);
+      }
+    }
+  }
+
+  const coreAuthTables = [
+    "user",
+    "session",
+    "account",
+    "verification",
+    "twoFactor",
+    "jwks",
+    "organization",
+    "member",
+    "invitation",
+    "team",
+    "teamMember",
+    "organizationRole",
+    "apikey",
+  ];
+
+  const coreSystemTables = [
+    "systemAdmins",
+    "pluginConfigs",
+    "schemaTables",
+    "schemaFields",
+    "schemaRelations",
+    "migrationRuns",
+    "auditLogs",
+    "systemSettings",
+    "backupRuns",
+    "cronJobs",
+    "cronRuns",
+    "aiThreads",
+    "aiMessages",
+    "aiRuns",
+    "storageFiles",
+    "webhooks",
+    "webhookDeliveries",
+  ];
+
+  const authImports = Array.from(referencedTables).filter((t) => coreAuthTables.includes(t) && !tableNames.has(t));
+  const systemImports = Array.from(referencedTables).filter((t) => coreSystemTables.includes(t) && !tableNames.has(t));
+
+  let imports = `import { bigint, boolean, date, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";`;
+
+  if (authImports.length > 0) {
+    imports += `\nimport { ${authImports.join(", ")} } from "../../src/core/db/schema/auth";`;
+  }
+  if (systemImports.length > 0) {
+    imports += `\nimport { ${systemImports.join(", ")} } from "../../src/core/db/schema/system";`;
+  }
 
   const enums = draft.tables
     .map(withDefaultId)
@@ -278,6 +339,65 @@ function migrationSqlKey(prefix: string) {
   ].join("");
 
   return `${stamp}_${prefix}`;
+}
+
+function relationSignature(relation: SchemaDraft["relations"][number]) {
+  return `${relation.sourceTable}|${relation.sourceField}|${relation.targetTable}|${relation.targetField}|${relation.onDelete}|${relation.onUpdate}`;
+}
+
+function mergeDraftWithExtensions(base: SchemaDraft): SchemaDraft {
+  let extensionDraft: SchemaDraft;
+  try {
+    extensionDraft = validateDraft(getExtensionSchemaDraft());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new HttpError(500, `Invalid extensions schema draft: ${message}`);
+  }
+
+  const tablesByName = new Map(base.tables.map((table) => [table.name, table]));
+  const mergedTables = [...base.tables];
+
+  for (const extensionTable of extensionDraft.tables.map(withDefaultId)) {
+    const existing = tablesByName.get(extensionTable.name);
+    if (!existing) {
+      mergedTables.push(extensionTable);
+      tablesByName.set(extensionTable.name, extensionTable);
+      continue;
+    }
+
+    const normalizedExisting = withDefaultId(existing);
+    const existingStr = JSON.stringify(normalizedExisting);
+    const extensionStr = JSON.stringify(extensionTable);
+    if (existingStr !== extensionStr) {
+      // In a real conflict, we prefer the extension (code) over the dashboard metadata
+      // since the extension is the "Source of Truth" for its own tables.
+      // We log it so the developer knows there's a discrepancy, but we don't crash.
+      logger.warn("schema.merge.overlap", { 
+        tableName: extensionTable.name,
+        message: "Extension table definition differs from dashboard metadata. Extension takes precedence."
+      });
+    }
+    // Extension takes precedence, so we replace the existing one in the merged list
+    const index = mergedTables.findIndex(t => t.name === extensionTable.name);
+    if (index !== -1) {
+      mergedTables[index] = extensionTable;
+    }
+  }
+
+  const relationKeys = new Set(base.relations.map(relationSignature));
+  const mergedRelations = [...base.relations];
+  for (const relation of extensionDraft.relations) {
+    const key = relationSignature(relation);
+    if (!relationKeys.has(key)) {
+      mergedRelations.push(relation);
+      relationKeys.add(key);
+    }
+  }
+
+  return {
+    tables: mergedTables,
+    relations: mergedRelations,
+  };
 }
 
 type LiveColumn = {
@@ -649,12 +769,13 @@ end $$;`);
   return { statements, warnings };
 }
 
-export async function getSchemaDraft(): Promise<SchemaDraft> {
+export async function getSchemaDraft(options: { includeExtensions?: boolean } = {}): Promise<SchemaDraft> {
+  const includeExtensions = options.includeExtensions ?? true;
   const tables = await db.select().from(schemaTables);
   const fields = await db.select().from(schemaFields);
   const relations = await db.select().from(schemaRelations);
 
-  return {
+  const baseDraft = {
     tables: tables.map((table) => ({
       ...(table.definition as TableBlueprint),
       fields: fields
@@ -663,11 +784,13 @@ export async function getSchemaDraft(): Promise<SchemaDraft> {
     })),
     relations: relations.map((relation) => relation.definition as SchemaDraft["relations"][number]),
   };
+
+  return includeExtensions ? mergeDraftWithExtensions(baseDraft) : baseDraft;
 }
 
 export async function previewDraft(rawDraft: SchemaDraft) {
-  const draft = validateDraft(rawDraft);
-  const current = await getSchemaDraft();
+  const draft = mergeDraftWithExtensions(validateDraft(rawDraft));
+  const current = await getSchemaDraft({ includeExtensions: false });
   const currentByName = new Map(current.tables.map((table) => [table.name, table]));
   const nextByName = new Map(draft.tables.map((table) => [table.name, withDefaultId(table)]));
   const statements: string[] = [];
@@ -714,12 +837,21 @@ end $$;`);
 }
 
 async function replaceMetadata(draft: SchemaDraft) {
+  const extensionDraft = getExtensionSchemaDraft();
+  const extensionTableNames = new Set(extensionDraft.tables.map(t => t.name));
+
   await sql.begin(async (transaction) => {
+    // We only delete and replace metadata for tables NOT managed by extensions.
+    // However, the current implementation wipes everything and replaces.
+    // To keep it simple, we'll keep the wipe-and-replace but SKIP inserting extension tables.
     await transaction.unsafe(`delete from _schema_relations`);
     await transaction.unsafe(`delete from _schema_fields`);
     await transaction.unsafe(`delete from _schema_tables`);
 
     for (const table of draft.tables.map(withDefaultId)) {
+      if (extensionTableNames.has(table.name)) {
+        continue;
+      }
       const tableId = crypto.randomUUID();
       await transaction.unsafe(
         `insert into _schema_tables (id, table_name, display_name, primary_key, definition, created_at, updated_at)
@@ -756,8 +888,8 @@ async function replaceMetadata(draft: SchemaDraft) {
 }
 
 export async function applyDraft(rawDraft: SchemaDraft, actorUserId?: string | null) {
-  const draft = validateDraft(rawDraft);
-  const current = await getSchemaDraft();
+  const draft = mergeDraftWithExtensions(validateDraft(rawDraft));
+  const current = await getSchemaDraft({ includeExtensions: false });
   const nextTableNames = new Set(draft.tables.map((table) => table.name));
   const droppedTableNames = current.tables
     .map((table) => table.name)
@@ -793,9 +925,25 @@ export async function applyDraft(rawDraft: SchemaDraft, actorUserId?: string | n
     payload: { tableCount: draft.tables.length, relationCount: draft.relations.length },
   });
 
+  void dispatchWebhookEvent("schema.applied", {
+    tableCount: draft.tables.length,
+    relationCount: draft.relations.length,
+  }).catch(() => {});
+
   return {
     migrationId: migrationKey,
     sql: preview.sql,
     warnings: preview.warnings,
   };
+}
+
+export async function ensureExtensionSchemaProvisioned() {
+  const drift = await getSchemaDriftReport();
+  if (!drift.drifted) {
+    return;
+  }
+
+  const draft = await getSchemaDraft();
+  await applyDraft(draft, null);
+  logger.info("extension.schema.provisioned");
 }

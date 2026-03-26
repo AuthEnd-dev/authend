@@ -13,6 +13,7 @@ Use the folder name **`extensions/`** for fork-owned code. Do **not** name custo
 | [`routes.ts`](../apps/api/src/extensions/routes.ts) | Mount extra Hono routers after core routes (`registerExtensionRoutes(app)` is called from [`app.ts`](../apps/api/src/core/app.ts)). |
 | [`plugins.ts`](../apps/api/src/extensions/plugins.ts) | Append `PluginDefinition` entries; they are merged after the built-in registry in [`plugins/registry.ts`](../apps/api/src/core/plugins/registry.ts). Built-in plugins live in [`plugins/builtin-registry.ts`](../apps/api/src/core/plugins/builtin-registry.ts). |
 | [`auth.ts`](../apps/api/src/extensions/auth.ts) | Implement `forkAuthContributions()` to add Better Auth plugins or option fragments; merged after dashboard-driven runtime plugins in [`auth-service.ts`](../apps/api/src/core/services/auth-service.ts). |
+| [`schema.ts`](../apps/api/src/extensions/schema.ts) | Define fork-owned `SchemaDraft` tables/relations. Use helper builders from [`core/services/schema-helpers.ts`](../apps/api/src/core/services/schema-helpers.ts) to keep definitions concise and Drizzle-like. Merged into the effective schema draft by [`schema-service.ts`](../apps/api/src/core/services/schema-service.ts) during read/preview/apply. |
 
 Platform route mounting lives in [`register-core-routes.ts`](../apps/api/src/core/register-core-routes.ts) under `src/core/`. Upstream adds new first-party routes there; forks add HTTP surface in `extensions/routes.ts` or new files imported from it.
 

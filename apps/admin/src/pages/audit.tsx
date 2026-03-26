@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { client } from "../lib/client";
 import { Button } from "../components/ui/button";
+import { TooltipComponent as Tooltip } from "../components/ui/tooltip";
 import { Input } from "../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { SidePanel } from "../components/ui/side-panel";
@@ -374,18 +375,20 @@ export function AuditPage() {
         header: "",
         cell: ({ row }) => (
           <div className="flex justify-end pr-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-              onClick={(e) => {
-                e.stopPropagation();
-                setDetailEntry(row.original);
-              }}
-              aria-label="Open details"
-            >
-              <ArrowRight className="h-4 w-4 text-muted-foreground" />
-            </Button>
+            <Tooltip content="Open details">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDetailEntry(row.original);
+                }}
+                aria-label="Open details"
+              >
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </Button>
+            </Tooltip>
           </div>
         ),
         enableSorting: false,
@@ -434,15 +437,16 @@ export function AuditPage() {
             />
             Include system entries
           </label>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-muted-foreground hover:bg-muted/60"
-            onClick={() => refetch()}
-            title="Refresh"
-          >
-            <RotateCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin opacity-50" : ""}`} />
-          </Button>
+          <Tooltip content="Refresh">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:bg-muted/60"
+              onClick={() => refetch()}
+            >
+              <RotateCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin opacity-50" : ""}`} />
+            </Button>
+          </Tooltip>
         </div>
       </div>
 

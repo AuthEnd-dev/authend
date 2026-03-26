@@ -8,6 +8,7 @@ import { sendEmail } from "../lib/email";
 import { forkAuthContributions } from "../../extensions/auth";
 import { createRuntimePluginContext, getEnabledRuntimePlugins } from "./plugin-orchestrator";
 import { readSettingsSection } from "./settings-store";
+import { dispatchWebhookEvent } from "./webhook-service";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -27,6 +28,14 @@ function mergeAuthOptions(base: Record<string, unknown>, update: Record<string, 
   }
 
   return base;
+}
+
+function composeHandlers(h1: Function | undefined, h2: Function) {
+  if (!h1) return h2;
+  return async (...args: any[]) => {
+    await h1(...args);
+    await h2(...args);
+  };
 }
 
 async function runtimeContributions() {
@@ -128,6 +137,33 @@ async function createAuth(kind: "app" | "admin") {
       },
     },
     ...mergedAuthOptions,
+    events: {
+      ...(mergedAuthOptions.events as any),
+      sessionCreated: composeHandlers(
+        (mergedAuthOptions.events as any)?.sessionCreated,
+        async ({ session }: { session: any }) => {
+          void dispatchWebhookEvent("auth.session.created", { sessionId: session.id, userId: session.userId }).catch(() => {});
+        },
+      ),
+      sessionRevoked: composeHandlers(
+        (mergedAuthOptions.events as any)?.sessionRevoked,
+        async ({ session }: { session: any }) => {
+          void dispatchWebhookEvent("auth.session.deleted", { sessionId: session.id, userId: session.userId }).catch(() => {});
+        },
+      ),
+      userDeleted: composeHandlers(
+        (mergedAuthOptions.events as any)?.userDeleted,
+        async ({ user }: { user: any }) => {
+          void dispatchWebhookEvent("auth.user.deleted", { userId: user.id }).catch(() => {});
+        },
+      ),
+      signIn: composeHandlers(
+        (mergedAuthOptions.events as any)?.signIn,
+        async ({ user }: { user: any }) => {
+          void dispatchWebhookEvent("auth.user.signed_in", { userId: user.id }).catch(() => {});
+        },
+      ),
+    },
     plugins: [...contributions.plugins, ...fork.plugins],
   });
 }

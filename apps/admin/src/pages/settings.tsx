@@ -12,8 +12,34 @@ import type {
   SettingsSectionState,
   StorageSettings,
   StorageSettingsResponse,
+  Webhook,
+  WebhookDelivery,
+  WebhookEventType,
+  WebhookInput,
+  WebhooksSettingsResponse,
 } from "@authend/shared";
-import { ChevronDown, ChevronRight, Code2, Copy, Eye, EyeOff, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  Activity,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  Code2,
+  Copy,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  History,
+  Pencil,
+  Play,
+  Plus,
+  RefreshCw,
+  ShieldAlert,
+  ToggleLeft,
+  ToggleRight,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { client } from "../lib/client";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -22,6 +48,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import { SidePanel } from "../components/ui/side-panel";
 import { getErrorMessage, useFeedback } from "../components/ui/feedback";
+import { TooltipComponent as Tooltip } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 
 type SettingsNavItem = {
@@ -51,6 +78,7 @@ export const settingsNavItems: SettingsNavItem[] = [
   { id: "storage", to: "/storage", label: "File Storage", section: "storage" },
   { id: "backups", to: "/backups", label: "Backups", section: "backups" },
   { id: "crons", to: "/crons", label: "Crons", section: "crons" },
+  { id: "webhooks", to: "/webhooks", label: "Webhooks", section: "webhooks" },
   { id: "ai-assistant", to: "/ai-assistant", label: "AI Assistant", section: "aiAssistant" },
   { id: "admin-access", to: "/admin-access", label: "Admin Access", section: "adminAccess" },
   { id: "environments-secrets", to: "/environments-secrets", label: "Environments & Secrets", section: "environmentsSecrets" },
@@ -567,6 +595,19 @@ const storageSharedFields: SettingsField[] = [
       { value: "public", label: "Public" },
     ],
   },
+  {
+    key: "allowAnonymousPublicRead",
+    label: "Allow anonymous public reads",
+    kind: "boolean",
+    helpText:
+      "When enabled, GET /api/storage/public/<object-key> serves objects whose metadata is public without authentication.",
+  },
+  {
+    key: "validateImageMagicBytes",
+    label: "Validate image magic bytes",
+    kind: "boolean",
+    helpText: "Reject uploads when declared image/* types do not match PNG, JPEG, GIF, or WebP signatures.",
+  },
 ];
 
 export function StorageSettingsPage() {
@@ -610,7 +651,7 @@ export function StorageSettingsPage() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="File Storage"
-        description="Choose a local Bun-backed filesystem or an S3-compatible object store. Upload/browser UI can build on this later."
+        description="Choose a local Bun-backed filesystem or an S3-compatible object store. The Storage Files page lists objects; public reads can be exposed without a session when allowed below."
         actions={
           <Button onClick={() => draft && saveMutation.mutate(draft)} disabled={!draft || saveMutation.isPending}>
             Save changes
@@ -677,6 +718,320 @@ export function StorageSettingsPage() {
     </div>
   );
 }
+
+const webhookFields: SettingsField[] = [
+  { key: "maxAttempts", label: "Max attempts", kind: "number", helpText: "Number of retries before marking an event as dead." },
+  { key: "timeoutSeconds", label: "Timeout (seconds)", kind: "number", helpText: "Maximum time to wait for a webhook response." },
+  { key: "retainDeliveryDays", label: "Retention (days)", kind: "number", helpText: "How long to keep delivery logs." },
+];
+
+export function WebhooksSettingsPage() {
+  const queryClient = useQueryClient();
+  const { showNotice, confirm } = useFeedback();
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [webhookDraft, setWebhookDraft] = useState<Partial<WebhookInput>>({});
+  const [revealedSecrets, setRevealedSecrets] = useState<Record<string, boolean>>({});
+
+  const { data } = useQuery({
+    queryKey: ["settings", "webhooks"],
+    queryFn: () => client.system.settings.get("webhooks") as Promise<WebhooksSettingsResponse>,
+  });
+
+  const saveSettingsMutation = useMutation({
+    mutationFn: (payload: any) => client.system.settings.save("webhooks", payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["settings", "webhooks"] });
+      showNotice({ title: "Settings saved", variant: "success" });
+    },
+  });
+
+  const upsertWebhookMutation = useMutation({
+    mutationFn: (payload: WebhookInput) =>
+      editingId ? client.system.webhooks.update(editingId, payload) : client.system.webhooks.create(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["settings", "webhooks"] });
+      setEditorOpen(false);
+      showNotice({ title: editingId ? "Webhook updated" : "Webhook created", variant: "success" });
+    },
+  });
+
+  const deleteWebhookMutation = useMutation({
+    mutationFn: (id: string) => client.system.webhooks.delete(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["settings", "webhooks"] });
+      showNotice({ title: "Webhook deleted", variant: "success" });
+    },
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: ({ id, deliveryId }: { id: string; deliveryId: string }) => client.system.webhooks.retry(id, deliveryId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["settings", "webhooks"] });
+      showNotice({ title: "Retry scheduled", variant: "success" });
+    },
+  });
+
+  const toggleWebhook = (webhook: Webhook) => {
+    upsertWebhookMutation.mutate({
+      url: webhook.url,
+      enabled: !webhook.enabled,
+      events: webhook.events,
+      description: webhook.description ?? undefined,
+    } as any);
+  };
+
+  const openCreate = () => {
+    setEditingId(null);
+    setWebhookDraft({ enabled: true, events: [] });
+    setEditorOpen(true);
+  };
+
+  const openEdit = (webhook: Webhook) => {
+    setEditingId(webhook.id);
+    setWebhookDraft({
+      url: webhook.url,
+      enabled: webhook.enabled,
+      description: webhook.description ?? "",
+      events: webhook.events as WebhookEventType[],
+    });
+    setEditorOpen(true);
+  };
+
+  const confirmDelete = async (id: string) => {
+    if (await confirm({ title: "Delete Webhook?", description: "This will permanently remove this endpoint and all its delivery history.", variant: "destructive" })) {
+      deleteWebhookMutation.mutate(id);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Webhooks"
+        description="Receive real-time notifications when events happen in your system. We deliver signed POST requests to your endpoints with exponential backoff."
+        actions={
+          <Button onClick={openCreate}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add webhook
+          </Button>
+        }
+      />
+
+      {data ? (
+        <>
+          <SettingsFieldsPanel
+            fields={webhookFields}
+            draft={data.config as any}
+            setDraft={(next) => saveSettingsMutation.mutate(next)}
+          />
+
+          <CollapsiblePanel title="Webhooks" description="Endpoints registered to receive events.">
+            <div className="divide-y divide-border/50">
+              {data.webhooks.length === 0 ? (
+                <div className="py-8 text-center text-sm text-muted-foreground">No webhooks configured yet.</div>
+              ) : (
+                data.webhooks.map((wh) => (
+                  <div key={wh.id} className="group flex items-center justify-between py-4 first:pt-0 last:pb-0">
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-foreground truncate">{wh.url}</span>
+                        {wh.enabled ? (
+                          <Badge variant="outline" className="h-5 bg-green-500/10 text-green-500 border-green-500/20">Active</Badge>
+                        ) : (
+                          <Badge variant="secondary" className="h-5">Disabled</Badge>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        {wh.description && <span>{wh.description}</span>}
+                        <span className="flex items-center gap-1"><Activity className="h-3 w-3" /> {wh.events.length} events</span>
+                        {wh.secret ? (
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center gap-1" title="HMAC-SHA256 signature enabled">
+                              <ShieldAlert className="h-3 w-3" /> Signed
+                            </span>
+                            <div className="flex items-center bg-muted/40 rounded px-1.5 py-0.5 border border-border/40 gap-1.5">
+                              <code className="text-[10px] font-mono select-all">
+                                {revealedSecrets[wh.id] ? wh.secret : "••••••••••••••••"}
+                              </code>
+                              <Tooltip content={revealedSecrets[wh.id] ? "Hide secret" : "Show secret"}>
+                                <button
+                                  onClick={() => setRevealedSecrets(prev => ({ ...prev, [wh.id]: !prev[wh.id] }))}
+                                  className="hover:text-foreground transition-colors p-0.5"
+                                >
+                                  {revealedSecrets[wh.id] ? <EyeOff className="h-2.5 w-2.5" /> : <Eye className="h-2.5 w-2.5" />}
+                                </button>
+                              </Tooltip>
+                              <Tooltip content="Copy secret">
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(wh.secret);
+                                    showNotice({ title: "Secret copied", variant: "success", durationMs: 2000 });
+                                  }}
+                                  className="hover:text-foreground transition-colors p-0.5 border-l border-border/40 pl-1.5"
+                                >
+                                  <Copy className="h-2.5 w-2.5" />
+                                </button>
+                              </Tooltip>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="ml-4 flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Tooltip content={wh.enabled ? "Disable webhook" : "Enable webhook"}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleWebhook(wh)}>
+                          {wh.enabled ? <ToggleRight className="h-4 w-4 text-primary" /> : <ToggleLeft className="h-4 w-4" />}
+                        </Button>
+                      </Tooltip>
+                      <Tooltip content="Edit webhook">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(wh)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </Tooltip>
+                      <Tooltip content="Delete webhook">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => confirmDelete(wh.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </Tooltip>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CollapsiblePanel>
+
+          <CollapsiblePanel title="Recent Deliveries" description="Verification log of recent outbound requests." defaultCollapsed>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-border text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    <th className="pb-2 pr-4">Event</th>
+                    <th className="pb-2 pr-4">Status</th>
+                    <th className="pb-2 pr-4">Response</th>
+                    <th className="pb-2 pr-4">Attempt</th>
+                    <th className="pb-2">Time</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {data.recentDeliveries.length === 0 ? (
+                    <tr><td colSpan={5} className="py-4 text-center text-muted-foreground">No recent deliveries.</td></tr>
+                  ) : (
+                    data.recentDeliveries.map((delivery) => (
+                      <tr key={delivery.id} className="group">
+                        <td className="py-3 pr-4">
+                          <div className="flex flex-col">
+                            <span className="font-medium text-foreground">{delivery.eventType}</span>
+                            <span className="text-[10px] tabular-nums text-muted-foreground uppercase">{delivery.id.slice(0, 8)}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 pr-4">
+                          {delivery.status === "succeeded" ? (
+                            <Badge variant="outline" className="gap-1 bg-green-500/10 text-green-500 border-green-500/20"><CheckCircle2 className="h-3 w-3" /> {delivery.httpStatus}</Badge>
+                          ) : delivery.status === "failed" ? (
+                            <Badge variant="outline" className="gap-1 bg-yellow-500/10 text-yellow-500 border-yellow-500/20"><Clock className="h-3 w-3" /> Retrying</Badge>
+                          ) : (
+                            <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> Dead</Badge>
+                          )}
+                        </td>
+                        <td className="py-3 pr-4">
+                          <div className="max-w-[200px] truncate text-xs text-muted-foreground" title={delivery.response ?? undefined}>
+                            {delivery.response || (delivery.httpStatus ? `Code ${delivery.httpStatus}` : (delivery.lastError || "—"))}
+                          </div>
+                        </td>
+                        <td className="py-3 pr-4 text-muted-foreground">
+                          {delivery.attemptCount} / {data.config.maxAttempts}
+                        </td>
+                        <td className="py-3 text-muted-foreground tabular-nums">
+                          {new Date(delivery.createdAt).toLocaleTimeString()}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CollapsiblePanel>
+
+          <SettingsDiagnostics diagnostics={data.diagnostics as any} />
+        </>
+      ) : null}
+
+      <SidePanel
+        isOpen={editorOpen}
+        onClose={() => setEditorOpen(false)}
+        title={editingId ? "Edit Webhook" : "Add Webhook"}
+        footer={
+          <div className="flex gap-2 p-4">
+            <Button variant="outline" className="flex-1" onClick={() => setEditorOpen(false)}>Cancel</Button>
+            <Button className="flex-1" onClick={() => upsertWebhookMutation.mutate(webhookDraft as WebhookInput)} disabled={!webhookDraft.url || upsertWebhookMutation.isPending}>
+              {editingId ? "Update" : "Create"}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <Label>Endpoint URL</Label>
+            <Input
+              placeholder="https://api.example.com/webhooks"
+              value={webhookDraft.url || ""}
+              onChange={(e) => setWebhookDraft({ ...webhookDraft, url: e.target.value })}
+            />
+            <p className="text-xs text-muted-foreground">Must be an HTTPS address for production use.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Description</Label>
+            <Input
+              placeholder="e.g. My notification service"
+              value={webhookDraft.description || ""}
+              onChange={(e) => setWebhookDraft({ ...webhookDraft, description: e.target.value })}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Events to subscribe to</Label>
+            <div className="grid grid-cols-1 gap-2 p-3 rounded-lg border border-border bg-muted/30 max-h-[300px] overflow-y-auto">
+              {[
+                "data.record.created", "data.record.updated", "data.record.deleted",
+                "auth.user.created", "auth.user.deleted", "auth.user.signed_in", "auth.user.signed_out", "auth.session.created", "auth.session.deleted",
+                "schema.applied", "plugin.enabled", "plugin.disabled"
+              ].map((eventType) => (
+                <label key={eventType} className="flex items-center gap-2 text-sm cursor-pointer hover:text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={webhookDraft.events?.includes(eventType as any)}
+                    onChange={(e) => {
+                      const current = webhookDraft.events || [];
+                      const next = e.target.checked
+                        ? [...current, eventType]
+                        : current.filter((t: any) => t !== eventType);
+                      setWebhookDraft({ ...webhookDraft, events: next as any });
+                    }}
+                    className="size-4 rounded border-border"
+                  />
+                  <code>{eventType}</code>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="wh-enabled"
+              checked={!!webhookDraft.enabled}
+              onChange={(e) => setWebhookDraft({ ...webhookDraft, enabled: e.target.checked })}
+              className="size-4 rounded border-border"
+            />
+            <Label htmlFor="wh-enabled" className="cursor-pointer">Enable this webhook</Label>
+          </div>
+        </div>
+      </SidePanel>
+    </div>
+  );
+}
+
 
 export function EnvironmentsSecretsSettingsPage() {
   const queryClient = useQueryClient();

@@ -10,6 +10,7 @@ import type {
   SettingsSectionId,
   SettingsSectionState,
   StorageSettingsResponse,
+  WebhooksSettingsResponse,
 } from "@authend/shared";
 import { settingsSectionIdSchema } from "@authend/shared";
 import { env } from "../config/env";
@@ -19,6 +20,7 @@ import { listPluginCapabilityManifests, readPluginCapabilityManifest } from "./p
 import { invalidateAuth } from "./auth-service";
 import { readSettingsSection, writeSettingsSection } from "./settings-store";
 import { writeAuditLog } from "./audit-service";
+import { listRecentDeliveries, listWebhooks } from "./webhook-service";
 
 const CORE_ENV_KEYS = ["APP_URL", "DATABASE_URL", "BETTER_AUTH_SECRET", "SUPERADMIN_EMAIL", "SUPERADMIN_PASSWORD"];
 const ENV_FILE_PATH = resolve(process.cwd(), ".env");
@@ -119,6 +121,28 @@ async function cronDiagnostics() {
     diagnostics,
   } satisfies CronSettingsResponse;
 }
+
+async function webhooksDiagnostics() {
+  const { config, updatedAt } = await readSettingsSection("webhooks");
+  const webhooksList = await listWebhooks();
+  const recentDeliveries = await listRecentDeliveries(25);
+
+  return {
+    section: "webhooks" as const,
+    config,
+    updatedAt,
+    webhooks: webhooksList,
+    recentDeliveries,
+    diagnostics: {
+      totalWebhooks: webhooksList.length,
+      enabledWebhooks: webhooksList.filter((wh) => wh.enabled).length,
+      recentDeliveries: recentDeliveries.length,
+      recentSucceeded: recentDeliveries.filter((d) => d.status === "succeeded").length,
+      recentFailed: recentDeliveries.filter((d) => d.status === "failed" || d.status === "dead").length,
+    },
+  } satisfies WebhooksSettingsResponse;
+}
+
 
 async function computeRequiredEnvironmentKeys() {
   const state = await readSettingsSection("environmentsSecrets");
@@ -283,6 +307,9 @@ export async function getSettingsSectionState(sectionInput: string) {
   }
   if (section === "crons") {
     return cronDiagnostics();
+  }
+  if (section === "webhooks") {
+    return webhooksDiagnostics();
   }
 
   const state = await readSettingsSection(section);

@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "./button";
+import { TooltipComponent as Tooltip } from "./tooltip";
 
 export interface SidePanelProps {
   isOpen: boolean;
@@ -40,9 +41,11 @@ export function SidePanel({ isOpen, onClose, title, children, footer }: SidePane
         
         <header className="flex items-center justify-between px-6 py-4 border-b border-border/50 shrink-0 bg-background/50 backdrop-blur z-10 sticky top-0">
           <h2 className="text-xl font-bold tracking-tight text-foreground">{title}</h2>
-          <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 text-muted-foreground hover:bg-muted/60 transition-colors">
-            <X className="w-4 h-4" />
-          </Button>
+          <Tooltip content="Close panel">
+            <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 text-muted-foreground hover:bg-muted/60 transition-colors">
+              <X className="w-4 h-4" />
+            </Button>
+          </Tooltip>
         </header>
         
         <div className="flex-1 overflow-auto relative">

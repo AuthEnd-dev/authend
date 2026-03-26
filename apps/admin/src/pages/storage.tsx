@@ -4,9 +4,11 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { getErrorMessage, useFeedback } from '../components/ui/feedback';
+import { TooltipComponent as Tooltip } from '../components/ui/tooltip';
 import { client } from '../lib/client';
 import { cn } from '../lib/utils';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { Badge } from '../components/ui/badge';
 import {
   ChevronRight,
   Copy,
@@ -88,7 +90,15 @@ function StorageItemActions({
 }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="h-8 w-8 p-0"><MoreVertical className="h-4 w-4" /></Button>} />
+      <Tooltip content="More actions">
+        <DropdownMenuTrigger
+          render={
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          }
+        />
+      </Tooltip>
       <DropdownMenuContent side="bottom" align="end">
         <DropdownMenuItem onClick={onOpen}>
           <ExternalLink className="mr-2 h-3.5 w-3.5 opacity-60" />
@@ -105,10 +115,7 @@ function StorageItemActions({
               Copy key
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-              onClick={onDelete}
-            >
+            <DropdownMenuItem className="text-destructive focus:bg-destructive/10 focus:text-destructive" onClick={onDelete}>
               <Trash2 className="mr-2 h-3.5 w-3.5" />
               Delete
             </DropdownMenuItem>
@@ -124,16 +131,23 @@ export function StorageFilesPage() {
   const { showNotice } = useFeedback();
   const [currentPath, setCurrentPath] = useState('');
   const [searchValue, setSearchValue] = useState('');
+  const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'public' | 'private'>('all');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [directoryDialogOpen, setDirectoryDialogOpen] = useState(false);
   const [newDirectoryName, setNewDirectoryName] = useState('');
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
+  const searchTrim = searchValue.trim();
+  const hasSearch = searchTrim.length > 0;
+
   const filesQuery = useQuery({
-    queryKey: ['storage-files'],
+    queryKey: ['storage-files', searchTrim, currentPath, visibilityFilter],
     queryFn: () =>
       client.system.storage.listFiles({
-        limit: 200,
+        limit: 500,
+        search: hasSearch ? searchTrim : undefined,
+        prefix: hasSearch ? undefined : normalisePath(currentPath) || undefined,
+        visibility: visibilityFilter === 'all' ? undefined : visibilityFilter,
       }),
   });
 
@@ -157,7 +171,7 @@ export function StorageFilesPage() {
     const search = searchValue.trim().toLowerCase();
     return records.filter((record) => {
       const key = String(record.key ?? '');
-      if (!startsWithPath(key, currentPath)) {
+      if (!hasSearch && !startsWithPath(key, currentPath)) {
         return false;
       }
       if (!search) {
@@ -165,7 +179,7 @@ export function StorageFilesPage() {
       }
       return key.toLowerCase().includes(search);
     });
-  }, [records, currentPath, searchValue]);
+  }, [records, currentPath, searchValue, hasSearch]);
 
   const combinedItems = useMemo(() => {
     const folderSet = new Set<string>();
@@ -308,7 +322,9 @@ export function StorageFilesPage() {
           <div className="space-y-1">
             <h2 className="text-xl font-semibold tracking-tight text-foreground">Storage</h2>
             <p className="max-w-3xl text-sm text-muted-foreground">
-              Object-browser style storage manager with folder navigation and metadata records.
+              Browse by folder, search across keys, filter by visibility, and delete objects. Public files can be served
+              anonymously at <span className="font-mono text-xs">/api/storage/public/&lt;key&gt;</span> when enabled in storage
+              settings.
             </p>
           </div>
         </section>
@@ -344,52 +360,61 @@ export function StorageFilesPage() {
             {breadcrumbItems.map((item) => (
               <div key={item.path} className="flex items-center gap-2">
                 <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-                <button
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() => setCurrentPath(item.path)}
-                >
+                <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setCurrentPath(item.path)}>
                   {item.label}
                 </button>
               </div>
             ))}
           </div>
 
-          <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
-            <div className="relative md:max-w-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center justify-between">
+            <div className="relative min-w-0 flex-1 lg:max-w-sm">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 className="pl-8"
                 value={searchValue}
                 onChange={(event) => setSearchValue(event.target.value)}
-                placeholder="Search keys in current folder"
+                placeholder={hasSearch ? 'Search all keys (ignores current folder)' : 'Search keys in current folder'}
               />
             </div>
-            <div className="flex items-center justify-end gap-2">
-              <input
-                type="file"
-                id="storage-upload-input"
-                className="hidden"
-                ref={uploadInputRef}
-                onChange={(event) => {
-                  const selected = event.target.files?.[0] ?? null;
-                  setUploadFile(selected);
-                  if (selected) {
-                    setTimeout(() => uploadMutation.mutate(), 0);
-                  }
-                }}
-              />
-              <Button onClick={() => uploadInputRef.current?.click()}>
-                <Upload className="mr-2 h-4 w-4" />
-                Upload
-              </Button>
-              <Button variant="outline" onClick={() => setDirectoryDialogOpen(true)}>
-                <FolderPlus className="mr-2 h-4 w-4" />
-                Add directory
-              </Button>
-              <Button variant="outline" onClick={() => filesQuery.refetch()} disabled={filesQuery.isFetching}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Refresh
-              </Button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <select
+                className="flex h-9 w-full min-w-[140px] rounded-md border border-input bg-background px-2 text-sm text-foreground shadow-xs lg:w-auto"
+                value={visibilityFilter}
+                onChange={(event) => setVisibilityFilter(event.target.value as 'all' | 'public' | 'private')}
+                aria-label="Filter by visibility"
+              >
+                <option value="all">All visibility</option>
+                <option value="public">Public only</option>
+                <option value="private">Private only</option>
+              </select>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <input
+                  type="file"
+                  id="storage-upload-input"
+                  className="hidden"
+                  ref={uploadInputRef}
+                  onChange={(event) => {
+                    const selected = event.target.files?.[0] ?? null;
+                    setUploadFile(selected);
+                    if (selected) {
+                      setTimeout(() => uploadMutation.mutate(), 0);
+                    }
+                  }}
+                />
+                <Button onClick={() => uploadInputRef.current?.click()}>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload
+                </Button>
+                <Button variant="outline" onClick={() => setDirectoryDialogOpen(true)}>
+                  <FolderPlus className="mr-2 h-4 w-4" />
+                  Add directory
+                </Button>
+                <Button variant="outline" onClick={() => filesQuery.refetch()} disabled={filesQuery.isFetching}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Refresh
+                </Button>
+              </div>
             </div>
           </div>
         </section>
@@ -398,7 +423,8 @@ export function StorageFilesPage() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent border-border">
-                <TableHead className="w-[45%] pl-4">Name</TableHead>
+                <TableHead className="w-[36%] pl-4">Name</TableHead>
+                <TableHead className="w-[90px]">Visibility</TableHead>
                 <TableHead>Driver</TableHead>
                 <TableHead>Size</TableHead>
                 <TableHead>Attachment</TableHead>
@@ -409,7 +435,7 @@ export function StorageFilesPage() {
             <TableBody>
               {combinedItems.map((item, index) => {
                 const isFolder = item.isFolder;
-                const name = item.name;
+                const name = hasSearch && !isFolder ? String((item as StorageFileRecord).key ?? item.name) : item.name;
                 const key = String(item.key ?? '');
                 const file = !isFolder ? (item as StorageFileRecord) : null;
                 const attachmentTable = file?.attachmentTable ? String(file.attachmentTable) : '—';
@@ -436,6 +462,21 @@ export function StorageFilesPage() {
                         </button>
                       </div>
                     </TableCell>
+                    <TableCell>
+                      {isFolder ? (
+                        '—'
+                      ) : file?.visibility === 'public' ? (
+                        <Badge variant="secondary" className="font-normal">
+                          Public
+                        </Badge>
+                      ) : file?.visibility === 'private' ? (
+                        <Badge variant="outline" className="font-normal">
+                          Private
+                        </Badge>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
                     <TableCell>{isFolder ? '—' : String(file?.driver ?? '—')}</TableCell>
                     <TableCell>
                       {isFolder ? '' : typeof file?.sizeBytes === 'number' ? formatBytes(file.sizeBytes) : '—'}
@@ -458,7 +499,7 @@ export function StorageFilesPage() {
               })}
               {combinedItems.length === 0 ? (
                 <TableRow>
-                  <TableCell className="px-3 py-5 text-muted-foreground" colSpan={6}>
+                  <TableCell className="px-3 py-5 text-muted-foreground" colSpan={7}>
                     No files or folder found.
                   </TableCell>
                 </TableRow>
@@ -472,12 +513,14 @@ export function StorageFilesPage() {
             <div className="w-full max-w-md rounded-xl bg-background p-5 shadow-xl">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-semibold text-foreground">Add directory</h4>
-                <button
-                  className="rounded p-1 text-muted-foreground hover:bg-muted/30"
-                  onClick={() => setDirectoryDialogOpen(false)}
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                <Tooltip content="Close">
+                  <button
+                    className="rounded p-1 text-muted-foreground hover:bg-muted/30"
+                    onClick={() => setDirectoryDialogOpen(false)}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </Tooltip>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
                 Create folder under: <span className="font-mono">{currentPath || 'root'}</span>

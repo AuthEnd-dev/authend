@@ -11,6 +11,6 @@ coverage
 *.log
 var/storage/*
 
-src/tests/generated/
+src/core/tests/generated/
 
 

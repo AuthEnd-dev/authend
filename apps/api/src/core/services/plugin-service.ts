@@ -4,6 +4,7 @@ import { writeGeneratedMigration, applySqlMigration, rollbackSqlMigration } from
 import { invalidateAuth } from "./auth-service";
 import { writeAuditLog } from "./audit-service";
 import { getPluginDefinition } from "../plugins/registry";
+import { dispatchWebhookEvent } from "./webhook-service";
 import {
   getPluginManifest,
   listPluginCatalogItems,
@@ -203,6 +204,9 @@ export async function enablePlugin(pluginId: PluginId, actorUserId?: string | nu
   });
 
   await invalidateAuth();
+
+  void dispatchWebhookEvent("plugin.enabled", { pluginId }).catch(() => {});
+
   return manifest;
 }
 
@@ -231,5 +235,8 @@ export async function disablePlugin(pluginId: PluginId, actorUserId?: string | n
   });
 
   await invalidateAuth();
+
+  void dispatchWebhookEvent("plugin.disabled", { pluginId }).catch(() => {});
+
   return manifest;
 }

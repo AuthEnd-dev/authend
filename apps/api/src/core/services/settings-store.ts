@@ -21,6 +21,7 @@ const defaultSettings = {
   environmentsSecrets: settingsSectionSchemas.environmentsSecrets.parse({}),
   observability: settingsSectionSchemas.observability.parse({}),
   dangerZone: settingsSectionSchemas.dangerZone.parse({}),
+  webhooks: settingsSectionSchemas.webhooks.parse({}),
 } satisfies SettingsSectionConfigMap;
 
 export function defaultSettingsForSection<TSection extends SettingsSectionId>(section: TSection) {

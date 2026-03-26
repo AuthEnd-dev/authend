@@ -18,9 +18,12 @@ export type ForkAuthContext = {
  * Return extra Better Auth plugins and shallow-merged option fragments.
  * Merged after runtime plugin contributions; use for custom providers, hooks, or overrides.
  */
-export async function forkAuthContributions(_ctx: ForkAuthContext): Promise<{
+export async function forkAuthContributions(ctx: ForkAuthContext): Promise<{
   plugins: BetterAuthPlugin[];
   authOptions: Record<string, unknown>;
 }> {
-  return { plugins: [], authOptions: {} };
+  return {
+    plugins: [],
+    authOptions: {},
+  };
 }

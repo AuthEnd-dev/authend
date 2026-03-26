@@ -3,6 +3,7 @@ import { PluginsPage } from '../pages/plugins';
 import { DataPage } from '../pages/data';
 import { MigrationsPage } from '../pages/migrations';
 import { AuditPage } from '../pages/audit';
+import { RealtimeDiagnosticsPage } from '../pages/realtime';
 import { StorageFilesPage } from '../pages/storage';
 import {
   AiAssistantSettingsPage,
@@ -19,6 +20,7 @@ import {
   ObservabilitySettingsPage,
   SessionsSecuritySettingsPage,
   StorageSettingsPage,
+  WebhooksSettingsPage,
 } from '../pages/settings';
 import { mergeExtensionRouteChildren } from '../extensions/routes';
 import { DatabaseLayout, FullBleedOutletLayout, Shell, StandardLayout } from './shell';
@@ -52,6 +54,12 @@ const pluginsGroup = createRoute({
 const logsGroup = createRoute({
   getParentRoute: () => rootRoute,
   id: 'logs',
+  component: FullBleedOutletLayout,
+});
+
+const realtimeGroup = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'realtime-group',
   component: FullBleedOutletLayout,
 });
 
@@ -127,6 +135,12 @@ const cronsSettingsRoute = createRoute({
   component: CronsSettingsPage,
 });
 
+const webhooksSettingsRoute = createRoute({
+  getParentRoute: () => settingsGroup,
+  path: '/webhooks',
+  component: WebhooksSettingsPage,
+});
+
 const aiAssistantSettingsRoute = createRoute({
   getParentRoute: () => settingsGroup,
   path: '/ai-assistant',
@@ -180,6 +194,12 @@ const auditRoute = createRoute({
   component: AuditPage,
 });
 
+const realtimeRoute = createRoute({
+  getParentRoute: () => realtimeGroup,
+  path: '/realtime',
+  component: RealtimeDiagnosticsPage,
+});
+
 const storageFilesRoute = createRoute({
   getParentRoute: () => storageGroup,
   path: '/storage-files',
@@ -199,6 +219,7 @@ const routeTree = rootRoute.addChildren([
     storageSettingsRoute,
     backupsSettingsRoute,
     cronsSettingsRoute,
+    webhooksSettingsRoute,
     aiAssistantSettingsRoute,
     adminAccessSettingsRoute,
     environmentsSecretsSettingsRoute,
@@ -208,6 +229,7 @@ const routeTree = rootRoute.addChildren([
   ]),
   pluginsGroup.addChildren([pluginsRoute]),
   logsGroup.addChildren([auditRoute]),
+  realtimeGroup.addChildren([realtimeRoute]),
   storageGroup.addChildren([storageFilesRoute]),
   ...mergeExtensionRouteChildren(),
 ]);
