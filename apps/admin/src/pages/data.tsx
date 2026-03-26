@@ -761,7 +761,7 @@ export function DataPage() {
   const updateDataSearch = (patch: { page?: number; pageSize?: number; table?: string }) => {
     void navigate({
       to: '/data',
-      search: (current) => ({
+      search: (current: Record<string, any>) => ({
         table: patch.table ?? current.table,
         page: patch.page ?? current.page,
         pageSize: patch.pageSize ?? current.pageSize,

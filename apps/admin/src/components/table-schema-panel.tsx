@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { SYSTEM_TABLES } from "../lib/tables";
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { SYSTEM_TABLES } from '../lib/tables';
 
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate } from '@tanstack/react-router';
 import {
   analyseTableApiPolicyWarnings,
   buildTableApiAccessPreset,
   detectTableApiAccessPreset,
   suggestOwnershipField,
   tableApiPolicyPresets,
-} from "@authend/shared";
+} from '@authend/shared';
 import type {
   ApiAccessActor,
   ApiFieldVisibilityRule,
@@ -21,50 +21,67 @@ import type {
   TableApiConfig,
   TableApiPolicyPreset,
   TableBlueprint,
+  TableHook,
   TableDescriptor,
-} from "@authend/shared";
-import { client } from "../lib/client";
-import { SidePanel } from "./ui/side-panel";
-import { Button } from "./ui/button";
-import { TooltipComponent as Tooltip } from "./ui/tooltip";
-import { Input } from "./ui/input";
-import { getErrorMessage, useFeedback } from "./ui/feedback";
-import { ChevronDown, ChevronRight, Code2, Link2, Lock, Plus, Route, Settings2, SlidersHorizontal, Trash2 } from "lucide-react";
+} from '@authend/shared';
+import { client } from '../lib/client';
+import { SidePanel } from './ui/side-panel';
+import { Button } from './ui/button';
+import { TooltipComponent as Tooltip } from './ui/tooltip';
+import { Input } from './ui/input';
+import { getErrorMessage, useFeedback } from './ui/feedback';
+import {
+  ChevronDown,
+  ChevronRight,
+  Code2,
+  Globe,
+  Link2,
+  Lock,
+  Mail,
+  Plus,
+  Route,
+  Settings2,
+  Slack,
+  SlidersHorizontal,
+  Trash2,
+  Zap,
+} from 'lucide-react';
 
 type EditableField = FieldBlueprint;
 type EditableRelation = RelationBlueprint & {
-  sourceFieldMode: "existing" | "auto",
-  generatedSourceField: string,
+  sourceFieldMode: 'existing' | 'auto';
+  generatedSourceField: string;
 };
 
 const tableEditorTabs = [
-  { key: "fields", label: "Fields" },
-  { key: "api", label: "API Rules" },
+  { key: 'fields', label: 'Fields' },
+  { key: 'api', label: 'API Rules' },
+  { key: 'hooks', label: 'Hooks' },
 ] as const;
 
-const accessActors: ApiAccessActor[] = ["public", "session", "apiKey", "superadmin"];
-const appFacingFieldActors: ApiAccessActor[] = ["public", "session", "apiKey"];
-const operationKeys: ApiPreviewOperation["key"][] = ["list", "get", "create", "update", "delete"];
-const queryCapabilityKeys = ["hiddenFields", "pagination", "filtering", "sorting", "includes"] as const;
+const accessActors: ApiAccessActor[] = ['public', 'session', 'apiKey', 'superadmin'];
+const appFacingFieldActors: ApiAccessActor[] = ['public', 'session', 'apiKey'];
+const operationKeys: ApiPreviewOperation['key'][] = ['list', 'get', 'create', 'update', 'delete'];
+const queryCapabilityKeys = ['hiddenFields', 'pagination', 'filtering', 'sorting', 'includes'] as const;
 
 type QueryCapabilityKey = (typeof queryCapabilityKeys)[number];
 
 async function invalidateSchemaQueries(queryClient: QueryClient) {
   await Promise.all([
-    queryClient.invalidateQueries({ queryKey: ["schema"] }),
-    queryClient.invalidateQueries({ queryKey: ["tables"] }),
-    queryClient.invalidateQueries({ queryKey: ["table-meta"] }),
-    queryClient.invalidateQueries({ queryKey: ["records"] }),
-    queryClient.invalidateQueries({ queryKey: ["table-catalog"] }),
+    queryClient.invalidateQueries({ queryKey: ['schema'] }),
+    queryClient.invalidateQueries({ queryKey: ['tables'] }),
+    queryClient.invalidateQueries({ queryKey: ['table-meta'] }),
+    queryClient.invalidateQueries({ queryKey: ['records'] }),
+    queryClient.invalidateQueries({ queryKey: ['table-catalog'] }),
   ]);
 }
 
 function emptyField(): EditableField {
   return {
-    name: "",
-    type: "text",
+    name: '',
+    type: 'text',
     nullable: true,
-    default: "",
+    default: '',
     unique: false,
     indexed: false,
     size: 255,
@@ -74,8 +91,8 @@ function emptyField(): EditableField {
 
 function defaultTableApiConfig(): TableApiConfig {
   return {
-    authMode: "superadmin",
-    access: buildTableApiAccessPreset("adminOnly"),
+    authMode: 'superadmin',
+    access: buildTableApiAccessPreset('adminOnly'),
     operations: {
       list: true,
       get: true,
@@ -95,8 +112,8 @@ function defaultTableApiConfig(): TableApiConfig {
     sorting: {
       enabled: true,
       fields: [],
-      defaultField: "id",
-      defaultOrder: "desc",
+      defaultField: 'id',
+      defaultOrder: 'desc',
     },
     includes: {
       enabled: true,
@@ -113,53 +130,53 @@ function defaultTableApiConfig(): TableApiConfig {
 
 function actorLabel(actor: ApiAccessActor) {
   switch (actor) {
-    case "public":
-      return "Public";
-    case "session":
-      return "Session";
-    case "apiKey":
-      return "API Key";
+    case 'public':
+      return 'Public';
+    case 'session':
+      return 'Session';
+    case 'apiKey':
+      return 'API Key';
     default:
-      return "Superadmin";
+      return 'Superadmin';
   }
 }
 
 function actorDescription(actor: ApiAccessActor) {
   switch (actor) {
-    case "public":
-      return "No auth required";
-    case "session":
-      return "Signed-in users";
-    case "apiKey":
-      return "Keys with route permission";
+    case 'public':
+      return 'No auth required';
+    case 'session':
+      return 'Signed-in users';
+    case 'apiKey':
+      return 'Keys with route permission';
     default:
-      return "Full admin access";
+      return 'Full admin access';
   }
 }
 
-function operationLabel(operation: ApiPreviewOperation["key"]) {
+function operationLabel(operation: ApiPreviewOperation['key']) {
   switch (operation) {
-    case "list":
-      return "List";
-    case "get":
-      return "Get";
-    case "create":
-      return "Create";
-    case "update":
-      return "Update";
+    case 'list':
+      return 'List';
+    case 'get':
+      return 'Get';
+    case 'create':
+      return 'Create';
+    case 'update':
+      return 'Update';
     default:
-      return "Delete";
+      return 'Delete';
   }
 }
 
 function joinLabels(values: string[]) {
   if (values.length <= 1) {
-    return values[0] ?? "";
+    return values[0] ?? '';
   }
   if (values.length === 2) {
     return `${values[0]} and ${values[1]}`;
   }
-  return `${values.slice(0, -1).join(", ")}, and ${values[values.length - 1]}`;
+  return `${values.slice(0, -1).join(', ')}, and ${values[values.length - 1]}`;
 }
 
 function describeAccess(access: TableApiAccess) {
@@ -168,7 +185,10 @@ function describeAccess(access: TableApiAccess) {
   for (const operation of operationKeys) {
     const rule = access[operation];
     for (const actor of rule.actors) {
-      const label = rule.scope === "own" && actor !== "superadmin" ? `${operationLabel(operation).toLowerCase()} own` : operationLabel(operation).toLowerCase();
+      const label =
+        rule.scope === 'own' && actor !== 'superadmin'
+          ? `${operationLabel(operation).toLowerCase()} own`
+          : operationLabel(operation).toLowerCase();
       const current = byActor.get(actor) ?? [];
       current.push(label);
       byActor.set(actor, current);
@@ -179,12 +199,14 @@ function describeAccess(access: TableApiAccess) {
     .filter((actor) => byActor.has(actor))
     .map((actor) => `${actorLabel(actor)} can ${joinLabels(byActor.get(actor) ?? [])}`);
 
-  const ownOperations = operationKeys.filter((operation) => access[operation].scope === "own");
+  const ownOperations = operationKeys.filter((operation) => access[operation].scope === 'own');
   if (access.ownershipField && ownOperations.length > 0) {
-    parts.push(`Owner checks use ${access.ownershipField} for ${joinLabels(ownOperations.map((operation) => operationLabel(operation).toLowerCase()))}`);
+    parts.push(
+      `Owner checks use ${access.ownershipField} for ${joinLabels(ownOperations.map((operation) => operationLabel(operation).toLowerCase()))}`,
+    );
   }
 
-  return parts.join(". ");
+  return parts.join('. ');
 }
 
 function toggleListValue(values: string[], value: string) {
@@ -206,14 +228,16 @@ function FieldToggleList({
   emptyLabel,
   onToggle,
 }: {
-  fields: string[],
-  selected: string[],
-  disabled: boolean,
-  emptyLabel: string,
-  onToggle: (field: string) => void,
+  fields: string[];
+  selected: string[];
+  disabled: boolean;
+  emptyLabel: string;
+  onToggle: (field: string) => void;
 }) {
   if (fields.length === 0) {
-    return <div className="rounded-lg border border-dashed border-border/70 px-3 py-3 text-sm text-muted-foreground">{emptyLabel}</div>;
+    return (
+      <div className="rounded-lg border border-dashed border-border/70 px-3 py-3 text-sm text-muted-foreground">{emptyLabel}</div>
+    );
   }
 
   return (
@@ -223,8 +247,8 @@ function FieldToggleList({
         return (
           <label
             key={field}
-            className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm ${checked ? "border-foreground/30 bg-muted/30" : "border-border/70"} ${
-              disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+            className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm ${checked ? 'border-foreground/30 bg-muted/30' : 'border-border/70'} ${
+              disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             }`}
           >
             <span className="font-mono text-xs">{field}</span>
@@ -243,37 +267,36 @@ function FieldToggleList({
 }
 
 function normaliseIdentifier(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9_]/g, "");
+  return value.toLowerCase().replace(/[^a-z0-9_]/g, '');
 }
 
 function buildGeneratedSourceFieldName(targetTable: string, targetField: string, alias?: string | null) {
-  const base = normaliseIdentifier(alias || targetTable || "relation");
-  const suffix = normaliseIdentifier(targetField || "id");
-  return suffix === "id" ? `${base}_id` : `${base}_${suffix}`;
+  const base = normaliseIdentifier(alias || targetTable || 'relation');
+  const suffix = normaliseIdentifier(targetField || 'id');
+  return suffix === 'id' ? `${base}_id` : `${base}_${suffix}`;
 }
 
 function emptyRelation(sourceTable: string, targetTable: string): EditableRelation {
   return {
     sourceTable,
-    sourceField: "",
+    sourceField: '',
     targetTable,
-    targetField: "id",
-    alias: "",
-    sourceAlias: "",
-    targetAlias: "",
-    joinType: "left",
-    onDelete: "no action",
-    onUpdate: "no action",
-    description: "",
-    sourceFieldMode: "auto",
-    generatedSourceField: buildGeneratedSourceFieldName(targetTable, "id"),
+    targetField: 'id',
+    alias: '',
+    sourceAlias: '',
+    targetAlias: '',
+    joinType: 'left',
+    onDelete: 'no action',
+    onUpdate: 'no action',
+    description: '',
+    sourceFieldMode: 'auto',
+    generatedSourceField: buildGeneratedSourceFieldName(targetTable, 'id'),
   };
 }
 
 function relationLabel(relation: EditableRelation) {
-  const sourceField =
-    relation.sourceFieldMode === "auto" ? relation.generatedSourceField : relation.sourceField;
-  return relation.alias || `${sourceField || "source"} -> ${relation.targetTable || "target"}`;
+  const sourceField = relation.sourceFieldMode === 'auto' ? relation.generatedSourceField : relation.sourceField;
+  return relation.alias || `${sourceField || 'source'} -> ${relation.targetTable || 'target'}`;
 }
 
 function inferAutoField(
@@ -293,12 +316,12 @@ function inferAutoField(
   return {
     name: sourceFieldName,
     type: targetField.type,
-    nullable: relation.joinType !== "inner",
+    nullable: relation.joinType !== 'inner',
     unique: false,
     indexed: true,
     default: undefined,
-    size: targetField.type === "varchar" ? targetField.size : undefined,
-    enumValues: targetField.type === "enum" ? targetField.enumValues : undefined,
+    size: targetField.type === 'varchar' ? targetField.size : undefined,
+    enumValues: targetField.type === 'enum' ? targetField.enumValues : undefined,
   };
 }
 
@@ -308,10 +331,10 @@ export function TableSchemaPanel({
   onClose,
   onSuccess,
 }: {
-  tableName?: string | null,
-  isOpen: boolean,
-  onClose: () => void,
-  onSuccess?: () => void,
+  tableName?: string | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess?: () => void;
 }) {
   const isEditing = !!tableName;
   const navigate = useNavigate();
@@ -319,18 +342,16 @@ export function TableSchemaPanel({
   const { showNotice, confirm } = useFeedback();
 
   const { data: schemaData, isLoading: isSchemaLoading } = useQuery({
-    queryKey: ["schema"],
+    queryKey: ['schema'],
     queryFn: () => client.system.schema.get(),
     enabled: isOpen,
   });
 
   const { data: tableCatalog, isLoading: isCatalogLoading } = useQuery({
-    queryKey: ["table-catalog"],
+    queryKey: ['table-catalog'],
     queryFn: async () => {
       const response = await client.data.tables();
-      const entries = await Promise.all(
-        response.tables.map(async (table) => [table, await client.data.meta(table)] as const),
-      );
+      const entries = await Promise.all(response.tables.map(async (table) => [table, await client.data.meta(table)] as const));
       return Object.fromEntries(entries) as Record<string, TableDescriptor>;
     },
     enabled: isOpen,
@@ -342,8 +363,8 @@ export function TableSchemaPanel({
     return `schema-editor-row-${schemaEditorRowIdRef.current}`;
   };
 
-  const [name, setName] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [name, setName] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [fields, setFields] = useState<EditableField[]>([]);
   const [fieldRowIds, setFieldRowIds] = useState<string[]>([]);
   const [collapsedFields, setCollapsedFields] = useState<boolean[]>([]);
@@ -351,7 +372,8 @@ export function TableSchemaPanel({
   const [relationRowIds, setRelationRowIds] = useState<string[]>([]);
   const [collapsedRelations, setCollapsedRelations] = useState<boolean[]>([]);
   const [apiConfig, setApiConfig] = useState<TableApiConfig>(defaultTableApiConfig());
-  const [activeTab, setActiveTab] = useState<(typeof tableEditorTabs)[number]["key"]>("fields");
+  const [hooks, setHooks] = useState<TableHook[]>([]);
+  const [activeTab, setActiveTab] = useState<(typeof tableEditorTabs)[number]['key']>('fields');
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [collapsedQuerySections, setCollapsedQuerySections] = useState<Record<QueryCapabilityKey, boolean>>({
@@ -361,15 +383,23 @@ export function TableSchemaPanel({
     sorting: true,
     includes: true,
   });
+  const [collapsedFieldVisibility, setCollapsedFieldVisibility] = useState<Record<string, boolean>>({});
+
+  const toggleFieldVisibilityCollapsed = (field: string) => {
+    setCollapsedFieldVisibility((current) => ({
+      ...current,
+      [field]: !current[field],
+    }));
+  };
 
   const editingDescriptor = useMemo(() => {
     if (!isEditing) {
       return null;
     }
-    const key = tableName ?? "";
+    const key = tableName ?? '';
     return tableCatalog?.[key] ?? null;
   }, [isEditing, tableCatalog, tableName]);
-  const canDeleteTable = !isEditing || editingDescriptor?.source === "generated";
+  const canDeleteTable = !isEditing || editingDescriptor?.source === 'generated';
 
   const availableTableNames = useMemo(() => {
     const names = Object.keys(tableCatalog ?? {});
@@ -379,10 +409,10 @@ export function TableSchemaPanel({
     return names;
   }, [isEditing, name, tableCatalog]);
 
-  const currentSourceTable = name || tableName || "";
+  const currentSourceTable = name || tableName || '';
   const sourceFieldOptions = useMemo(
     () => [
-      "id",
+      'id',
       ...fields
         .map((field) => field.name.trim())
         .filter(Boolean)
@@ -402,8 +432,8 @@ export function TableSchemaPanel({
 
     // Clear previous table state immediately when switching system tables,
     // so we don't show stale fields while the catalog/meta loads.
-    setName(tableName ?? "");
-    setDisplayName(tableName ?? "");
+    setName(tableName ?? '');
+    setDisplayName(tableName ?? '');
     setFields([]);
     setFieldRowIds([]);
     setCollapsedFields([]);
@@ -411,6 +441,8 @@ export function TableSchemaPanel({
     setRelationRowIds([]);
     setCollapsedRelations([]);
     setApiConfig(defaultTableApiConfig());
+    setHooks([]);
+    setCollapsedFieldVisibility({});
   }, [isEditing, isOpen, tableName]);
 
   useEffect(() => {
@@ -427,7 +459,7 @@ export function TableSchemaPanel({
           .filter((field) => field.name !== table.primaryKey)
           .map((field) => ({
             ...field,
-            default: field.default ?? "",
+            default: field.default ?? '',
             unique: !!field.unique,
             indexed: !!field.indexed,
             nullable: !!field.nullable,
@@ -441,12 +473,12 @@ export function TableSchemaPanel({
           .filter((relation) => relation.sourceTable === table.name)
           .map((relation) => ({
             ...relation,
-            alias: relation.alias ?? "",
-            sourceAlias: relation.sourceAlias ?? "",
-            targetAlias: relation.targetAlias ?? "",
-            joinType: relation.joinType ?? "left",
-            description: relation.description ?? "",
-            sourceFieldMode: "existing" as const,
+            alias: relation.alias ?? '',
+            sourceAlias: relation.sourceAlias ?? '',
+            targetAlias: relation.targetAlias ?? '',
+            joinType: relation.joinType ?? 'left',
+            description: relation.description ?? '',
+            sourceFieldMode: 'existing' as const,
             generatedSourceField: relation.sourceField,
           }));
         setRelations(editableRelations);
@@ -462,6 +494,7 @@ export function TableSchemaPanel({
           sorting: table.api?.sorting ?? defaultTableApiConfig().sorting,
           includes: table.api?.includes ?? defaultTableApiConfig().includes,
         });
+        setHooks(table.hooks || []);
         return;
       }
 
@@ -477,7 +510,7 @@ export function TableSchemaPanel({
         .filter((field) => field.name !== pk)
         .map((field) => ({
           ...field,
-          default: "",
+          default: '',
           unique: !!field.unique,
           indexed: !!field.indexed,
           nullable: !!field.nullable,
@@ -494,8 +527,8 @@ export function TableSchemaPanel({
       return;
     }
 
-    setName("");
-    setDisplayName("");
+    setName('');
+    setDisplayName('');
     setFields([]);
     setFieldRowIds([]);
     setCollapsedFields([]);
@@ -507,7 +540,7 @@ export function TableSchemaPanel({
 
   useEffect(() => {
     if (isOpen) {
-      setActiveTab("fields");
+      setActiveTab('fields');
       setCollapsedQuerySections({
         hiddenFields: true,
         pagination: true,
@@ -533,18 +566,23 @@ export function TableSchemaPanel({
 
         const next = {
           ...field,
-          [key]: key === "name" ? String(value).toLowerCase().replace(/[^a-z0-9_]/g, "") : value,
+          [key]:
+            key === 'name'
+              ? String(value)
+                  .toLowerCase()
+                  .replace(/[^a-z0-9_]/g, '')
+              : value,
         } as EditableField;
 
-        if (key === "type" && value !== "varchar") {
+        if (key === 'type' && value !== 'varchar') {
           next.size = undefined;
         }
 
-        if (key === "type" && value === "varchar" && !next.size) {
+        if (key === 'type' && value === 'varchar' && !next.size) {
           next.size = 255;
         }
 
-        if (key === "type" && value !== "enum") {
+        if (key === 'type' && value !== 'enum') {
           next.enumValues = [];
         }
 
@@ -568,7 +606,7 @@ export function TableSchemaPanel({
   };
 
   const handleAddRelation = () => {
-    const initialTarget = availableTableNames.find((entry) => entry !== currentSourceTable) ?? "user";
+    const initialTarget = availableTableNames.find((entry) => entry !== currentSourceTable) ?? 'user';
     setRelations((current) => [...current, emptyRelation(currentSourceTable, initialTarget)]);
     setRelationRowIds((current) => [...current, nextSchemaEditorRowId()]);
     setCollapsedRelations((current) => [...current, false]);
@@ -581,31 +619,28 @@ export function TableSchemaPanel({
           return relation;
         }
 
-        const nextValue =
-          key === "alias" || key === "sourceAlias" || key === "targetAlias"
-            ? normaliseIdentifier(value)
-            : value;
+        const nextValue = key === 'alias' || key === 'sourceAlias' || key === 'targetAlias' ? normaliseIdentifier(value) : value;
         const next = { ...relation, [key]: nextValue } as EditableRelation;
 
-        if (key === "targetTable") {
+        if (key === 'targetTable') {
           const targetFields = tableCatalog?.[value]?.fields ?? [];
           next.targetField = targetFields.some((field) => field.name === next.targetField)
             ? next.targetField
-            : (targetFields[0]?.name ?? "id");
-          if (next.sourceFieldMode === "auto" && !relation.alias) {
+            : (targetFields[0]?.name ?? 'id');
+          if (next.sourceFieldMode === 'auto' && !relation.alias) {
             next.generatedSourceField = buildGeneratedSourceFieldName(value, next.targetField, relation.alias);
           }
         }
 
-        if (key === "targetField" && next.sourceFieldMode === "auto" && !relation.alias) {
+        if (key === 'targetField' && next.sourceFieldMode === 'auto' && !relation.alias) {
           next.generatedSourceField = buildGeneratedSourceFieldName(next.targetTable, value, relation.alias);
         }
 
-        if (key === "alias" && next.sourceFieldMode === "auto") {
+        if (key === 'alias' && next.sourceFieldMode === 'auto') {
           next.generatedSourceField = buildGeneratedSourceFieldName(next.targetTable, next.targetField, nextValue);
         }
 
-        if (key === "sourceFieldMode" && value === "auto" && !next.generatedSourceField) {
+        if (key === 'sourceFieldMode' && value === 'auto' && !next.generatedSourceField) {
           next.generatedSourceField = buildGeneratedSourceFieldName(next.targetTable, next.targetField, next.alias);
         }
 
@@ -621,7 +656,9 @@ export function TableSchemaPanel({
   };
 
   const toggleRelationCollapsed = (index: number) => {
-    setCollapsedRelations((current) => current.map((collapsed, relationIndex) => (relationIndex === index ? !collapsed : collapsed)));
+    setCollapsedRelations((current) =>
+      current.map((collapsed, relationIndex) => (relationIndex === index ? !collapsed : collapsed)),
+    );
   };
 
   const setAllRelationsCollapsed = (collapsed: boolean) => {
@@ -645,21 +682,60 @@ export function TableSchemaPanel({
     });
   };
 
+  const emptyHook = (): TableHook => ({
+    id: crypto.randomUUID(),
+    eventType: 'afterCreate',
+    type: 'webhook',
+    blocking: false,
+    enabled: true,
+    url: '',
+    config: {},
+  });
+
+  const handleAddHook = () => {
+    setHooks((current) => [...current, emptyHook()]);
+  };
+
+  const handleHookChange = (index: number, key: keyof TableHook, value: unknown) => {
+    setHooks((current) =>
+      current.map((hook, hookIndex) => {
+        if (hookIndex !== index) {
+          return hook;
+        }
+
+        const next = { ...hook, [key]: value } as TableHook;
+
+        if (key === 'type') {
+          if (value === 'webhook') {
+            next.recipeId = undefined;
+            next.url = next.url || '';
+          } else {
+            next.url = undefined;
+            next.recipeId = next.recipeId || 'send_email';
+          }
+        }
+
+        return next;
+      }),
+    );
+  };
+
+  const handleRemoveHook = (index: number) => {
+    setHooks((current) => current.filter((_, hookIndex) => hookIndex !== index));
+  };
+
   const buildTableDraft = (): TableBlueprint => {
     const manualFields = fields
-      .filter((field) => String(field.name ?? "").trim().length > 0)
+      .filter((field) => String(field.name ?? '').trim().length > 0)
       .map((field) => ({
         ...field,
         default: field.default ? String(field.default) : undefined,
-        size: field.type === "varchar" ? Number(field.size || 255) : undefined,
-        enumValues:
-          field.type === "enum"
-            ? (field.enumValues ?? []).map((value) => value.trim()).filter(Boolean)
-            : undefined,
+        size: field.type === 'varchar' ? Number(field.size || 255) : undefined,
+        enumValues: field.type === 'enum' ? (field.enumValues ?? []).map((value) => value.trim()).filter(Boolean) : undefined,
       }));
 
     const autoFields = relations
-      .filter((relation) => relation.sourceFieldMode === "auto")
+      .filter((relation) => relation.sourceFieldMode === 'auto')
       .map((relation) => {
         const inferred = inferAutoField(relation, tableCatalog);
         if (!inferred) {
@@ -673,16 +749,16 @@ export function TableSchemaPanel({
       .filter((field, index, collection) => collection.findIndex((entry) => entry.name === field.name) === index)
       .filter((field) => !manualFields.some((entry) => entry.name === field.name));
 
-    const resolvedPrimaryKey = editingDescriptor?.primaryKey ?? "id";
+    const resolvedPrimaryKey = editingDescriptor?.primaryKey ?? 'id';
     const primaryKeyField =
       editingDescriptor?.fields.find((field) => field.name === resolvedPrimaryKey) ??
       ({
-        name: "id",
-        type: "uuid",
+        name: 'id',
+        type: 'uuid',
         nullable: false,
         unique: true,
         indexed: true,
-        default: "gen_random_uuid()",
+        default: 'gen_random_uuid()',
       } as FieldBlueprint);
 
     return {
@@ -690,11 +766,7 @@ export function TableSchemaPanel({
       displayName: displayName || name,
       primaryKey: resolvedPrimaryKey,
       indexes: [],
-      fields: [
-        primaryKeyField,
-        ...manualFields.filter((field) => field.name !== resolvedPrimaryKey),
-        ...autoFields,
-      ],
+      fields: [primaryKeyField, ...manualFields.filter((field) => field.name !== resolvedPrimaryKey), ...autoFields],
       api: {
         ...apiConfig,
         routeSegment: apiConfig.routeSegment || undefined,
@@ -702,7 +774,7 @@ export function TableSchemaPanel({
         tag: apiConfig.tag || undefined,
         description: apiConfig.description || undefined,
       },
-      hooks: [],
+      hooks,
     };
   };
 
@@ -710,15 +782,11 @@ export function TableSchemaPanel({
     relations
       .map((relation) => ({
         ...relation,
-        sourceField: relation.sourceFieldMode === "auto" ? relation.generatedSourceField.trim() : relation.sourceField,
+        sourceField: relation.sourceFieldMode === 'auto' ? relation.generatedSourceField.trim() : relation.sourceField,
       }))
       .filter((relation) => relation.sourceField && relation.targetTable && relation.targetField)
       .map((relation) => {
-        const {
-          sourceFieldMode: _sourceFieldMode,
-          generatedSourceField: _generatedSourceField,
-          ...persistedRelation
-        } = relation;
+        const { sourceFieldMode: _sourceFieldMode, generatedSourceField: _generatedSourceField, ...persistedRelation } = relation;
 
         return {
           ...persistedRelation,
@@ -733,22 +801,25 @@ export function TableSchemaPanel({
   const availableFieldNames = useMemo(() => {
     const manual = fields.map((field) => field.name.trim()).filter(Boolean);
     const inferred = relations
-      .filter((relation) => relation.sourceFieldMode === "auto")
-      .map((relation) => inferAutoField(relation, tableCatalog)?.name ?? "")
+      .filter((relation) => relation.sourceFieldMode === 'auto')
+      .map((relation) => inferAutoField(relation, tableCatalog)?.name ?? '')
       .filter(Boolean);
     return Array.from(new Set([...manual, ...inferred]));
   }, [fields, relations, tableCatalog]);
   const filterableFieldNames = useMemo(
-    () => ["id", ...availableFieldNames].filter((field, index, collection) => collection.indexOf(field) === index).filter((field) => !apiConfig.hiddenFields.includes(field)),
+    () =>
+      ['id', ...availableFieldNames]
+        .filter((field, index, collection) => collection.indexOf(field) === index)
+        .filter((field) => !apiConfig.hiddenFields.includes(field)),
     [availableFieldNames, apiConfig.hiddenFields],
   );
 
   const availableSortFields = apiConfig.sorting.fields;
   const visibleFieldOptions = useMemo(
-    () => ["id", ...availableFieldNames].filter((field, index, collection) => collection.indexOf(field) === index),
+    () => ['id', ...availableFieldNames].filter((field, index, collection) => collection.indexOf(field) === index),
     [availableFieldNames],
   );
-  const hasOwnScopedOperation = operationKeys.some((operation) => apiConfig.access[operation].scope === "own");
+  const hasOwnScopedOperation = operationKeys.some((operation) => apiConfig.access[operation].scope === 'own');
   const routeSegment = apiConfig.routeSegment || name;
   const accessSummary = describeAccess(apiConfig.access);
   const selectedPolicyPreset = detectTableApiAccessPreset(apiConfig.access);
@@ -761,7 +832,7 @@ export function TableSchemaPanel({
     hiddenFields: apiConfig.hiddenFields,
   });
 
-  const updateApiOperationEnabled = (operation: keyof TableApiConfig["operations"], enabled: boolean) => {
+  const updateApiOperationEnabled = (operation: keyof TableApiConfig['operations'], enabled: boolean) => {
     setApiConfig((current) => ({
       ...current,
       operations: {
@@ -771,7 +842,7 @@ export function TableSchemaPanel({
     }));
   };
 
-  const updateAccessActors = (operation: ApiPreviewOperation["key"], actor: ApiAccessActor, checked: boolean) => {
+  const updateAccessActors = (operation: ApiPreviewOperation['key'], actor: ApiAccessActor, checked: boolean) => {
     setApiConfig((current) => {
       const nextActors: ApiAccessActor[] = checked
         ? Array.from(new Set<ApiAccessActor>([...current.access[operation].actors, actor]))
@@ -784,21 +855,27 @@ export function TableSchemaPanel({
           [operation]: {
             ...current.access[operation],
             actors: nextActors,
-            scope: actor === "public" && checked && current.access[operation].scope === "own" ? "all" : current.access[operation].scope,
+            scope:
+              actor === 'public' && checked && current.access[operation].scope === 'own'
+                ? 'all'
+                : current.access[operation].scope,
           },
         },
       };
     });
   };
 
-  const updateAccessScope = (operation: ApiPreviewOperation["key"], scope: "all" | "own") => {
+  const updateAccessScope = (operation: ApiPreviewOperation['key'], scope: 'all' | 'own') => {
     setApiConfig((current) => ({
       ...current,
       access: {
         ...current.access,
         [operation]: {
           ...current.access[operation],
-          actors: scope === "own" ? current.access[operation].actors.filter((actor) => actor !== "public") : current.access[operation].actors,
+          actors:
+            scope === 'own'
+              ? current.access[operation].actors.filter((actor) => actor !== 'public')
+              : current.access[operation].actors,
           scope,
         },
       },
@@ -807,13 +884,15 @@ export function TableSchemaPanel({
 
   const applyPolicyPreset = (preset: TableApiPolicyPreset) => {
     const presetDefinition = tableApiPolicyPresets.find((entry) => entry.id === preset);
-    const ownershipField = presetDefinition?.ownershipRequired ? apiConfig.access.ownershipField ?? suggestedOwnershipField : null;
+    const ownershipField = presetDefinition?.ownershipRequired
+      ? (apiConfig.access.ownershipField ?? suggestedOwnershipField)
+      : null;
 
     if (presetDefinition?.ownershipRequired && !ownershipField) {
       showNotice({
-        title: "Owner field required",
-        description: "Add a field like owner_id or user_id first, then apply an owner-scoped policy preset.",
-        variant: "destructive",
+        title: 'Owner field required',
+        description: 'Add a field like owner_id or user_id first, then apply an owner-scoped policy preset.',
+        variant: 'destructive',
       });
       return;
     }
@@ -842,7 +921,9 @@ export function TableSchemaPanel({
         sorting: {
           ...current.sorting,
           fields: nextFields,
-          defaultField: nextFields.includes(current.sorting.defaultField ?? "") ? current.sorting.defaultField : nextFields[0] ?? "",
+          defaultField: nextFields.includes(current.sorting.defaultField ?? '')
+            ? current.sorting.defaultField
+            : (nextFields[0] ?? ''),
         },
       };
     });
@@ -861,7 +942,9 @@ export function TableSchemaPanel({
   const toggleHiddenField = (field: string) => {
     setApiConfig((current) => {
       const hiddenFields = toggleListValue(current.hiddenFields, field);
-      const visibleFields = ["id", ...availableFieldNames].filter((entry, index, collection) => collection.indexOf(entry) === index).filter((entry) => !hiddenFields.includes(entry));
+      const visibleFields = ['id', ...availableFieldNames]
+        .filter((entry, index, collection) => collection.indexOf(entry) === index)
+        .filter((entry) => !hiddenFields.includes(entry));
       const nextSortFields = current.sorting.fields.filter((entry) => visibleFields.includes(entry));
       const nextFilterFields = current.filtering.fields.filter((entry) => visibleFields.includes(entry));
 
@@ -875,7 +958,9 @@ export function TableSchemaPanel({
         sorting: {
           ...current.sorting,
           fields: nextSortFields,
-          defaultField: nextSortFields.includes(current.sorting.defaultField ?? "") ? current.sorting.defaultField : nextSortFields[0] ?? "",
+          defaultField: nextSortFields.includes(current.sorting.defaultField ?? '')
+            ? current.sorting.defaultField
+            : (nextSortFields[0] ?? ''),
         },
       };
     });
@@ -905,18 +990,18 @@ export function TableSchemaPanel({
   const handleSubmit = async () => {
     if (!name.trim()) {
       showNotice({
-        title: "Table name is required",
-        description: "Enter a lowercase identifier before saving the table.",
-        variant: "destructive",
+        title: 'Table name is required',
+        description: 'Enter a lowercase identifier before saving the table.',
+        variant: 'destructive',
       });
       return;
     }
 
     if (!schemaData) {
       showNotice({
-        title: "Schema metadata is still loading",
-        description: "Wait a moment for the live draft to load, then try again.",
-        variant: "destructive",
+        title: 'Schema metadata is still loading',
+        description: 'Wait a moment for the live draft to load, then try again.',
+        variant: 'destructive',
       });
       return;
     }
@@ -955,27 +1040,27 @@ export function TableSchemaPanel({
 
       onSuccess?.();
       onClose();
-      void navigate({ to: "/data", search: { table: name, page: undefined, pageSize: undefined } });
+      void navigate({ to: '/data', search: { table: name, page: undefined, pageSize: undefined } });
 
       showNotice({
         title: isEditing ? `Saved ${name}` : `Created ${name}`,
         description:
-          "Undo reapplies the previous schema draft only (no full-table row snapshot). Use backups for large or critical data.",
-        variant: "success",
+          'Undo reapplies the previous schema draft only (no full-table row snapshot). Use backups for large or critical data.',
+        variant: 'success',
         durationMs: 30000,
-        actionLabel: "Undo",
+        actionLabel: 'Undo',
         onAction: async () => {
           await client.system.schema.apply(previousDraft);
           await invalidateSchemaQueries(queryClient);
           onSuccess?.();
-          void navigate({ to: "/data", search: { table: tableName ?? "user", page: undefined, pageSize: undefined } });
+          void navigate({ to: '/data', search: { table: tableName ?? 'user', page: undefined, pageSize: undefined } });
         },
       });
     } catch (error) {
       showNotice({
-        title: "Failed to save schema",
-        description: getErrorMessage(error, "The schema change could not be applied."),
-        variant: "destructive",
+        title: 'Failed to save schema',
+        description: getErrorMessage(error, 'The schema change could not be applied.'),
+        variant: 'destructive',
       });
     } finally {
       setIsSaving(false);
@@ -988,9 +1073,9 @@ export function TableSchemaPanel({
     }
     if (!canDeleteTable) {
       showNotice({
-        title: "Table cannot be deleted",
-        description: "Only generated tables can be deleted.",
-        variant: "destructive",
+        title: 'Table cannot be deleted',
+        description: 'Only generated tables can be deleted.',
+        variant: 'destructive',
       });
       return;
     }
@@ -998,10 +1083,10 @@ export function TableSchemaPanel({
     const confirmed = await confirm({
       title: `Delete ${tableName}?`,
       description:
-        "This drops the table and related joins. Undo restores the previous schema only; dropped row data is not reloaded from the client.",
-      confirmLabel: "Delete table",
-      cancelLabel: "Cancel",
-      variant: "destructive",
+        'This drops the table and related joins. Undo restores the previous schema only; dropped row data is not reloaded from the client.',
+      confirmLabel: 'Delete table',
+      cancelLabel: 'Cancel',
+      variant: 'destructive',
     });
     if (!confirmed) {
       return;
@@ -1023,27 +1108,27 @@ export function TableSchemaPanel({
 
       onSuccess?.();
       onClose();
-      void navigate({ to: "/data", search: { table: "user", page: undefined, pageSize: undefined } });
+      void navigate({ to: '/data', search: { table: 'user', page: undefined, pageSize: undefined } });
 
       showNotice({
         title: `Deleted ${tableName}`,
         description:
-          "Undo reapplies the previous schema draft only. Recreated tables will be empty unless you restore from a backup.",
-        variant: "success",
+          'Undo reapplies the previous schema draft only. Recreated tables will be empty unless you restore from a backup.',
+        variant: 'success',
         durationMs: 30000,
-        actionLabel: "Undo",
+        actionLabel: 'Undo',
         onAction: async () => {
           await client.system.schema.apply(previousDraft);
           await invalidateSchemaQueries(queryClient);
           onSuccess?.();
-          void navigate({ to: "/data", search: { table: tableName, page: undefined, pageSize: undefined } });
+          void navigate({ to: '/data', search: { table: tableName, page: undefined, pageSize: undefined } });
         },
       });
     } catch (error) {
       showNotice({
-        title: "Failed to delete table",
-        description: getErrorMessage(error, "The table could not be deleted."),
-        variant: "destructive",
+        title: 'Failed to delete table',
+        description: getErrorMessage(error, 'The table could not be deleted.'),
+        variant: 'destructive',
       });
     } finally {
       setIsDeleting(false);
@@ -1054,9 +1139,12 @@ export function TableSchemaPanel({
     <SidePanel
       isOpen={isOpen}
       onClose={onClose}
-      title={isEditing 
-        ? (SYSTEM_TABLES.includes(tableName!) ? `Edit System Table - ${tableName}` : `Edit Table - ${tableName}`) 
-        : "New Table"
+      title={
+        isEditing
+          ? SYSTEM_TABLES.includes(tableName!)
+            ? `Edit System Table - ${tableName}`
+            : `Edit Table - ${tableName}`
+          : 'New Table'
       }
       footer={
         <div className="flex w-full items-center justify-between">
@@ -1066,7 +1154,7 @@ export function TableSchemaPanel({
                 variant="ghost"
                 onClick={handleDelete}
                 disabled={isDeleting || isSchemaLoading || !canDeleteTable}
-                title={canDeleteTable ? "Delete table" : "Only generated tables can be deleted"}
+                title={canDeleteTable ? 'Delete table' : 'Only generated tables can be deleted'}
                 className="text-destructive hover:bg-destructive/10 hover:text-destructive"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
@@ -1079,7 +1167,7 @@ export function TableSchemaPanel({
               Cancel
             </Button>
             <Button onClick={handleSubmit} disabled={isSaving || isDeleting || isSchemaLoading || isCatalogLoading}>
-              {isSaving ? "Saving..." : isEditing ? "Save" : "Create"}
+              {isSaving ? 'Saving...' : isEditing ? 'Save' : 'Create'}
             </Button>
           </div>
         </div>
@@ -1094,7 +1182,7 @@ export function TableSchemaPanel({
             <Input
               placeholder="e.g. posts"
               value={name}
-              onChange={(event) => setName(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+              onChange={(event) => setName(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
               className="font-mono text-sm"
               disabled={isEditing}
             />
@@ -1119,7 +1207,9 @@ export function TableSchemaPanel({
               type="button"
               onClick={() => setActiveTab(tab.key)}
               className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                activeTab === tab.key ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                activeTab === tab.key
+                  ? 'bg-foreground text-background'
+                  : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
               }`}
             >
               {tab.label}
@@ -1127,7 +1217,7 @@ export function TableSchemaPanel({
           ))}
         </div>
 
-        {activeTab === "fields" && (
+        {activeTab === 'fields' && (
           <>
             <section className="grid gap-4 rounded-2xl border border-border/60 bg-background p-5">
               <div className="flex items-center justify-between border-b border-border/50 pb-3">
@@ -1170,12 +1260,12 @@ export function TableSchemaPanel({
                         </span>
                         <span className="text-[11px] text-muted-foreground">
                           {[
-                            field.nullable ? "optional" : "required",
-                            field.unique ? "unique" : null,
-                            field.indexed ? "indexed" : null,
+                            field.nullable ? 'optional' : 'required',
+                            field.unique ? 'unique' : null,
+                            field.indexed ? 'indexed' : null,
                           ]
                             .filter(Boolean)
-                            .join(" • ")}
+                            .join(' • ')}
                         </span>
                       </button>
                       <Tooltip content="Remove field">
@@ -1194,10 +1284,12 @@ export function TableSchemaPanel({
                       <div className="grid gap-3 border-t border-border/60 px-3 py-3">
                         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_150px]">
                           <div className="flex flex-col gap-1.5">
-                            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Field Name</label>
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                              Field Name
+                            </label>
                             <Input
                               value={field.name}
-                              onChange={(event) => handleFieldChange(index, "name", event.target.value)}
+                              onChange={(event) => handleFieldChange(index, 'name', event.target.value)}
                               placeholder="column_name"
                               className="h-9 font-mono text-xs"
                             />
@@ -1207,7 +1299,7 @@ export function TableSchemaPanel({
                             <select
                               className="h-9 rounded-md border border-border bg-background px-3 text-xs"
                               value={field.type}
-                              onChange={(event) => handleFieldChange(index, "type", event.target.value)}
+                              onChange={(event) => handleFieldChange(index, 'type', event.target.value)}
                             >
                               <option value="text">Text</option>
                               <option value="varchar">Varchar</option>
@@ -1223,10 +1315,12 @@ export function TableSchemaPanel({
                             </select>
                           </div>
                           <div className="flex flex-col gap-1.5">
-                            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Default</label>
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                              Default
+                            </label>
                             <Input
-                              value={field.default ?? ""}
-                              onChange={(event) => handleFieldChange(index, "default", event.target.value)}
+                              value={field.default ?? ''}
+                              onChange={(event) => handleFieldChange(index, 'default', event.target.value)}
                               placeholder="optional"
                               className="h-9 font-mono text-xs"
                             />
@@ -1238,7 +1332,7 @@ export function TableSchemaPanel({
                             <input
                               type="checkbox"
                               checked={!field.nullable}
-                              onChange={(event) => handleFieldChange(index, "nullable", !event.target.checked)}
+                              onChange={(event) => handleFieldChange(index, 'nullable', !event.target.checked)}
                               className="h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
                             />
                             Required
@@ -1247,7 +1341,7 @@ export function TableSchemaPanel({
                             <input
                               type="checkbox"
                               checked={!!field.unique}
-                              onChange={(event) => handleFieldChange(index, "unique", event.target.checked)}
+                              onChange={(event) => handleFieldChange(index, 'unique', event.target.checked)}
                               className="h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
                             />
                             Unique
@@ -1256,36 +1350,45 @@ export function TableSchemaPanel({
                             <input
                               type="checkbox"
                               checked={!!field.indexed}
-                              onChange={(event) => handleFieldChange(index, "indexed", event.target.checked)}
+                              onChange={(event) => handleFieldChange(index, 'indexed', event.target.checked)}
                               className="h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
                             />
                             Index
                           </label>
                         </div>
 
-                        {field.type === "varchar" && (
+                        {field.type === 'varchar' && (
                           <div className="grid gap-1.5 md:w-[180px]">
-                            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Max Length</label>
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                              Max Length
+                            </label>
                             <Input
                               type="number"
                               min={1}
                               value={field.size ?? 255}
-                              onChange={(event) => handleFieldChange(index, "size", event.target.value ? Number(event.target.value) : 255)}
+                              onChange={(event) =>
+                                handleFieldChange(index, 'size', event.target.value ? Number(event.target.value) : 255)
+                              }
                               className="h-9 font-mono text-xs"
                             />
                           </div>
                         )}
 
-                        {field.type === "enum" && (
+                        {field.type === 'enum' && (
                           <div className="grid gap-1.5">
-                            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Enum Values</label>
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                              Enum Values
+                            </label>
                             <Input
-                              value={(field.enumValues ?? []).join(", ")}
+                              value={(field.enumValues ?? []).join(', ')}
                               onChange={(event) =>
                                 handleFieldChange(
                                   index,
-                                  "enumValues",
-                                  event.target.value.split(",").map((value) => value.trim()).filter(Boolean),
+                                  'enumValues',
+                                  event.target.value
+                                    .split(',')
+                                    .map((value) => value.trim())
+                                    .filter(Boolean),
                                 )
                               }
                               placeholder="draft, published, archived"
@@ -1314,10 +1417,20 @@ export function TableSchemaPanel({
                 <div className="flex items-center gap-3">
                   {relations.length > 0 && (
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAllRelationsCollapsed(false)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setAllRelationsCollapsed(false)}
+                      >
                         Expand all
                       </Button>
-                      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAllRelationsCollapsed(true)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setAllRelationsCollapsed(true)}
+                      >
                         Collapse all
                       </Button>
                     </div>
@@ -1327,7 +1440,8 @@ export function TableSchemaPanel({
               </div>
 
               <div className="rounded-lg border border-border/60 px-3 py-2 text-xs text-muted-foreground">
-                Define named joins from this table to any existing table. Aliases become the stable relation names for include rules and client-side query composition.
+                Define named joins from this table to any existing table. Aliases become the stable relation names for include
+                rules and client-side query composition.
               </div>
 
               <div className="grid gap-3">
@@ -1336,15 +1450,15 @@ export function TableSchemaPanel({
                     relation.targetTable === currentSourceTable
                       ? sourceFieldOptions.map((field) => ({ name: field }))
                       : (tableCatalog?.[relation.targetTable]?.fields ?? []);
-                  const sourceField = relation.sourceFieldMode === "auto" ? relation.generatedSourceField : relation.sourceField;
+                  const sourceField = relation.sourceFieldMode === 'auto' ? relation.generatedSourceField : relation.sourceField;
                   const relationSummary = [
                     relation.joinType.toUpperCase(),
-                    relation.targetTable || "target",
+                    relation.targetTable || 'target',
                     relation.targetField ? `on ${relation.targetField}` : null,
                     sourceField ? `via ${sourceField}` : null,
                   ]
                     .filter(Boolean)
-                    .join(" • ");
+                    .join(' • ');
 
                   return (
                     <div key={relationRowIds[index] ?? index} className="rounded-xl border border-border/60 bg-muted/20">
@@ -1363,7 +1477,12 @@ export function TableSchemaPanel({
                           <span className="text-[11px] text-muted-foreground">{relationSummary}</span>
                         </button>
                         <Tooltip content="Remove relation">
-                          <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => handleRemoveRelation(index)}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => handleRemoveRelation(index)}
+                          >
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </Tooltip>
@@ -1373,19 +1492,23 @@ export function TableSchemaPanel({
                         <div className="grid gap-4 border-t border-border/60 px-3 py-3">
                           <div className="grid gap-3 md:grid-cols-2">
                             <div className="flex flex-col gap-1.5">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Alias</label>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                Alias
+                              </label>
                               <Input
-                                value={relation.alias ?? ""}
-                                onChange={(event) => handleRelationChange(index, "alias", event.target.value)}
+                                value={relation.alias ?? ''}
+                                onChange={(event) => handleRelationChange(index, 'alias', event.target.value)}
                                 placeholder="author"
                                 className="h-9 font-mono text-xs"
                               />
                             </div>
                             <div className="flex flex-col gap-1.5">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Join Type</label>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                Join Type
+                              </label>
                               <select
                                 value={relation.joinType}
-                                onChange={(event) => handleRelationChange(index, "joinType", event.target.value)}
+                                onChange={(event) => handleRelationChange(index, 'joinType', event.target.value)}
                                 className="h-9 rounded-md border border-border bg-background px-3 text-xs"
                               >
                                 <option value="left">LEFT JOIN</option>
@@ -1398,13 +1521,15 @@ export function TableSchemaPanel({
 
                           <div className="grid gap-3 border-t border-border/60 pt-3 md:grid-cols-2">
                             <div className="flex flex-col gap-2">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Source Binding</label>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                Source Binding
+                              </label>
                               <div className="flex flex-wrap items-center gap-4">
                                 <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                   <input
                                     type="radio"
-                                    checked={relation.sourceFieldMode === "existing"}
-                                    onChange={() => handleRelationChange(index, "sourceFieldMode", "existing")}
+                                    checked={relation.sourceFieldMode === 'existing'}
+                                    onChange={() => handleRelationChange(index, 'sourceFieldMode', 'existing')}
                                     className="h-4 w-4 accent-primary"
                                   />
                                   Existing Field
@@ -1412,20 +1537,24 @@ export function TableSchemaPanel({
                                 <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                   <input
                                     type="radio"
-                                    checked={relation.sourceFieldMode === "auto"}
-                                    onChange={() => handleRelationChange(index, "sourceFieldMode", "auto")}
+                                    checked={relation.sourceFieldMode === 'auto'}
+                                    onChange={() => handleRelationChange(index, 'sourceFieldMode', 'auto')}
                                     className="h-4 w-4 accent-primary"
                                   />
                                   Auto-create FK
                                 </label>
                               </div>
                             </div>
-                            {relation.sourceFieldMode === "auto" && (
+                            {relation.sourceFieldMode === 'auto' && (
                               <div className="flex flex-col gap-1.5">
-                                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Generated Source Field</label>
+                                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                  Generated Source Field
+                                </label>
                                 <Input
                                   value={relation.generatedSourceField}
-                                  onChange={(event) => handleRelationChange(index, "generatedSourceField", normaliseIdentifier(event.target.value))}
+                                  onChange={(event) =>
+                                    handleRelationChange(index, 'generatedSourceField', normaliseIdentifier(event.target.value))
+                                  }
                                   placeholder="author_id"
                                   className="h-9 font-mono text-xs"
                                 />
@@ -1435,11 +1564,13 @@ export function TableSchemaPanel({
 
                           <div className="grid gap-3 border-t border-border/60 pt-3 md:grid-cols-4">
                             <div className="flex flex-col gap-1.5">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Source Field</label>
-                              {relation.sourceFieldMode === "existing" ? (
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                Source Field
+                              </label>
+                              {relation.sourceFieldMode === 'existing' ? (
                                 <select
                                   value={relation.sourceField}
-                                  onChange={(event) => handleRelationChange(index, "sourceField", event.target.value)}
+                                  onChange={(event) => handleRelationChange(index, 'sourceField', event.target.value)}
                                   className="h-9 rounded-md border border-border bg-background px-3 text-xs"
                                 >
                                   <option value="">Select field</option>
@@ -1451,15 +1582,17 @@ export function TableSchemaPanel({
                                 </select>
                               ) : (
                                 <div className="flex h-9 items-center rounded-md border border-border bg-background px-3 font-mono text-xs text-muted-foreground">
-                                  {relation.generatedSourceField || "generated field"}
+                                  {relation.generatedSourceField || 'generated field'}
                                 </div>
                               )}
                             </div>
                             <div className="flex flex-col gap-1.5">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Target Table</label>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                Target Table
+                              </label>
                               <select
                                 value={relation.targetTable}
-                                onChange={(event) => handleRelationChange(index, "targetTable", event.target.value)}
+                                onChange={(event) => handleRelationChange(index, 'targetTable', event.target.value)}
                                 className="h-9 rounded-md border border-border bg-background px-3 text-xs"
                               >
                                 {availableTableNames.map((entry) => (
@@ -1470,10 +1603,12 @@ export function TableSchemaPanel({
                               </select>
                             </div>
                             <div className="flex flex-col gap-1.5">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Target Field</label>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                Target Field
+                              </label>
                               <select
                                 value={relation.targetField}
-                                onChange={(event) => handleRelationChange(index, "targetField", event.target.value)}
+                                onChange={(event) => handleRelationChange(index, 'targetField', event.target.value)}
                                 className="h-9 rounded-md border border-border bg-background px-3 text-xs"
                               >
                                 <option value="">Select field</option>
@@ -1485,43 +1620,49 @@ export function TableSchemaPanel({
                               </select>
                             </div>
                             <div className="flex flex-col gap-1.5">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Description</label>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                Description
+                              </label>
                               <Input
-                                value={relation.description ?? ""}
-                                onChange={(event) => handleRelationChange(index, "description", event.target.value)}
+                                value={relation.description ?? ''}
+                                onChange={(event) => handleRelationChange(index, 'description', event.target.value)}
                                 placeholder="Optional"
                                 className="h-9 text-xs"
                               />
                             </div>
                           </div>
 
-                          {relation.sourceFieldMode === "auto" && (
+                          {relation.sourceFieldMode === 'auto' && (
                             <div className="rounded-lg border border-border/60 px-3 py-2 text-xs text-muted-foreground">
-                              New field preview:{" "}
-                              <span className="font-mono text-foreground">{relation.generatedSourceField || "generated_field"}</span>
-                              {" · "}
-                              {inferAutoField(relation, tableCatalog)?.type ?? "unknown"}{" "}
-                              {" · "}
-                              {relation.joinType === "inner" ? "required" : "nullable"}{" "}
-                              {" · indexed"}
+                              New field preview:{' '}
+                              <span className="font-mono text-foreground">
+                                {relation.generatedSourceField || 'generated_field'}
+                              </span>
+                              {' · '}
+                              {inferAutoField(relation, tableCatalog)?.type ?? 'unknown'} {' · '}
+                              {relation.joinType === 'inner' ? 'required' : 'nullable'} {' · indexed'}
                             </div>
                           )}
 
                           <div className="grid gap-3 border-t border-border/60 pt-3 md:grid-cols-2">
                             <div className="flex flex-col gap-1.5">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Source Alias</label>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                Source Alias
+                              </label>
                               <Input
-                                value={relation.sourceAlias ?? ""}
-                                onChange={(event) => handleRelationChange(index, "sourceAlias", event.target.value)}
+                                value={relation.sourceAlias ?? ''}
+                                onChange={(event) => handleRelationChange(index, 'sourceAlias', event.target.value)}
                                 placeholder="posts"
                                 className="h-9 font-mono text-xs"
                               />
                             </div>
                             <div className="flex flex-col gap-1.5">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Target Alias</label>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                Target Alias
+                              </label>
                               <Input
-                                value={relation.targetAlias ?? ""}
-                                onChange={(event) => handleRelationChange(index, "targetAlias", event.target.value)}
+                                value={relation.targetAlias ?? ''}
+                                onChange={(event) => handleRelationChange(index, 'targetAlias', event.target.value)}
                                 placeholder="users"
                                 className="h-9 font-mono text-xs"
                               />
@@ -1530,10 +1671,12 @@ export function TableSchemaPanel({
 
                           <div className="grid gap-3 border-t border-border/60 pt-3 md:grid-cols-2">
                             <div className="flex flex-col gap-1.5">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">On Delete</label>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                On Delete
+                              </label>
                               <select
                                 value={relation.onDelete}
-                                onChange={(event) => handleRelationChange(index, "onDelete", event.target.value)}
+                                onChange={(event) => handleRelationChange(index, 'onDelete', event.target.value)}
                                 className="h-9 rounded-md border border-border bg-background px-3 text-xs"
                               >
                                 <option value="no action">NO ACTION</option>
@@ -1543,10 +1686,12 @@ export function TableSchemaPanel({
                               </select>
                             </div>
                             <div className="flex flex-col gap-1.5">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">On Update</label>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                On Update
+                              </label>
                               <select
                                 value={relation.onUpdate}
-                                onChange={(event) => handleRelationChange(index, "onUpdate", event.target.value)}
+                                onChange={(event) => handleRelationChange(index, 'onUpdate', event.target.value)}
                                 className="h-9 rounded-md border border-border bg-background px-3 text-xs"
                               >
                                 <option value="no action">NO ACTION</option>
@@ -1571,7 +1716,7 @@ export function TableSchemaPanel({
           </>
         )}
 
-        {activeTab === "api" && (
+        {activeTab === 'api' && (
           <>
             <section className="grid gap-4 rounded-2xl border border-border/60 bg-background p-5">
               <div className="flex items-center gap-2 text-sm font-bold">
@@ -1582,7 +1727,7 @@ export function TableSchemaPanel({
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Route Segment</label>
                   <Input
-                    value={apiConfig.routeSegment ?? ""}
+                    value={apiConfig.routeSegment ?? ''}
                     onChange={(event) =>
                       setApiConfig((current) => ({
                         ...current,
@@ -1593,9 +1738,11 @@ export function TableSchemaPanel({
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">SDK Resource Name</label>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    SDK Resource Name
+                  </label>
                   <Input
-                    value={apiConfig.sdkName ?? ""}
+                    value={apiConfig.sdkName ?? ''}
                     onChange={(event) =>
                       setApiConfig((current) => ({
                         ...current,
@@ -1608,7 +1755,7 @@ export function TableSchemaPanel({
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Tag</label>
                   <Input
-                    value={apiConfig.tag ?? ""}
+                    value={apiConfig.tag ?? ''}
                     onChange={(event) =>
                       setApiConfig((current) => ({
                         ...current,
@@ -1621,14 +1768,14 @@ export function TableSchemaPanel({
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Route Base</label>
                   <div className="flex h-9 items-center rounded-md border border-border bg-background px-3 font-mono text-xs text-muted-foreground">
-                    /api/data/{routeSegment || name || "table_name"}
+                    /api/data/{routeSegment || name || 'table_name'}
                   </div>
                 </div>
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Description</label>
                 <Input
-                  value={apiConfig.description ?? ""}
+                  value={apiConfig.description ?? ''}
                   onChange={(event) =>
                     setApiConfig((current) => ({
                       ...current,
@@ -1654,21 +1801,28 @@ export function TableSchemaPanel({
                       type="button"
                       onClick={() => applyPolicyPreset(preset.id)}
                       className={`rounded-xl border px-3 py-3 text-left transition ${
-                        active ? "border-foreground/30 bg-muted/30" : "border-border/70 hover:border-foreground/20 hover:bg-muted/20"
+                        active
+                          ? 'border-foreground/30 bg-muted/30'
+                          : 'border-border/70 hover:border-foreground/20 hover:bg-muted/20'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-sm font-semibold text-foreground">{preset.label}</div>
-                        {active ? <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Active</span> : null}
+                        {active ? (
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Active</span>
+                        ) : null}
                       </div>
                       <div className="mt-1 text-xs text-muted-foreground">{preset.description}</div>
                     </button>
                   );
                 })}
               </div>
-              <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">{accessSummary}</div>
+              <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                {accessSummary}
+              </div>
               <div className="rounded-xl border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
-                App-facing actors are configured here. Superadmin sessions always bypass these rules on admin routes and data requests.
+                App-facing actors are configured here. Superadmin sessions always bypass these rules on admin routes and data
+                requests.
               </div>
               {policyWarnings.length > 0 ? (
                 <div className="grid gap-2">
@@ -1684,9 +1838,11 @@ export function TableSchemaPanel({
               {hasOwnScopedOperation && (
                 <div className="grid gap-2">
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Ownership Field</label>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      Ownership Field
+                    </label>
                     <select
-                      value={apiConfig.access.ownershipField ?? ""}
+                      value={apiConfig.access.ownershipField ?? ''}
                       onChange={(event) =>
                         setApiConfig((current) => ({
                           ...current,
@@ -1709,7 +1865,7 @@ export function TableSchemaPanel({
                   </div>
                   <div className="text-[11px] text-muted-foreground">
                     Owner-scoped operations compare the current subject id against this field.
-                    {suggestedOwnershipField ? ` Suggested field: ${suggestedOwnershipField}.` : ""}
+                    {suggestedOwnershipField ? ` Suggested field: ${suggestedOwnershipField}.` : ''}
                   </div>
                 </div>
               )}
@@ -1720,60 +1876,72 @@ export function TableSchemaPanel({
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="min-w-0">
                         <div className="text-sm font-semibold">{operationLabel(operation)}</div>
-                        <div className="font-mono text-[11px] text-muted-foreground">resource:{routeSegment || name || "table"}:{operation}</div>
+                        <div className="font-mono text-[11px] text-muted-foreground">
+                          resource:{routeSegment || name || 'table'}:{operation}
+                        </div>
                       </div>
                     </div>
 
                     <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-4">
-                      {accessActors.filter((actor) => actor !== "superadmin").map((actor) => {
-                        const checked = apiConfig.access[operation].actors.includes(actor);
-                        const isDisabled = apiConfig.access[operation].scope === "own" && actor === "public";
-                        return (
-                          <label
-                            key={`${operation}-${actor}`}
-                            title={actorDescription(actor)}
-                            className={`flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs ${
-                              checked ? "bg-muted/30" : ""
-                            } ${isDisabled ? "opacity-60" : "cursor-pointer hover:bg-muted/20"}`}
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className="font-semibold leading-tight text-foreground">{actorLabel(actor)}</div>
-                              <div className="truncate text-[10px] leading-tight text-muted-foreground">{actorDescription(actor)}</div>
-                            </div>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={(event) => updateAccessActors(operation, actor, event.target.checked)}
-                              disabled={isDisabled}
-                              className="h-4 w-4 shrink-0 rounded-sm border-muted-foreground/40 accent-primary"
-                            />
-                          </label>
-                        );
-                      })}
+                      {accessActors
+                        .filter((actor) => actor !== 'superadmin')
+                        .map((actor) => {
+                          const checked = apiConfig.access[operation].actors.includes(actor);
+                          const isDisabled = apiConfig.access[operation].scope === 'own' && actor === 'public';
+                          return (
+                            <label
+                              key={`${operation}-${actor}`}
+                              title={actorDescription(actor)}
+                              className={`flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs ${
+                                checked ? 'bg-muted/30' : ''
+                              } ${isDisabled ? 'opacity-60' : 'cursor-pointer hover:bg-muted/20'}`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="font-semibold leading-tight text-foreground">{actorLabel(actor)}</div>
+                                <div className="truncate text-[10px] leading-tight text-muted-foreground">
+                                  {actorDescription(actor)}
+                                </div>
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) => updateAccessActors(operation, actor, event.target.checked)}
+                                disabled={isDisabled}
+                                className="h-4 w-4 shrink-0 rounded-sm border-muted-foreground/40 accent-primary"
+                              />
+                            </label>
+                          );
+                        })}
                       <label
                         title="Only the record owner can do this"
                         className={`flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs ${
-                          apiConfig.access[operation].scope === "own" ? "bg-muted/30" : "hover:bg-muted/20"
-                        } ${!availableFieldNames.length ? "opacity-60" : "cursor-pointer"}`}
+                          apiConfig.access[operation].scope === 'own' ? 'bg-muted/30' : 'hover:bg-muted/20'
+                        } ${!availableFieldNames.length ? 'opacity-60' : 'cursor-pointer'}`}
                       >
                         <div className="min-w-0 flex-1">
                           <div className="font-semibold leading-tight text-foreground">Owner Only</div>
-                          <div className="truncate text-[10px] leading-tight text-muted-foreground">Only the record owner can do this</div>
+                          <div className="truncate text-[10px] leading-tight text-muted-foreground">
+                            Only the record owner can do this
+                          </div>
                         </div>
                         <input
                           type="checkbox"
-                          checked={apiConfig.access[operation].scope === "own"}
+                          checked={apiConfig.access[operation].scope === 'own'}
                           onChange={(event) => {
                             if (event.target.checked && !apiConfig.access.ownershipField) {
-                              const preferredOwnerField = ["owner_id", "user_id", "author_id", "created_by", "created_by_id"].find((field) =>
-                                availableFieldNames.includes(field),
-                              );
+                              const preferredOwnerField = [
+                                'owner_id',
+                                'user_id',
+                                'author_id',
+                                'created_by',
+                                'created_by_id',
+                              ].find((field) => availableFieldNames.includes(field));
 
                               if (!preferredOwnerField) {
                                 showNotice({
-                                  title: "Owner field required",
-                                  description: "Add a field like owner_id or user_id first, then enable owner-only access.",
-                                  variant: "destructive",
+                                  title: 'Owner field required',
+                                  description: 'Add a field like owner_id or user_id first, then enable owner-only access.',
+                                  variant: 'destructive',
                                 });
                                 return;
                               }
@@ -1787,7 +1955,7 @@ export function TableSchemaPanel({
                               }));
                             }
 
-                            updateAccessScope(operation, event.target.checked ? "own" : "all");
+                            updateAccessScope(operation, event.target.checked ? 'own' : 'all');
                           }}
                           disabled={!availableFieldNames.length}
                           className="h-4 w-4 shrink-0 rounded-sm border-muted-foreground/40 accent-primary"
@@ -1805,51 +1973,102 @@ export function TableSchemaPanel({
                   <Lock className="h-4 w-4 text-muted-foreground" />
                   Field Visibility
                 </h3>
-                <span className="text-[11px] text-muted-foreground">Unchecked means admin-only on the app-facing API</span>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => {
+                        const all: Record<string, boolean> = {};
+                        visibleFieldOptions.forEach((f) => (all[f] = false));
+                        setCollapsedFieldVisibility(all);
+                      }}
+                    >
+                      Expand all
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => {
+                        const all: Record<string, boolean> = {};
+                        visibleFieldOptions.forEach((f) => (all[f] = true));
+                        setCollapsedFieldVisibility(all);
+                      }}
+                    >
+                      Collapse all
+                    </Button>
+                  </div>
+                  <span className="text-[11px] text-muted-foreground">Unchecked means admin-only</span>
+                </div>
               </div>
 
               <div className="grid gap-2">
-                {visibleFieldOptions.map((field) => (
-                  <div key={field} className="rounded-xl border border-border/60 bg-muted/20 px-3 py-3">
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <div className="font-mono text-xs text-foreground">{field}</div>
-                      {apiConfig.hiddenFields.includes(field) ? (
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Hidden in responses</span>
-                      ) : null}
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      {(["read", "create", "update"] as const).map((operation) => (
-                        <div key={`${field}-${operation}`} className="grid gap-2 rounded-lg border border-border/60 bg-background px-3 py-2">
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{operation}</div>
-                          <div className="grid gap-1">
-                            {appFacingFieldActors.map((actor) => {
-                              const checked = fieldVisibilityActors(field, operation).includes(actor);
-                              const disabled = field === "id" && operation !== "read";
-                              return (
-                                <label
-                                  key={`${field}-${operation}-${actor}`}
-                                  className={`flex items-center justify-between gap-2 text-xs ${disabled ? "opacity-50" : "cursor-pointer"}`}
-                                >
-                                  <span>{actorLabel(actor)}</span>
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    disabled={disabled}
-                                    onChange={() => toggleFieldVisibilityActor(field, operation, actor)}
-                                    className="h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
-                                  />
-                                </label>
-                              );
-                            })}
-                          </div>
+                {visibleFieldOptions.map((field) => {
+                  const isCollapsed = collapsedFieldVisibility[field] !== undefined ? collapsedFieldVisibility[field] : true;
+                  return (
+                    <div key={field} className="rounded-xl border border-border/60 bg-muted/20">
+                      <button
+                        type="button"
+                        onClick={() => toggleFieldVisibilityCollapsed(field)}
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="font-mono text-xs font-semibold text-foreground">{field}</div>
+                          {apiConfig.hiddenFields.includes(field) && (
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                              Hidden
+                            </span>
+                          )}
                         </div>
-                      ))}
+                        {isCollapsed ? (
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
+                      </button>
+                      {!isCollapsed && (
+                        <div className="grid gap-3 border-t border-border/60 px-3 py-3 md:grid-cols-3">
+                          {(['read', 'create', 'update'] as const).map((operation) => (
+                            <div
+                              key={`${field}-${operation}`}
+                              className="grid gap-2 rounded-lg border border-border/60 bg-background px-3 py-2"
+                            >
+                              <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                {operation}
+                              </div>
+                              <div className="grid gap-1">
+                                {appFacingFieldActors.map((actor) => {
+                                  const checked = fieldVisibilityActors(field, operation).includes(actor);
+                                  const disabled = field === 'id' && operation !== 'read';
+                                  return (
+                                    <label
+                                      key={`${field}-${operation}-${actor}`}
+                                      className={`flex items-center justify-between gap-2 text-xs ${disabled ? 'opacity-50' : 'cursor-pointer'}`}
+                                    >
+                                      <span>{actorLabel(actor)}</span>
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        disabled={disabled}
+                                        onChange={() => toggleFieldVisibilityActor(field, operation, actor)}
+                                        className="h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
+                                      />
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {visibleFieldOptions.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-border/70 px-3 py-4 text-sm text-muted-foreground">
-                    Add fields first to configure field-level read and write visibility.
+                    Add fields first to configure field-level visibility.
                   </div>
                 ) : null}
               </div>
@@ -1863,10 +2082,20 @@ export function TableSchemaPanel({
                 </h3>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAllQuerySectionsCollapsed(false)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setAllQuerySectionsCollapsed(false)}
+                    >
                       Expand all
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAllQuerySectionsCollapsed(true)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setAllQuerySectionsCollapsed(true)}
+                    >
                       Collapse all
                     </Button>
                   </div>
@@ -1878,13 +2107,14 @@ export function TableSchemaPanel({
                 <div className="rounded-xl border border-border/60 bg-muted/20">
                   <button
                     type="button"
-                    onClick={() => toggleQuerySectionCollapsed("hiddenFields")}
+                    onClick={() => toggleQuerySectionCollapsed('hiddenFields')}
                     className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
                   >
                     <div className="min-w-0">
                       <div className="text-sm font-semibold">Hidden Response Fields</div>
                       <div className="text-[11px] text-muted-foreground">
-                        {apiConfig.hiddenFields.length} field{apiConfig.hiddenFields.length === 1 ? "" : "s"} hidden from responses
+                        {apiConfig.hiddenFields.length} field{apiConfig.hiddenFields.length === 1 ? '' : 's'} hidden from
+                        responses
                       </div>
                     </div>
                     {collapsedQuerySections.hiddenFields ? (
@@ -1899,7 +2129,9 @@ export function TableSchemaPanel({
                         Selected fields are stripped from API responses, metadata, SDK record shapes, and included relations.
                       </div>
                       <FieldToggleList
-                        fields={["id", ...availableFieldNames].filter((field, index, collection) => collection.indexOf(field) === index)}
+                        fields={['id', ...availableFieldNames].filter(
+                          (field, index, collection) => collection.indexOf(field) === index,
+                        )}
                         selected={apiConfig.hiddenFields}
                         disabled={false}
                         emptyLabel="Add fields first to hide them from responses."
@@ -1912,7 +2144,7 @@ export function TableSchemaPanel({
                 <div className="rounded-xl border border-border/60 bg-muted/20">
                   <button
                     type="button"
-                    onClick={() => toggleQuerySectionCollapsed("pagination")}
+                    onClick={() => toggleQuerySectionCollapsed('pagination')}
                     className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
                   >
                     <div className="min-w-0">
@@ -1920,7 +2152,7 @@ export function TableSchemaPanel({
                       <div className="text-[11px] text-muted-foreground">
                         {apiConfig.pagination.enabled
                           ? `${apiConfig.pagination.defaultPageSize} default / ${apiConfig.pagination.maxPageSize} max`
-                          : "Disabled"}
+                          : 'Disabled'}
                       </div>
                     </div>
                     {collapsedQuerySections.pagination ? (
@@ -1949,7 +2181,9 @@ export function TableSchemaPanel({
                         Pagination
                       </label>
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Default Page Size</label>
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          Default Page Size
+                        </label>
                         <Input
                           type="number"
                           min={1}
@@ -1960,7 +2194,7 @@ export function TableSchemaPanel({
                               ...current,
                               pagination: {
                                 ...current.pagination,
-                                defaultPageSize: Number(event.target.value || "20"),
+                                defaultPageSize: Number(event.target.value || '20'),
                               },
                             }))
                           }
@@ -1968,7 +2202,9 @@ export function TableSchemaPanel({
                         />
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Max Page Size</label>
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          Max Page Size
+                        </label>
                         <Input
                           type="number"
                           min={1}
@@ -1979,7 +2215,7 @@ export function TableSchemaPanel({
                               ...current,
                               pagination: {
                                 ...current.pagination,
-                                maxPageSize: Number(event.target.value || "100"),
+                                maxPageSize: Number(event.target.value || '100'),
                               },
                             }))
                           }
@@ -1993,15 +2229,15 @@ export function TableSchemaPanel({
                 <div className="rounded-xl border border-border/60 bg-muted/20">
                   <button
                     type="button"
-                    onClick={() => toggleQuerySectionCollapsed("filtering")}
+                    onClick={() => toggleQuerySectionCollapsed('filtering')}
                     className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
                   >
                     <div className="min-w-0">
                       <div className="text-sm font-semibold">Filtering</div>
                       <div className="text-[11px] text-muted-foreground">
                         {apiConfig.filtering.enabled
-                          ? `${apiConfig.filtering.fields.length} field${apiConfig.filtering.fields.length === 1 ? "" : "s"} enabled`
-                          : "Disabled"}
+                          ? `${apiConfig.filtering.fields.length} field${apiConfig.filtering.fields.length === 1 ? '' : 's'} enabled`
+                          : 'Disabled'}
                       </div>
                     </div>
                     {collapsedQuerySections.filtering ? (
@@ -2046,15 +2282,15 @@ export function TableSchemaPanel({
                 <div className="rounded-xl border border-border/60 bg-muted/20">
                   <button
                     type="button"
-                    onClick={() => toggleQuerySectionCollapsed("sorting")}
+                    onClick={() => toggleQuerySectionCollapsed('sorting')}
                     className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
                   >
                     <div className="min-w-0">
                       <div className="text-sm font-semibold">Sorting</div>
                       <div className="text-[11px] text-muted-foreground">
                         {apiConfig.sorting.enabled
-                          ? `${apiConfig.sorting.fields.length} field${apiConfig.sorting.fields.length === 1 ? "" : "s"} enabled`
-                          : "Disabled"}
+                          ? `${apiConfig.sorting.fields.length} field${apiConfig.sorting.fields.length === 1 ? '' : 's'} enabled`
+                          : 'Disabled'}
                       </div>
                     </div>
                     {collapsedQuerySections.sorting ? (
@@ -2094,9 +2330,11 @@ export function TableSchemaPanel({
                       />
                       <div className="grid gap-2 md:grid-cols-2">
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Default Sort Field</label>
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                            Default Sort Field
+                          </label>
                           <select
-                            value={apiConfig.sorting.defaultField ?? ""}
+                            value={apiConfig.sorting.defaultField ?? ''}
                             onChange={(event) =>
                               setApiConfig((current) => ({
                                 ...current,
@@ -2118,7 +2356,9 @@ export function TableSchemaPanel({
                           </select>
                         </div>
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Default Order</label>
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                            Default Order
+                          </label>
                           <select
                             value={apiConfig.sorting.defaultOrder}
                             onChange={(event) =>
@@ -2126,7 +2366,7 @@ export function TableSchemaPanel({
                                 ...current,
                                 sorting: {
                                   ...current.sorting,
-                                  defaultOrder: event.target.value as "asc" | "desc",
+                                  defaultOrder: event.target.value as 'asc' | 'desc',
                                 },
                               }))
                             }
@@ -2145,15 +2385,15 @@ export function TableSchemaPanel({
                 <div className="rounded-xl border border-border/60 bg-muted/20">
                   <button
                     type="button"
-                    onClick={() => toggleQuerySectionCollapsed("includes")}
+                    onClick={() => toggleQuerySectionCollapsed('includes')}
                     className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
                   >
                     <div className="min-w-0">
                       <div className="text-sm font-semibold">Relation Includes</div>
                       <div className="text-[11px] text-muted-foreground">
                         {apiConfig.includes.enabled
-                          ? `${apiConfig.includes.fields.length} relation${apiConfig.includes.fields.length === 1 ? "" : "s"} enabled`
-                          : "Disabled"}
+                          ? `${apiConfig.includes.fields.length} relation${apiConfig.includes.fields.length === 1 ? '' : 's'} enabled`
+                          : 'Disabled'}
                       </div>
                     </div>
                     {collapsedQuerySections.includes ? (
@@ -2185,7 +2425,13 @@ export function TableSchemaPanel({
                         </label>
                       </div>
                       <FieldToggleList
-                        fields={relations.map((relation) => relation.alias || (relation.sourceFieldMode === "auto" ? relation.generatedSourceField : relation.sourceField)).filter(Boolean)}
+                        fields={relations
+                          .map(
+                            (relation) =>
+                              relation.alias ||
+                              (relation.sourceFieldMode === 'auto' ? relation.generatedSourceField : relation.sourceField),
+                          )
+                          .filter(Boolean)}
                         selected={apiConfig.includes.fields}
                         disabled={!apiConfig.includes.enabled}
                         emptyLabel="Add relations under Fields to configure includes."
@@ -2209,7 +2455,7 @@ export function TableSchemaPanel({
                 >
                   <div>
                     <div className="text-sm font-semibold text-foreground">{operationLabel(operation)}</div>
-                    <div className="font-mono text-xs text-muted-foreground">/api/data/{routeSegment || name || "table"}</div>
+                    <div className="font-mono text-xs text-muted-foreground">/api/data/{routeSegment || name || 'table'}</div>
                   </div>
                   <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     <input
@@ -2224,6 +2470,172 @@ export function TableSchemaPanel({
               ))}
             </section>
           </>
+        )}
+
+        {activeTab === 'hooks' && (
+          <section className="grid gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-amber-500" />
+                  Record Triggers & Automations
+                </h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Configure actions to run when records are created, updated, or deleted.
+                </p>
+              </div>
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-[11px]" onClick={handleAddHook}>
+                <Plus className="w-3.5 h-3.5" />
+                Add Hook
+              </Button>
+            </div>
+
+            <div className="grid gap-3">
+              {hooks.map((hook, index) => (
+                <div key={hook.id} className="rounded-2xl border border-border/60 bg-background overflow-hidden">
+                  <div className="flex items-center gap-3 px-4 py-3 border-b border-border/50 bg-muted/10">
+                    <div
+                      className={`p-1.5 rounded-lg ${hook.enabled ? 'bg-amber-500/10 text-amber-600' : 'bg-muted text-muted-foreground'}`}
+                    >
+                      {hook.type === 'webhook' ? (
+                        <Globe className="w-4 h-4" />
+                      ) : hook.recipeId === 'slack_notification' ? (
+                        <Slack className="w-4 h-4" />
+                      ) : (
+                        <Mail className="w-4 h-4" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold font-mono uppercase tracking-tight">
+                          {hook.eventType.replace(/([A-Z])/g, ' $1').trim()}
+                        </span>
+                        {!hook.enabled && (
+                          <span className="text-[9px] font-bold bg-muted text-muted-foreground px-1.5 py-0.5 rounded uppercase">
+                            Disabled
+                          </span>
+                        )}
+                        {hook.blocking && (
+                          <span className="text-[9px] font-bold bg-destructive/10 text-destructive px-1.5 py-0.5 rounded uppercase">
+                            Blocking
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground truncate">
+                        {hook.type === 'webhook' ? hook.url : `${hook.recipeId} recipe`}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveHook(index)}
+                      className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="p-4 grid gap-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Event</label>
+                        <select
+                          value={hook.eventType}
+                          onChange={(e) => handleHookChange(index, 'eventType', e.target.value)}
+                          className="h-9 rounded-md border border-border bg-background px-3 text-xs"
+                        >
+                          {['beforeCreate', 'afterCreate', 'beforeUpdate', 'afterUpdate', 'beforeDelete', 'afterDelete'].map(
+                            (ev) => (
+                              <option key={ev} value={ev}>
+                                {ev}
+                              </option>
+                            ),
+                          )}
+                        </select>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          Action Type
+                        </label>
+                        <select
+                          value={hook.type}
+                          onChange={(e) => handleHookChange(index, 'type', e.target.value)}
+                          className="h-9 rounded-md border border-border bg-background px-3 text-xs"
+                        >
+                          <option value="webhook">Webhook (External URL)</option>
+                          <option value="recipe">Internal Recipe (Automation)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {hook.type === 'webhook' ? (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          Webhook URL
+                        </label>
+                        <Input
+                          placeholder="https://api.example.com/hooks/..."
+                          value={hook.url || ''}
+                          onChange={(e) => handleHookChange(index, 'url', e.target.value)}
+                          className="h-9 font-mono text-xs"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          Automation Recipe
+                        </label>
+                        <select
+                          value={hook.recipeId || ''}
+                          onChange={(e) => handleHookChange(index, 'recipeId', e.target.value)}
+                          className="h-9 rounded-md border border-border bg-background px-3 text-xs"
+                        >
+                          <option value="send_email">Send Email Notification</option>
+                          <option value="slack_notification">Send Slack Message</option>
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-4 pt-2 border-t border-border/40">
+                      <label className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={hook.enabled}
+                          onChange={(e) => handleHookChange(index, 'enabled', e.target.checked)}
+                          className="w-3.5 h-3.5 rounded border-muted-foreground/30 accent-primary"
+                        />
+                        Enabled
+                      </label>
+                      <label className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={hook.blocking}
+                          onChange={(e) => handleHookChange(index, 'blocking', e.target.checked)}
+                          className="w-3.5 h-3.5 rounded border-muted-foreground/30 accent-primary"
+                        />
+                        Blocking
+                      </label>
+                      <div className="flex-1 text-[10px] text-muted-foreground italic text-right">
+                        {hook.blocking ? 'Stops transaction on failure' : 'Runs in background'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {hooks.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-border/70 p-8 text-center bg-muted/5">
+                  <Zap className="w-8 h-8 text-muted-foreground/40 mx-auto mb-3" />
+                  <div className="text-sm font-semibold text-muted-foreground">No hooks configured</div>
+                  <p className="text-xs text-muted-foreground/60 mt-1 max-w-[240px] mx-auto">
+                    Automate your data lifecycle with triggers and recipes.
+                  </p>
+                  <Button variant="outline" size="sm" className="mt-4 h-8 gap-1.5" onClick={handleAddHook}>
+                    <Plus className="w-3.5 h-3.5" />
+                    Get Started
+                  </Button>
+                </div>
+              )}
+            </div>
+          </section>
         )}
       </div>
     </SidePanel>

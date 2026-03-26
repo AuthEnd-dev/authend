@@ -378,9 +378,18 @@ function mergeDraftWithExtensions(base: SchemaDraft): SchemaDraft {
       });
     }
     // Extension takes precedence, so we replace the existing one in the merged list
-    const index = mergedTables.findIndex(t => t.name === extensionTable.name);
+    const index = mergedTables.findIndex((t) => t.name === extensionTable.name);
     if (index !== -1) {
-      mergedTables[index] = extensionTable;
+      const mergedTable = { ...extensionTable };
+      const extensionFieldNames = new Set(extensionTable.fields.map((f) => f.name));
+      const dashboardOnlyFields = existing.fields.filter((f) => !extensionFieldNames.has(f.name));
+
+      mergedTable.fields = [...extensionTable.fields, ...dashboardOnlyFields];
+
+      // Merge API config if extension didn't explicitly override it from dashboard
+      // (Simplified: code definition takes precedence as a whole if changed)
+
+      mergedTables[index] = mergedTable;
     }
   }
 
@@ -778,6 +787,7 @@ export async function getSchemaDraft(options: { includeExtensions?: boolean } = 
   const baseDraft = {
     tables: tables.map((table) => ({
       ...(table.definition as TableBlueprint),
+      hooks: (table.definition as TableBlueprint).hooks || [],
       fields: fields
         .filter((field) => field.tableId === table.id)
         .map((field) => field.definition as FieldBlueprint),
@@ -796,6 +806,14 @@ export async function previewDraft(rawDraft: SchemaDraft) {
   const statements: string[] = [];
   const warnings: string[] = [];
 
+  const tableNames = draft.tables.map((t) => t.name);
+  const { columns, indexes, foreignKeys } = await readLiveSchemaState(tableNames);
+  const existingLiveTables = new Set(columns.map((c) => c.tableName));
+  const existingForeignKeys = new Set(
+    foreignKeys.map((fk) => `${fk.tableName}_${fk.columnName}_${fk.foreignTableName}_fk`),
+  );
+  const existingIndexes = new Set(indexes.map((i) => i.indexName));
+
   for (const table of current.tables) {
     if (!nextByName.has(table.name)) {
       statements.push(`drop table if exists "${table.name}" cascade;`);
@@ -804,6 +822,34 @@ export async function previewDraft(rawDraft: SchemaDraft) {
 
   for (const table of draft.tables.map(withDefaultId)) {
     if (!currentByName.has(table.name)) {
+      if (existingLiveTables.has(table.name)) {
+        const liveCols = columns.filter((c) => c.tableName === table.name);
+        const liveColNames = new Set(liveCols.map((c) => c.columnName));
+        for (const field of table.fields) {
+          if (!liveColNames.has(field.name)) {
+            statements.push(
+              `alter table "${table.name}" add column if not exists ${columnSql(table.name, field, table.primaryKey)};`,
+            );
+          }
+        }
+        for (const field of table.fields) {
+          if (field.indexed && !field.unique && field.name !== table.primaryKey) {
+            const indexName = `${table.name}_${field.name}_idx`;
+            if (!existingIndexes.has(indexName)) {
+              statements.push(`create index if not exists "${indexName}" on "${table.name}" ("${field.name}");`);
+            }
+          }
+        }
+        for (const compound of table.indexes) {
+          const indexName = `${table.name}_${compound.join("_")}_idx`;
+          if (!existingIndexes.has(indexName)) {
+            statements.push(
+              `create index if not exists "${indexName}" on "${table.name}" (${compound.map((column) => `"${column}"`).join(", ")});`,
+            );
+          }
+        }
+        continue;
+      }
       statements.push(...buildCreateTableSql(table));
       continue;
     }
@@ -819,6 +865,11 @@ export async function previewDraft(rawDraft: SchemaDraft) {
     assertSqlIdentifier(relation.targetTable);
     assertSqlIdentifier(relation.targetField);
     const constraintName = `${relation.sourceTable}_${relation.sourceField}_${relation.targetTable}_fk`;
+
+    if (existingForeignKeys.has(constraintName)) {
+      continue;
+    }
+
     statements.push(`do $$ begin
   if not exists (
     select 1 from pg_constraint where conname = '${constraintName}'
@@ -849,9 +900,6 @@ async function replaceMetadata(draft: SchemaDraft) {
     await transaction.unsafe(`delete from _schema_tables`);
 
     for (const table of draft.tables.map(withDefaultId)) {
-      if (extensionTableNames.has(table.name)) {
-        continue;
-      }
       const tableId = crypto.randomUUID();
       await transaction.unsafe(
         `insert into _schema_tables (id, table_name, display_name, primary_key, definition, created_at, updated_at)
