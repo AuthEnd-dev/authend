@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { mkdir } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import postgres from 'postgres';
 
 type AppModule = typeof import('../../app');
@@ -12,6 +13,7 @@ type DbModule = typeof import('../../db/client');
 type MigrationModule = typeof import('../../services/migration-service');
 type SettingsStoreModule = typeof import('../../services/settings-store');
 type RateLimitModule = typeof import('../../services/rate-limit-service');
+type AuthAbuseModule = typeof import('../../services/auth-abuse-service');
 
 const sourceDatabaseUrl =
   process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/authend';
@@ -127,6 +129,7 @@ if (process.env.AUTHEND_INTEGRATION_SUBPROCESS !== '1') {
     let migrationModule: MigrationModule;
     let settingsStoreModule: SettingsStoreModule;
     let rateLimitModule: RateLimitModule;
+    let authAbuseModule: AuthAbuseModule;
     let app: ReturnType<AppModule['createApp']>;
     let cookieJar: CookieJar;
 
@@ -165,6 +168,7 @@ if (process.env.AUTHEND_INTEGRATION_SUBPROCESS !== '1') {
         migrationModule,
         settingsStoreModule,
         rateLimitModule,
+        authAbuseModule,
       ] = await Promise.all([
         import(`../../app?phase0a=${testDatabaseName}`),
         import(`../../services/bootstrap-service?phase0a=${testDatabaseName}`),
@@ -175,6 +179,7 @@ if (process.env.AUTHEND_INTEGRATION_SUBPROCESS !== '1') {
         import(`../../services/migration-service?phase0a=${testDatabaseName}`),
         import(`../../services/settings-store?phase0a=${testDatabaseName}`),
         import(`../../services/rate-limit-service?phase0a=${testDatabaseName}`),
+        import(`../../services/auth-abuse-service?phase0a=${testDatabaseName}`),
       ]);
 
       await migrationModule.ensureCoreSchema();
@@ -688,6 +693,7 @@ if (process.env.AUTHEND_INTEGRATION_SUBPROCESS !== '1') {
 
       app = appModule.createApp();
       cookieJar = new CookieJar();
+      authAbuseModule.clearAuthBruteForceBuckets();
     });
 
     afterAll(async () => {
@@ -805,6 +811,166 @@ if (process.env.AUTHEND_INTEGRATION_SUBPROCESS !== '1') {
       });
 
       expect(adminResponse.status).toBe(200);
+    });
+
+    test('password sign-in resets the failure streak after a successful login and later blocks repeated failures', async () => {
+      await createUserSession('bruteforce@authend.test', 'Brute Force User');
+
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const response = await app.request(`${appUrl}/api/auth/sign-in/email`, {
+          method: 'POST',
+          headers: jsonHeaders(),
+          body: JSON.stringify({
+            email: 'bruteforce@authend.test',
+            password: 'WrongPass123!',
+          }),
+        });
+        expect(response.status).toBe(401);
+      }
+
+      const successResponse = await app.request(`${appUrl}/api/auth/sign-in/email`, {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({
+          email: 'bruteforce@authend.test',
+          password: 'ChangeMe123!',
+        }),
+      });
+      expect(successResponse.status).toBe(200);
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const response = await app.request(`${appUrl}/api/auth/sign-in/email`, {
+          method: 'POST',
+          headers: jsonHeaders(),
+          body: JSON.stringify({
+            email: 'bruteforce@authend.test',
+            password: 'WrongPass123!',
+          }),
+        });
+        expect(response.status).toBe(401);
+      }
+
+      const blockedResponse = await app.request(`${appUrl}/api/auth/sign-in/email`, {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({
+          email: 'bruteforce@authend.test',
+          password: 'WrongPass123!',
+        }),
+      });
+      expect(blockedResponse.status).toBe(429);
+      expect(blockedResponse.headers.get('retry-after')).toBeTruthy();
+    });
+
+    test('admin sign-in is blocked after repeated failed attempts', async () => {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const response = await app.request(`${appUrl}/api/admin/auth/sign-in/email`, {
+          method: 'POST',
+          headers: jsonHeaders(),
+          body: JSON.stringify({
+            email: process.env.SUPERADMIN_EMAIL,
+            password: 'WrongPass123!',
+          }),
+        });
+        expect(response.status).toBe(401);
+      }
+
+      const blockedResponse = await app.request(`${appUrl}/api/admin/auth/sign-in/email`, {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({
+          email: process.env.SUPERADMIN_EMAIL,
+          password: 'WrongPass123!',
+        }),
+      });
+      expect(blockedResponse.status).toBe(429);
+      expect(blockedResponse.headers.get('retry-after')).toBeTruthy();
+    });
+
+    test('schema policy changes create dedicated audit entries', async () => {
+      const adminJar = await createAdminSession();
+      const schemaResponse = await app.request(`${appUrl}/api/admin/schema`, {
+        headers: {
+          origin: appUrl,
+          cookie: adminJar.toHeader(),
+        },
+      });
+      expect(schemaResponse.status).toBe(200);
+      const schemaBody = await schemaResponse.json();
+      const updatedDraft = {
+        ...schemaBody,
+        tables: schemaBody.tables.map((table: Record<string, unknown>) =>
+          table.name === 'notes'
+            ? {
+                ...table,
+                api: {
+                  ...(table.api as Record<string, unknown>),
+                  access: {
+                    ...((table.api as { access: Record<string, unknown> }).access ?? {}),
+                    list: { actors: ['session'] },
+                  },
+                },
+              }
+            : table,
+        ),
+      };
+
+      const applyResponse = await app.request(`${appUrl}/api/admin/schema/apply`, {
+        method: 'POST',
+        headers: jsonHeaders(adminJar),
+        body: JSON.stringify(updatedDraft),
+      });
+      expect(applyResponse.status).toBe(200);
+
+      const auditResponse = await app.request(`${appUrl}/api/admin/audit`, {
+        headers: {
+          origin: appUrl,
+          cookie: adminJar.toHeader(),
+        },
+      });
+      expect(auditResponse.status).toBe(200);
+      const auditBody = (await auditResponse.json()) as Array<{ action: string; payload: Record<string, unknown> }>;
+      const policyEntry = auditBody.find((entry) => entry.action === 'schema.policy.updated');
+      expect(policyEntry).toBeTruthy();
+      expect(policyEntry?.payload.tables).toContain('notes');
+    });
+
+    test('storage signed download creation and usage are audited', async () => {
+      const adminJar = await createAdminSession();
+      const user = await createUserSession('storage.audit@authend.test', 'Storage Audit User');
+      const storageConfig = (await settingsStoreModule.readSettingsSection('storage')).config;
+      const objectKey = 'audit/audit.pdf';
+      const absolutePath = resolve(process.cwd(), storageConfig.rootPath, objectKey);
+      await mkdir(dirname(absolutePath), { recursive: true });
+      await Bun.write(absolutePath, '%PDF-1.4 audit');
+
+      const signedDownloadResponse = await app.request(`${appUrl}/api/storage/signed-download`, {
+        method: 'POST',
+        headers: jsonHeaders(user.jar),
+        body: JSON.stringify({
+          key: objectKey,
+        }),
+      });
+      expect(signedDownloadResponse.status).toBe(200);
+      const signedDownloadBody = await signedDownloadResponse.json();
+
+      const downloadResponse = await app.request(signedDownloadBody.url, {
+        headers: {
+          origin: appUrl,
+        },
+      });
+      expect(downloadResponse.status).toBe(200);
+
+      const auditResponse = await app.request(`${appUrl}/api/admin/audit`, {
+        headers: {
+          origin: appUrl,
+          cookie: adminJar.toHeader(),
+        },
+      });
+      expect(auditResponse.status).toBe(200);
+      const auditBody = (await auditResponse.json()) as Array<{ action: string; target: string }>;
+      expect(auditBody.some((entry) => entry.action === 'storage.signed_download.created' && entry.target === objectKey)).toBe(true);
+      expect(auditBody.some((entry) => entry.action === 'storage.signed_download.used' && entry.target === objectKey)).toBe(true);
     });
 
     test('admin session does not elevate non-admin data API access', async () => {

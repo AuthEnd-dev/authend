@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { HttpError } from "../lib/http";
-import { resolveRequestActor } from "../middleware/auth";
+import { resolveRequestActor, type RequestActor } from "../middleware/auth";
+import { writeAuditLog } from "../services/audit-service";
 import {
   createFolder,
   readLocalStoredFile,
@@ -21,6 +22,10 @@ function parseOptionalString(value: unknown) {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function actorUserId(actor: RequestActor) {
+  return actor.kind === "session" || actor.kind === "superadmin" ? actor.session.user.id : null;
 }
 
 export const storageRouter = new Hono()
@@ -126,12 +131,22 @@ export const storageRouter = new Hono()
     if (!body.key || body.key.trim().length === 0) {
       throw new HttpError(400, "key is required");
     }
-    return c.json(
-      await createSignedDownloadUrl({
-        key: body.key.trim(),
-        expiresIn: typeof body.expiresIn === "number" ? body.expiresIn : undefined,
-      }),
-    );
+    const key = body.key.trim();
+    const expiresIn = typeof body.expiresIn === "number" ? body.expiresIn : undefined;
+    const signedDownload = await createSignedDownloadUrl({
+      key,
+      expiresIn,
+    });
+    await writeAuditLog({
+      action: "storage.signed_download.created",
+      actorUserId: actorUserId(actor),
+      target: key,
+      payload: {
+        actorKind: actor.kind,
+        expiresIn: expiresIn ?? null,
+      },
+    });
+    return c.json(signedDownload);
   })
   .get("/download", async (c) => {
     const key = parseOptionalString(c.req.query("key"));
@@ -153,6 +168,13 @@ export const storageRouter = new Hono()
       throw new HttpError(401, "Invalid or expired signed download URL");
     }
     const file = await readLocalStoredFile(key);
+    await writeAuditLog({
+      action: "storage.signed_download.used",
+      target: key,
+      payload: {
+        expiresAtUnix,
+      },
+    });
     return new Response(file);
   })
   .get("/head/*", async (c) => {
@@ -164,7 +186,16 @@ export const storageRouter = new Hono()
     if (!key) {
       throw new HttpError(400, "key is required");
     }
-    return c.json(await headStoredFile(key));
+    const metadata = await headStoredFile(key);
+    await writeAuditLog({
+      action: "storage.file.metadata.read",
+      actorUserId: actorUserId(actor),
+      target: key,
+      payload: {
+        actorKind: actor.kind,
+      },
+    });
+    return c.json(metadata);
   })
   .delete("/*", async (c) => {
     const actor = await resolveRequestActor(c);
@@ -176,6 +207,14 @@ export const storageRouter = new Hono()
       throw new HttpError(400, "key is required");
     }
     await removeStoredFile(key);
+    await writeAuditLog({
+      action: "storage.file.deleted",
+      actorUserId: actorUserId(actor),
+      target: key,
+      payload: {
+        actorKind: actor.kind,
+      },
+    });
     return c.body(null, 204);
   })
   .get("/files", async (c) => {
@@ -204,5 +243,16 @@ export const storageRouter = new Hono()
     if (actor.kind === "public") {
       throw new HttpError(401, "Authentication required");
     }
-    return c.json(await getStorageFileRecordById(c.req.param("id")));
+    const id = c.req.param("id");
+    const file = await getStorageFileRecordById(id);
+    await writeAuditLog({
+      action: "storage.file.record.read",
+      actorUserId: actorUserId(actor),
+      target: id,
+      payload: {
+        actorKind: actor.kind,
+        key: file.key,
+      },
+    });
+    return c.json(file);
   });

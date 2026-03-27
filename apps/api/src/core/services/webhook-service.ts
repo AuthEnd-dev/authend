@@ -96,7 +96,12 @@ export async function createWebhook(input: WebhookInput, actorUserId?: string | 
     action: 'webhook.created',
     actorUserId,
     target: id,
-    payload: { url: parsed.url, events: parsed.events },
+    payload: {
+      url: parsed.url,
+      events: parsed.events,
+      enabled: parsed.enabled,
+      hasCustomSecret: Boolean(parsed.secret),
+    },
   });
 
   return getWebhook(id);
@@ -118,6 +123,7 @@ export async function updateWebhook(id: string, input: Partial<WebhookInput>, ac
     enabled: existing.enabled,
     ...input,
   });
+  const changedKeys = Object.keys(input).sort();
 
   await db
     .update(webhooks)
@@ -135,7 +141,13 @@ export async function updateWebhook(id: string, input: Partial<WebhookInput>, ac
     action: 'webhook.updated',
     actorUserId,
     target: id,
-    payload: { url: merged.url },
+    payload: {
+      url: merged.url,
+      events: merged.events,
+      enabled: merged.enabled,
+      changedKeys,
+      secretRotated: typeof input.secret === 'string' && input.secret !== existing.secret,
+    },
   });
 
   return getWebhook(id);
@@ -153,7 +165,11 @@ export async function deleteWebhook(id: string, actorUserId?: string | null): Pr
     action: 'webhook.deleted',
     actorUserId,
     target: id,
-    payload: { url: existing.url },
+    payload: {
+      url: existing.url,
+      events: existing.events,
+      enabled: existing.enabled,
+    },
   });
 }
 

@@ -4,6 +4,13 @@ import { z } from "zod";
 import { db } from "../db/client";
 import { HttpError } from "../lib/http";
 import { getAdminAuth } from "../services/auth-service";
+import {
+  assertProtectedAuthAttemptAllowed,
+  clearProtectedAuthFailure,
+  prepareProtectedAuthAttempt,
+  recordProtectedAuthFailure,
+  shouldRecordProtectedAuthFailure,
+} from "../services/auth-abuse-service";
 
 const signInEmailBodySchema = z.object({
   email: z.string().email(),
@@ -49,8 +56,32 @@ async function assertIsSuperuserForAdminRequest(c: Context) {
 }
 
 export const adminAuthRouter = new Hono().all("*", async (c) => {
-  await assertIsSuperuserForAdminRequest(c);
-  const auth = await getAdminAuth();
-  return auth.handler(c.req.raw);
-});
+  const protectedAttempt = await prepareProtectedAuthAttempt(c.req.raw, "admin");
+  if (protectedAttempt) {
+    const blockedResponse = assertProtectedAuthAttemptAllowed(protectedAttempt);
+    if (blockedResponse) {
+      return blockedResponse;
+    }
+  }
 
+  try {
+    await assertIsSuperuserForAdminRequest(c);
+    const auth = await getAdminAuth();
+    const response = await auth.handler(c.req.raw);
+
+    if (protectedAttempt) {
+      if (response.status === 200) {
+        clearProtectedAuthFailure(protectedAttempt);
+      } else if (shouldRecordProtectedAuthFailure(response.status)) {
+        recordProtectedAuthFailure(protectedAttempt);
+      }
+    }
+
+    return response;
+  } catch (error) {
+    if (protectedAttempt && error instanceof HttpError && shouldRecordProtectedAuthFailure(error.status)) {
+      recordProtectedAuthFailure(protectedAttempt);
+    }
+    throw error;
+  }
+});

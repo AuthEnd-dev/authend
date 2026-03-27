@@ -323,6 +323,27 @@ ${draft.tables.map((table) => `  ${table.name},`).join("\n")}
 `;
 }
 
+function summarizePolicyChanges(current: SchemaDraft, next: SchemaDraft) {
+  const currentTables = new Map(current.tables.map((table) => [table.name, table]));
+  const changedTables: string[] = [];
+
+  for (const table of next.tables) {
+    const previous = currentTables.get(table.name);
+    if (!previous) {
+      continue;
+    }
+
+    if (JSON.stringify(previous.api) !== JSON.stringify(table.api)) {
+      changedTables.push(table.name);
+    }
+  }
+
+  return {
+    count: changedTables.length,
+    tables: changedTables.sort(),
+  };
+}
+
 export const schemaServiceTestUtils = {
   renderSchemaModule,
 };
@@ -785,13 +806,19 @@ export async function getSchemaDraft(options: { includeExtensions?: boolean } = 
   const relations = await db.select().from(schemaRelations);
 
   const baseDraft = {
-    tables: tables.map((table) => ({
-      ...(table.definition as TableBlueprint),
-      hooks: (table.definition as TableBlueprint).hooks || [],
-      fields: fields
-        .filter((field) => field.tableId === table.id)
-        .map((field) => field.definition as FieldBlueprint),
-    })),
+    tables: tables.map((table) => {
+      const definition = table.definition as unknown as TableBlueprint & {
+        hooks?: unknown[];
+      };
+
+      return {
+        ...definition,
+        hooks: definition.hooks || [],
+        fields: fields
+          .filter((field) => field.tableId === table.id)
+          .map((field) => field.definition as FieldBlueprint),
+      };
+    }),
     relations: relations.map((relation) => relation.definition as SchemaDraft["relations"][number]),
   };
 
@@ -938,6 +965,7 @@ async function replaceMetadata(draft: SchemaDraft) {
 export async function applyDraft(rawDraft: SchemaDraft, actorUserId?: string | null) {
   const draft = mergeDraftWithExtensions(validateDraft(rawDraft));
   const current = await getSchemaDraft({ includeExtensions: false });
+  const policyChanges = summarizePolicyChanges(current, draft);
   const nextTableNames = new Set(draft.tables.map((table) => table.name));
   const droppedTableNames = current.tables
     .map((table) => table.name)
@@ -970,8 +998,25 @@ export async function applyDraft(rawDraft: SchemaDraft, actorUserId?: string | n
     action: "schema.applied",
     actorUserId,
     target: migrationKey,
-    payload: { tableCount: draft.tables.length, relationCount: draft.relations.length },
+    payload: {
+      tableCount: draft.tables.length,
+      relationCount: draft.relations.length,
+      policyChangeCount: policyChanges.count,
+      policyTables: policyChanges.tables,
+    },
   });
+
+  if (policyChanges.count > 0) {
+    await writeAuditLog({
+      action: "schema.policy.updated",
+      actorUserId,
+      target: migrationKey,
+      payload: {
+        tables: policyChanges.tables,
+        changeCount: policyChanges.count,
+      },
+    });
+  }
 
   void dispatchWebhookEvent("schema.applied", {
     tableCount: draft.tables.length,

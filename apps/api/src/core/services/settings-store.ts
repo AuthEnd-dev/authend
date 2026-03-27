@@ -36,6 +36,16 @@ function parseSettingsSection<TSection extends SettingsSectionId>(section: TSect
   }) as SettingsSectionConfigMap[TSection];
 }
 
+function changedSettingKeys(previous: unknown, next: unknown) {
+  const previousRecord =
+    previous && typeof previous === "object" && !Array.isArray(previous) ? (previous as Record<string, unknown>) : {};
+  const nextRecord = next && typeof next === "object" && !Array.isArray(next) ? (next as Record<string, unknown>) : {};
+  const keys = new Set([...Object.keys(previousRecord), ...Object.keys(nextRecord)]);
+  return Array.from(keys)
+    .filter((key) => JSON.stringify(previousRecord[key]) !== JSON.stringify(nextRecord[key]))
+    .sort();
+}
+
 export async function readSettingsSection<TSection extends SettingsSectionId>(section: TSection) {
   const row = await db.query.systemSettings.findFirst({
     where: (table, operators) => operators.eq(table.key, section),
@@ -53,6 +63,7 @@ export async function writeSettingsSection<TSection extends SettingsSectionId>(
   value: SettingsSectionConfigMap[TSection],
   actorUserId?: string | null,
 ) {
+  const previous = await readSettingsSection(section);
   const parsed = parseSettingsSection(section, value);
 
   await sql`
@@ -69,6 +80,7 @@ export async function writeSettingsSection<TSection extends SettingsSectionId>(
     target: section,
     payload: {
       section,
+      changedKeys: changedSettingKeys(previous.config, parsed),
     },
   });
 
