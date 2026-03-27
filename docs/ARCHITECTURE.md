@@ -188,6 +188,13 @@ Important files:
 - [`apps/api/src/core/db/schema/system.ts`](/Users/akuma/Github/akumzy/authend/apps/api/src/core/db/schema/system.ts)
 - [`apps/api/generated/schema/generated.ts`](/Users/akuma/Github/akumzy/authend/apps/api/generated/schema/generated.ts)
 
+Generated application tables can also carry table-level record hooks in schema metadata.
+
+- hooks can run on `beforeCreate`, `afterCreate`, `beforeUpdate`, `afterUpdate`, `beforeDelete`, and `afterDelete`
+- a hook can either call an external webhook URL or run a built-in automation recipe
+- `blocking` hooks must succeed for the request to continue
+- `after*` hooks run after the row mutation has happened, so blocking there delays completion but does not roll back the already-written row
+
 ### 6.4 Admin Dashboard
 
 The admin app is a React frontend.

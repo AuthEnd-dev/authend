@@ -15,6 +15,8 @@ The priority order is deliberate:
 - Do not start the next phase until the current phase exit criteria are met.
 - Keep boxes unchecked until the feature is implemented, documented, and tested.
 - If scope changes, update this file first so the roadmap stays truthful.
+- Keep the main roadmap focused on the single-project self-hosted product.
+- Move “nice to have” operator polish and hosted-platform ideas into `Later, Not Now`.
 
 ## North Star
 
@@ -158,8 +160,7 @@ Goal: fill the most important missing product categories.
 - [x] Add outbound webhooks for auth, schema, plugin, and data events.
 - [x] Add webhook signing secrets and replay protection.
 - [x] Add event retry and dead-letter handling.
-- [ ] Add record triggers for before/after create/update/delete hooks.
-- [ ] Add operator-managed automation recipes for common backend tasks.
+- [x] Add record triggers for before/after create/update/delete hooks.
 
 ### Exit Criteria
 
@@ -176,19 +177,16 @@ Goal: make the product easy, not just powerful.
 - [ ] Add guided creation for tables, relations, enums, indexes, and defaults.
 - [ ] Add migration diff review with clear before/after explanations.
 - [ ] Add guarded destructive changes with backup prompts and rollback guidance.
-- [ ] Add seeded sample data generation for new tables.
 
 ### API Designer
 
 - [ ] Add visual route naming, SDK naming, tags, descriptions, and operation toggles.
 - [ ] Add field picker UI for filters, sorting, hidden fields, and includes.
-- [ ] Add “try it” request panels backed by the live API contract.
-- [ ] Add policy-aware request examples for public, session, and API-key callers.
 
 ### Operator Experience
 
 - [ ] Add setup wizard for first run.
-- [ ] Add actionable diagnostics for email, storage, backups, crons, and AI assistant.
+- [ ] Add actionable diagnostics for email, storage, backups, and cron jobs.
 - [ ] Add “why is this failing?” troubleshooting surfaces in the UI.
 - [ ] Add safer plugin lifecycle UX, especially for stateful plugins.
 
@@ -206,7 +204,6 @@ Goal: make Authend reliable enough for serious production use.
 - [ ] Add structured request logs with request IDs and actor context.
 - [ ] Add metrics for auth, CRUD, storage, realtime, and webhook flows.
 - [ ] Add slow-query and failed-job visibility.
-- [ ] Add admin views for operational health and recent incidents.
 
 ### Security And Abuse Controls
 
@@ -227,9 +224,9 @@ Goal: make Authend reliable enough for serious production use.
 - [ ] Operators can detect, diagnose, and recover from the common failure modes.
 - [ ] Security controls exist for public traffic and automation traffic.
 
-## Phase 6: Team And Environment Workflows
+## Phase 6: Deployment And Environment Workflows
 
-Goal: support real teams, not just a solo local project.
+Goal: make single-project deployments repeatable across environments.
 
 ### Environments
 
@@ -237,26 +234,24 @@ Goal: support real teams, not just a solo local project.
 - [ ] Add migration promotion workflows across environments.
 - [ ] Add environment validation before deploy.
 
-### Teams
-
-- [ ] Add multiple admin roles with scoped permissions.
-- [ ] Add audit-friendly change attribution for every sensitive admin action.
-- [ ] Add safe collaboration around schema drafts and pending changes.
-
 ### Distribution
 
-- [ ] Add reference deployment guides for Docker, Fly.io, Railway, and VPS hosting.
+- [ ] Add reference deployment guides for Docker and VPS hosting.
 - [ ] Add example reverse-proxy and TLS configurations.
 - [ ] Add release/version compatibility notes between server and SDK.
 
 ### Exit Criteria
 
-- [ ] A small team can run Authend with safe change management across environments.
+- [ ] Operators can deploy and promote Authend safely across local, staging, and production environments.
 
 ## Later, Not Now
 
 These are valid future directions, but they should not block the main roadmap:
 
+- [ ] “Try it” API request panels in the admin UI
+- [ ] Policy-aware request examples for public, session, and API-key callers
+- [ ] Admin health/incident dashboards beyond the core diagnostics needed for operation
+- [ ] Additional one-click deployment guides beyond Docker and VPS
 - [ ] Multi-project hosted control plane
 - [ ] Full multi-tenancy primitives
 - [ ] Billing and quota productization
@@ -270,10 +265,10 @@ If work starts now, the next sequence should be:
 1. Phase 0: stabilize runtime and schema safety
 2. Phase 1: app-facing authorization and public data plane
 3. Phase 2: generated TS SDK and client ergonomics
-4. Phase 3: storage (remaining: realtime, webhooks, automations), then Phase 4–6 as below
+4. Phase 3: finish the remaining event-automation hook work, then Phase 4–6 as below
 5. Phase 4: visual UX overhaul
 6. Phase 5: production hardening
-7. Phase 6: team and environment workflows
+7. Phase 6: deployment and environment workflows
 
 ## Definition Of Done For The Roadmap
 

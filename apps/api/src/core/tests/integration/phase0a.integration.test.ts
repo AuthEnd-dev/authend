@@ -1959,7 +1959,7 @@ describe('Phase 0A integration hardening', () => {
     expect(cleanReport.drifted).toBe(false);
 
     const generatedSchemaPath =
-      process.env.AUTHEND_GENERATED_SCHEMA_FILE ?? resolve(import.meta.dir, '../../../../generated/schema/generated.ts');
+      process.env.AUTHEND_GENERATED_SCHEMA_FILE ?? resolve(import.meta.dir, '../generated/schema/generated.ts');
     const generatedSchemaText = await Bun.file(generatedSchemaPath).text();
     expect(generatedSchemaText).toContain('pgEnum("release_notes_status_enum"');
     expect(generatedSchemaText).toContain('(table) => [');
