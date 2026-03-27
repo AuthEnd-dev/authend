@@ -2,6 +2,7 @@ import type { Context, Next } from 'hono';
 import { getAdminAuth, getAuth } from '../services/auth-service';
 import { db } from '../db/client';
 import { HttpError } from '../lib/http';
+import { updateRequestLogContext } from '../lib/request-context';
 
 export type SessionContext = {
   user: {
@@ -93,6 +94,14 @@ export async function readSession(c: Context) {
   }
 
   c.set('auth', session as SessionContext);
+  updateRequestLogContext(c.req.raw, {
+    actor: {
+      actorKind: 'session',
+      subjectId: session.user.id,
+      userId: session.user.id,
+      sessionId: session.session.id,
+    },
+  });
   return session as SessionContext;
 }
 
@@ -107,6 +116,14 @@ export async function readAdminSession(c: Context) {
   }
 
   c.set('auth', session as SessionContext);
+  updateRequestLogContext(c.req.raw, {
+    actor: {
+      actorKind: 'session',
+      subjectId: session.user.id,
+      userId: session.user.id,
+      sessionId: session.session.id,
+    },
+  });
   return session as SessionContext;
 }
 
@@ -149,7 +166,15 @@ export async function verifyRequestApiKey(c: Context) {
     return null;
   }
 
-  return verifyApiKeyString(presentedKey);
+  const actor = await verifyApiKeyString(presentedKey);
+  updateRequestLogContext(c.req.raw, {
+    actor: {
+      actorKind: 'apiKey',
+      subjectId: actor.subjectId,
+      apiKeyId: actor.keyId,
+    },
+  });
+  return actor;
 }
 
 /** Resolve app-facing actor from a raw Request (used for WebSocket upgrade on `/api/realtime`). */
@@ -168,12 +193,26 @@ export async function resolveRequestActorFromRequest(req: Request): Promise<Requ
   });
 
   if (!session?.user || !session.session) {
+    updateRequestLogContext(req, {
+      actor: {
+        actorKind: 'public',
+        subjectId: null,
+      },
+    });
     return {
       kind: 'public',
       subjectId: null,
     };
   }
 
+  updateRequestLogContext(req, {
+    actor: {
+      actorKind: 'session',
+      subjectId: session.user.id,
+      userId: session.user.id,
+      sessionId: session.session.id,
+    },
+  });
   return {
     kind: 'session',
     subjectId: session.user.id,
@@ -210,6 +249,12 @@ export async function resolveAdminRequestActor(c: Context): Promise<RequestActor
 
   const session = await readAdminSession(c);
   if (!session) {
+    updateRequestLogContext(c.req.raw, {
+      actor: {
+        actorKind: 'public',
+        subjectId: null,
+      },
+    });
     return {
       kind: 'public',
       subjectId: null,
@@ -221,6 +266,14 @@ export async function resolveAdminRequestActor(c: Context): Promise<RequestActor
   });
 
   if (!admin) {
+    updateRequestLogContext(c.req.raw, {
+      actor: {
+        actorKind: 'session',
+        subjectId: session.user.id,
+        userId: session.user.id,
+        sessionId: session.session.id,
+      },
+    });
     return {
       kind: 'session',
       subjectId: session.user.id,
@@ -228,6 +281,14 @@ export async function resolveAdminRequestActor(c: Context): Promise<RequestActor
     };
   }
 
+  updateRequestLogContext(c.req.raw, {
+    actor: {
+      actorKind: 'superadmin',
+      subjectId: session.user.id,
+      userId: session.user.id,
+      sessionId: session.session.id,
+    },
+  });
   return {
     kind: 'superadmin',
     subjectId: session.user.id,

@@ -207,7 +207,7 @@ Goal: make AuthEnd reliable enough for serious production use.
 
 ### Observability
 
-- [ ] Add structured request logs with request IDs and actor context.
+- [x] Add structured request logs with request IDs and actor context.
 - [ ] Add metrics for auth, CRUD, storage, realtime, and webhook flows.
 - [ ] Add slow-query and failed-job visibility.
 

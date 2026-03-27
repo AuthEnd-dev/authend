@@ -3,8 +3,9 @@ import { resolve } from 'node:path';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from './lib/logger';
-import { jsonError } from './lib/http';
+import { HttpError, jsonError } from './lib/http';
 import { env } from './config/env';
+import { getRequestLogContext, updateRequestLogContext } from './lib/request-context';
 import { registerCoreRoutes } from './register-core-routes';
 import { registerExtensionRoutes } from '../extensions/routes';
 
@@ -47,6 +48,10 @@ export function createApp() {
   const app = new Hono();
 
   app.use(async (c, next) => {
+    const requestId = c.req.header('x-request-id')?.trim() || crypto.randomUUID();
+    updateRequestLogContext(c.req.raw, { requestId });
+    c.header('x-request-id', requestId);
+
     const started = performance.now();
     try {
       await next();
@@ -56,12 +61,19 @@ export function createApp() {
       const query =
         search.length === 0 ? undefined : search.length <= 512 ? search.slice(1) : `${search.slice(1, 509)}…`;
       const userAgent = c.req.header('user-agent');
+      const context = getRequestLogContext(c.req.raw);
       logger.info('request', {
+        requestId: context.requestId,
         method: c.req.method,
         path: c.req.path,
         ...(query ? { query } : {}),
         status: c.res.status,
         durationMs: Math.round(performance.now() - started),
+        ...(context.actor?.actorKind ? { actorKind: context.actor.actorKind } : {}),
+        ...(context.actor?.subjectId !== undefined ? { actorSubjectId: context.actor.subjectId } : {}),
+        ...(context.actor?.userId ? { actorUserId: context.actor.userId } : {}),
+        ...(context.actor?.sessionId ? { actorSessionId: context.actor.sessionId } : {}),
+        ...(context.actor?.apiKeyId ? { actorApiKeyId: context.actor.apiKeyId } : {}),
         ...(userAgent ? { userAgent: userAgent.length <= 400 ? userAgent : `${userAgent.slice(0, 397)}…` } : {}),
         ...(c.req.header('x-forwarded-for') ? { forwardedFor: c.req.header('x-forwarded-for') } : {}),
         ...(c.req.header('referer') ? { referer: c.req.header('referer') } : {}),
@@ -84,8 +96,49 @@ export function createApp() {
     }),
   );
 
-  app.onError((error) => {
-    logger.error('request.failed', { error: error instanceof Error ? error.message : String(error) });
+  app.onError((error, c) => {
+    const pathname = new URL(c.req.url).pathname;
+    const context = getRequestLogContext(c.req.raw);
+
+    if (error instanceof HttpError) {
+      const baseMeta = {
+        requestId: context.requestId,
+        method: c.req.method,
+        path: c.req.path,
+        status: error.status,
+        ...(context.actor?.actorKind ? { actorKind: context.actor.actorKind } : {}),
+        ...(context.actor?.subjectId !== undefined ? { actorSubjectId: context.actor.subjectId } : {}),
+        ...(context.actor?.userId ? { actorUserId: context.actor.userId } : {}),
+        ...(context.actor?.sessionId ? { actorSessionId: context.actor.sessionId } : {}),
+        ...(context.actor?.apiKeyId ? { actorApiKeyId: context.actor.apiKeyId } : {}),
+      };
+
+      if (
+        error.status === 401 &&
+        (pathname.endsWith('/get-session') || pathname.endsWith('/refresh-session') || pathname.endsWith('/token'))
+      ) {
+        logger.info('request.unauthorized', baseMeta);
+        return jsonError(error);
+      }
+
+      logger.warn('request.rejected', {
+        ...baseMeta,
+        error: error.message,
+      });
+      return jsonError(error);
+    }
+
+    logger.error('request.failed', {
+      requestId: context.requestId,
+      method: c.req.method,
+      path: c.req.path,
+      ...(context.actor?.actorKind ? { actorKind: context.actor.actorKind } : {}),
+      ...(context.actor?.subjectId !== undefined ? { actorSubjectId: context.actor.subjectId } : {}),
+      ...(context.actor?.userId ? { actorUserId: context.actor.userId } : {}),
+      ...(context.actor?.sessionId ? { actorSessionId: context.actor.sessionId } : {}),
+      ...(context.actor?.apiKeyId ? { actorApiKeyId: context.actor.apiKeyId } : {}),
+      error: error instanceof Error ? error.message : String(error),
+    });
     return jsonError(error);
   });
 
