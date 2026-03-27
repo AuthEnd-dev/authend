@@ -3,7 +3,13 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { client } from "../lib/client";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
-import type { BackupSettingsResponse, CronSettingsResponse, SettingsSectionState, StorageSettingsResponse } from "@authend/shared";
+import type {
+  BackupSettingsResponse,
+  CronSettingsResponse,
+  SettingsSectionState,
+  StorageSettingsResponse,
+  WebhooksSettingsResponse,
+} from "@authend/shared";
 
 type DiagnosticIssue = {
   severity: "warning" | "error";
@@ -70,6 +76,10 @@ export function DashboardPage() {
         queryKey: ["settings", "crons"],
         queryFn: () => client.system.settings.get("crons") as Promise<CronSettingsResponse>,
       },
+      {
+        queryKey: ["settings", "webhooks"],
+        queryFn: () => client.system.settings.get("webhooks") as Promise<WebhooksSettingsResponse>,
+      },
     ],
   });
 
@@ -111,7 +121,43 @@ export function DashboardPage() {
       href: "/crons",
       issues: parseIssues(diagnosticsQueries[3].data?.diagnostics),
     },
+    {
+      title: "Webhooks",
+      href: "/webhooks",
+      issues: [],
+    },
   ];
+
+  const backupFailures = (diagnosticsQueries[2].data?.runs ?? []).filter((run) => run.status === "failed").slice(0, 3);
+  const cronFailures = (diagnosticsQueries[3].data?.runs ?? []).filter((run) => run.status === "failed").slice(0, 3);
+  const webhookFailures = (diagnosticsQueries[4].data?.recentDeliveries ?? [])
+    .filter((delivery) => delivery.status === "failed" || delivery.status === "dead")
+    .slice(0, 3);
+  const failedOperations = [
+    ...backupFailures.map((run) => ({
+      scope: "Backups",
+      status: "failed",
+      detail: run.error ?? run.filePath ?? run.destination,
+      href: "/backups",
+      startedAt: run.startedAt,
+    })),
+    ...cronFailures.map((run) => ({
+      scope: `Cron: ${run.jobName}`,
+      status: run.status,
+      detail: run.error ?? `${run.trigger} run failed`,
+      href: "/crons",
+      startedAt: run.startedAt,
+    })),
+    ...webhookFailures.map((delivery) => ({
+      scope: `Webhook: ${delivery.eventType}`,
+      status: delivery.status,
+      detail: delivery.error ?? `HTTP ${delivery.responseStatus ?? "unknown"}`,
+      href: "/webhooks",
+      startedAt: delivery.createdAt,
+    })),
+  ]
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+    .slice(0, 6);
 
   const blockingTasks = [
     ...setupTasks
@@ -216,6 +262,62 @@ export function DashboardPage() {
                 </div>
               ))
             )}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
+        <Card className="border-border shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-lg">Operational failures</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {failedOperations.length === 0 ? (
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-4 text-sm text-foreground">
+                No recent failed backup runs, cron executions, or webhook deliveries.
+              </div>
+            ) : (
+              failedOperations.map((failure) => (
+                <div key={`${failure.scope}-${failure.startedAt}-${failure.detail}`} className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-foreground">{failure.scope}</p>
+                    <Badge variant="destructive">{failure.status}</Badge>
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">{failure.detail}</p>
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <p className="text-xs text-muted-foreground">{new Date(failure.startedAt).toLocaleString()}</p>
+                    <Link to={failure.href} className="text-sm font-medium text-primary hover:underline">
+                      Open
+                    </Link>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-border shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-lg">Slow request visibility</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              AuthEnd now emits a dedicated <code className="font-mono text-xs">request.slow</code> log entry for API requests taking
+              at least 1000ms, with request ID and actor context attached.
+            </p>
+            <div className="rounded-xl border border-border/60 bg-background px-4 py-3">
+              <p className="font-semibold text-foreground">What to look for in logs</p>
+              <p className="mt-2">
+                Filter for <code className="font-mono text-xs">"message":"request.slow"</code> and use the shared
+                <code className="mx-1 font-mono text-xs">requestId</code> to correlate the slow request with related warnings or failures.
+              </p>
+            </div>
+            <div className="rounded-xl border border-border/60 bg-background px-4 py-3">
+              <p className="font-semibold text-foreground">Included context</p>
+              <p className="mt-2">
+                Each slow-request log includes method, path, duration, actor kind, actor subject, and session or API key identifiers when available.
+              </p>
+            </div>
           </CardContent>
         </Card>
       </section>

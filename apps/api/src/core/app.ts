@@ -10,6 +10,7 @@ import { registerCoreRoutes } from './register-core-routes';
 import { registerExtensionRoutes } from '../extensions/routes';
 
 const adminDist = resolve(import.meta.dir, '../../../admin/dist');
+const SLOW_REQUEST_THRESHOLD_MS = 1000;
 
 async function serveAdminAsset(pathname: string) {
   const filePath = pathname === '/' ? resolve(adminDist, 'index.html') : resolve(adminDist, `.${pathname}`);
@@ -62,7 +63,7 @@ export function createApp() {
         search.length === 0 ? undefined : search.length <= 512 ? search.slice(1) : `${search.slice(1, 509)}…`;
       const userAgent = c.req.header('user-agent');
       const context = getRequestLogContext(c.req.raw);
-      logger.info('request', {
+      const requestMeta = {
         requestId: context.requestId,
         method: c.req.method,
         path: c.req.path,
@@ -77,7 +78,16 @@ export function createApp() {
         ...(userAgent ? { userAgent: userAgent.length <= 400 ? userAgent : `${userAgent.slice(0, 397)}…` } : {}),
         ...(c.req.header('x-forwarded-for') ? { forwardedFor: c.req.header('x-forwarded-for') } : {}),
         ...(c.req.header('referer') ? { referer: c.req.header('referer') } : {}),
-      });
+      };
+
+      logger.info('request', requestMeta);
+
+      if (requestMeta.durationMs >= SLOW_REQUEST_THRESHOLD_MS) {
+        logger.warn('request.slow', {
+          ...requestMeta,
+          thresholdMs: SLOW_REQUEST_THRESHOLD_MS,
+        });
+      }
     }
   });
 

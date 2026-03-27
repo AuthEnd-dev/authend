@@ -26,6 +26,7 @@ import type {
   SetupStatus,
   StorageSettingsResponse,
   TableApiConfig,
+  WebhooksSettingsResponse,
 } from '@authend/shared';
 
 const viteApiUrl = typeof import.meta.env.VITE_API_URL === 'string' ? import.meta.env.VITE_API_URL.trim() : '';
@@ -152,11 +153,11 @@ export const client = {
     },
     settings: {
       get: <TSection extends SettingsSectionId>(section: TSection) =>
-        request<SettingsSectionState | StorageSettingsResponse | BackupSettingsResponse | CronSettingsResponse>(
+        request<SettingsSectionState | StorageSettingsResponse | BackupSettingsResponse | CronSettingsResponse | WebhooksSettingsResponse>(
           `/api/admin/settings/${section}`,
         ),
       save: <TSection extends SettingsSectionId>(section: TSection, config: SettingsSectionConfigMap[TSection]) =>
-        request<SettingsSectionState | StorageSettingsResponse | BackupSettingsResponse | CronSettingsResponse>(
+        request<SettingsSectionState | StorageSettingsResponse | BackupSettingsResponse | CronSettingsResponse | WebhooksSettingsResponse>(
           `/api/admin/settings/${section}`,
           {
             method: 'POST',
