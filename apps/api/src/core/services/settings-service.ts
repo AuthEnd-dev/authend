@@ -33,6 +33,14 @@ type DiagnosticCheck = {
   detail?: string;
 };
 
+type CompatibleApiRateLimitSettings = {
+  publicRateLimitPerMinute?: number;
+  sessionRateLimitPerMinute?: number;
+  apiKeyRateLimitPerMinute?: number;
+  defaultRateLimitPerMinute: number;
+  maxRateLimitPerMinute: number;
+};
+
 type DiagnosticIssue = {
   severity: "warning" | "error";
   title: string;
@@ -659,8 +667,12 @@ async function genericDiagnostics(section: Exclude<SettingsSectionId, "storage" 
     }
     case "api": {
       const state = await readSettingsSection("api");
+      const config = state.config as typeof state.config & CompatibleApiRateLimitSettings;
       return {
         defaultAuthMode: state.config.defaultAuthMode,
+        publicRateLimitPerMinute: config.publicRateLimitPerMinute ?? config.defaultRateLimitPerMinute,
+        sessionRateLimitPerMinute: config.sessionRateLimitPerMinute ?? config.maxRateLimitPerMinute,
+        apiKeyRateLimitPerMinute: config.apiKeyRateLimitPerMinute ?? config.maxRateLimitPerMinute,
       };
     }
     case "aiAssistant": {

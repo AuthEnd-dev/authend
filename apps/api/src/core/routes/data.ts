@@ -128,11 +128,12 @@ function readClientIp(c: Parameters<typeof resolveRequestActor>[0]) {
 }
 
 async function applyDataRateLimit(c: Parameters<typeof resolveRequestActor>[0], actor: RequestActor) {
-  if (actor.kind !== 'public' && actor.kind !== 'apiKey') {
-    return;
-  }
-
-  const identifier = actor.kind === 'apiKey' ? actor.keyId : readClientIp(c);
+  const identifier =
+    actor.kind === 'public'
+      ? readClientIp(c)
+      : actor.kind === 'apiKey'
+        ? actor.keyId
+        : actor.session.session.id;
   const decision = await rateLimitDataRequest(actor, identifier);
   if (!decision) {
     return;

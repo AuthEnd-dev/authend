@@ -2,6 +2,12 @@ import type { ApiSettings } from "@authend/shared";
 import type { RequestActor } from "../middleware/auth";
 import { readSettingsSection } from "./settings-store";
 
+type CompatibleApiRateLimitSettings = ApiSettings & {
+  publicRateLimitPerMinute?: number;
+  sessionRateLimitPerMinute?: number;
+  apiKeyRateLimitPerMinute?: number;
+};
+
 type RateLimitKey = string;
 
 type RateLimitBucket = {
@@ -32,15 +38,22 @@ function buildBucketKey(actor: RequestActor, identifier: string) {
   return `data:${actor.kind}:${identifier}`;
 }
 
-function publicRateLimit(settings: ApiSettings) {
-  return Math.max(1, Math.min(settings.defaultRateLimitPerMinute, settings.maxRateLimitPerMinute));
+function publicRateLimit(settings: CompatibleApiRateLimitSettings) {
+  return Math.max(1, settings.publicRateLimitPerMinute ?? settings.defaultRateLimitPerMinute);
 }
 
-function apiKeyRateLimit(settings: ApiSettings) {
-  return Math.max(1, settings.maxRateLimitPerMinute);
+function sessionRateLimit(settings: CompatibleApiRateLimitSettings) {
+  return Math.max(
+    1,
+    settings.sessionRateLimitPerMinute ?? Math.max(settings.defaultRateLimitPerMinute, settings.publicRateLimitPerMinute ?? 0),
+  );
 }
 
-function resolveLimit(actor: RequestActor, settings: ApiSettings) {
+function apiKeyRateLimit(settings: CompatibleApiRateLimitSettings) {
+  return Math.max(1, settings.apiKeyRateLimitPerMinute ?? settings.maxRateLimitPerMinute);
+}
+
+function resolveLimit(actor: RequestActor, settings: CompatibleApiRateLimitSettings) {
   if (actor.kind === "public") {
     return publicRateLimit(settings);
   }
@@ -49,7 +62,7 @@ function resolveLimit(actor: RequestActor, settings: ApiSettings) {
     return apiKeyRateLimit(settings);
   }
 
-  return null;
+  return sessionRateLimit(settings);
 }
 
 function upsertBucket(key: string, now: number) {
@@ -97,7 +110,7 @@ export function consumeRateLimit(limit: number, key: string, now = Date.now()): 
 }
 
 export async function rateLimitDataRequest(actor: RequestActor, identifier: string | null | undefined) {
-  const settings = (await readSettingsSection("api")).config;
+  const settings = (await readSettingsSection("api")).config as CompatibleApiRateLimitSettings;
   const limit = resolveLimit(actor, settings);
   if (limit === null || !identifier) {
     return null;

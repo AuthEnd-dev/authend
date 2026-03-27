@@ -213,7 +213,7 @@ Goal: make AuthEnd reliable enough for serious production use.
 
 ### Security And Abuse Controls
 
-- [ ] Add configurable rate limiting by IP, session, and API key.
+- [x] Add configurable rate limiting by IP, session, and API key.
 - [ ] Add brute-force protection for auth endpoints.
 - [ ] Add audit coverage for policy changes, storage access, and webhook config changes.
 - [ ] Add secrets redaction across logs and admin diagnostics.

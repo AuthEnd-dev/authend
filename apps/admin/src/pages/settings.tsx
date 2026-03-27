@@ -731,8 +731,9 @@ const domainsFields: SettingsField[] = [
 const apiFields: SettingsField[] = [
   { key: "defaultPageSize", label: "Default page size", kind: "number" },
   { key: "maxPageSize", label: "Max page size", kind: "number" },
-  { key: "defaultRateLimitPerMinute", label: "Default rate limit/min", kind: "number" },
-  { key: "maxRateLimitPerMinute", label: "Max rate limit/min", kind: "number" },
+  { key: "publicRateLimitPerMinute", label: "Public rate limit/min", kind: "number" },
+  { key: "sessionRateLimitPerMinute", label: "Session rate limit/min", kind: "number" },
+  { key: "apiKeyRateLimitPerMinute", label: "API key rate limit/min", kind: "number" },
   {
     key: "defaultAuthMode",
     label: "Default auth mode",
