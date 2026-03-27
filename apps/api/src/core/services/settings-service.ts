@@ -20,6 +20,7 @@ import { listPluginCapabilityManifests, readPluginCapabilityManifest } from "./p
 import { invalidateAuth } from "./auth-service";
 import { readSettingsSection, writeSettingsSection } from "./settings-store";
 import { writeAuditLog } from "./audit-service";
+import { REDACTED_VALUE } from "../lib/redaction";
 import { listRecentDeliveries, listWebhooks } from "./webhook-service";
 
 const CORE_ENV_KEYS = ["APP_URL", "DATABASE_URL", "BETTER_AUTH_SECRET", "SUPERADMIN_EMAIL", "SUPERADMIN_PASSWORD"];
@@ -466,16 +467,20 @@ async function webhooksDiagnostics() {
   const { config, updatedAt } = await readSettingsSection("webhooks");
   const webhooksList = await listWebhooks();
   const recentDeliveries = await listRecentDeliveries(25);
+  const redactedWebhooks = webhooksList.map((webhook) => ({
+    ...webhook,
+    secret: webhook.secret ? REDACTED_VALUE : webhook.secret,
+  }));
 
   return {
     section: "webhooks" as const,
     config,
     updatedAt,
-    webhooks: webhooksList,
+    webhooks: redactedWebhooks,
     recentDeliveries,
     diagnostics: {
-      totalWebhooks: webhooksList.length,
-      enabledWebhooks: webhooksList.filter((wh) => wh.enabled).length,
+      totalWebhooks: redactedWebhooks.length,
+      enabledWebhooks: redactedWebhooks.filter((wh) => wh.enabled).length,
       recentDeliveries: recentDeliveries.length,
       recentSucceeded: recentDeliveries.filter((d) => d.status === "succeeded").length,
       recentFailed: recentDeliveries.filter((d) => d.status === "failed" || d.status === "dead").length,

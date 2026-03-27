@@ -1,3 +1,5 @@
+import { redactSensitiveData } from "./redaction";
+
 type LogLevel = "info" | "warn" | "error";
 
 function log(level: LogLevel, message: string, meta?: Record<string, unknown>) {
@@ -6,7 +8,7 @@ function log(level: LogLevel, message: string, meta?: Record<string, unknown>) {
       level,
       message,
       timestamp: new Date().toISOString(),
-      ...meta,
+      ...(redactSensitiveData(meta ?? {}) as Record<string, unknown>),
     }),
   );
 }

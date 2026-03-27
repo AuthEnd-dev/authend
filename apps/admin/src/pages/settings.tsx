@@ -51,6 +51,8 @@ import { getErrorMessage, useFeedback } from "../components/ui/feedback";
 import { TooltipComponent as Tooltip } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 
+const REDACTED_VALUE = "[REDACTED]";
+
 type SettingsNavItem = {
   id: string;
   to: string;
@@ -1131,30 +1133,34 @@ export function WebhooksSettingsPage() {
                             <span className="flex items-center gap-1" title="HMAC-SHA256 signature enabled">
                               <ShieldAlert className="h-3 w-3" /> Signed
                             </span>
-                            <div className="flex items-center bg-muted/40 rounded px-1.5 py-0.5 border border-border/40 gap-1.5">
-                              <code className="text-[10px] font-mono select-all">
-                                {revealedSecrets[wh.id] ? wh.secret : "••••••••••••••••"}
-                              </code>
-                              <Tooltip content={revealedSecrets[wh.id] ? "Hide secret" : "Show secret"}>
-                                <button
-                                  onClick={() => setRevealedSecrets(prev => ({ ...prev, [wh.id]: !prev[wh.id] }))}
-                                  className="hover:text-foreground transition-colors p-0.5"
-                                >
-                                  {revealedSecrets[wh.id] ? <EyeOff className="h-2.5 w-2.5" /> : <Eye className="h-2.5 w-2.5" />}
-                                </button>
-                              </Tooltip>
-                              <Tooltip content="Copy secret">
-                                <button
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(wh.secret);
-                                    showNotice({ title: "Secret copied", variant: "success", durationMs: 2000 });
-                                  }}
-                                  className="hover:text-foreground transition-colors p-0.5 border-l border-border/40 pl-1.5"
-                                >
-                                  <Copy className="h-2.5 w-2.5" />
-                                </button>
-                              </Tooltip>
-                            </div>
+                            {wh.secret === REDACTED_VALUE ? (
+                              <span className="text-[11px] text-muted-foreground">Stored secret is hidden in diagnostics.</span>
+                            ) : (
+                              <div className="flex items-center bg-muted/40 rounded px-1.5 py-0.5 border border-border/40 gap-1.5">
+                                <code className="text-[10px] font-mono select-all">
+                                  {revealedSecrets[wh.id] ? wh.secret : "••••••••••••••••"}
+                                </code>
+                                <Tooltip content={revealedSecrets[wh.id] ? "Hide secret" : "Show secret"}>
+                                  <button
+                                    onClick={() => setRevealedSecrets(prev => ({ ...prev, [wh.id]: !prev[wh.id] }))}
+                                    className="hover:text-foreground transition-colors p-0.5"
+                                  >
+                                    {revealedSecrets[wh.id] ? <EyeOff className="h-2.5 w-2.5" /> : <Eye className="h-2.5 w-2.5" />}
+                                  </button>
+                                </Tooltip>
+                                <Tooltip content="Copy secret">
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(wh.secret);
+                                      showNotice({ title: "Secret copied", variant: "success", durationMs: 2000 });
+                                    }}
+                                    className="hover:text-foreground transition-colors p-0.5 border-l border-border/40 pl-1.5"
+                                  >
+                                    <Copy className="h-2.5 w-2.5" />
+                                  </button>
+                                </Tooltip>
+                              </div>
+                            )}
                           </div>
                         ) : null}
                       </div>
