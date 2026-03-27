@@ -1,6 +1,6 @@
 # Fork extensions (merge-friendly customization)
 
-Authend is meant to be forked and extended. To reduce merge conflicts when you pull upstream changes, put **product-specific** code in the dedicated **`extensions/`** folders and small config modules documented below. Prefer **not** editing large upstream-owned files when a hook exists.
+AuthEnd is meant to be forked and extended. To reduce merge conflicts when you pull upstream changes, put **product-specific** code in the dedicated **`extensions/`** folders and small config modules documented below. Prefer **not** editing large upstream-owned files when a hook exists.
 
 ## Naming
 

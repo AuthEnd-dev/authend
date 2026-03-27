@@ -51,6 +51,83 @@ function pluginStatusLabel(plugin: PluginManifest) {
   return status === 'requires-env' ? 'Needs env' : status;
 }
 
+function unsatisfiedDependencies(plugin: PluginManifest) {
+  return plugin.installState.dependencyState.filter((dependency) => !dependency.satisfied);
+}
+
+function canEnablePlugin(plugin: PluginManifest) {
+  return plugin.missingEnvKeys.length === 0 && unsatisfiedDependencies(plugin).length === 0;
+}
+
+function pluginLifecycleWarnings(plugin: PluginManifest) {
+  const warnings: string[] = [];
+  const dependencyIssues = unsatisfiedDependencies(plugin);
+
+  if (dependencyIssues.length > 0) {
+    warnings.push(
+      `Blocked by dependencies: ${dependencyIssues.map((dependency) => dependency.pluginId).join(', ')}`,
+    );
+  }
+
+  const appliedMigrations = plugin.installState.provisioningState.appliedMigrationKeys.length;
+  if (appliedMigrations > 0) {
+    warnings.push(
+      `${appliedMigrations} plugin migration${appliedMigrations === 1 ? '' : 's'} already applied`,
+    );
+  }
+
+  const provisionedModels = plugin.models.filter((model) => model.provisioned).length;
+  if (provisionedModels > 0) {
+    warnings.push(
+      `${provisionedModels} provisioned model${provisionedModels === 1 ? '' : 's'} may keep data after disable`,
+    );
+  }
+
+  if (plugin.installState.health.issues.length > 0) {
+    warnings.push('Runtime health issues need review before lifecycle changes');
+  }
+
+  return warnings;
+}
+
+function disablePluginDescription(plugin: PluginManifest) {
+  const appliedMigrations = plugin.installState.provisioningState.appliedMigrationKeys.length;
+  const provisionedModels = plugin.models.filter((model) => model.provisioned).length;
+  const healthIssueCount = plugin.installState.health.issues.length;
+  const impact: string[] = [];
+
+  if (appliedMigrations > 0) {
+    impact.push(`${appliedMigrations} applied migration${appliedMigrations === 1 ? '' : 's'} will be rolled back where supported`);
+  }
+  if (provisionedModels > 0) {
+    impact.push(`${provisionedModels} provisioned model${provisionedModels === 1 ? '' : 's'} may leave behind plugin-owned data`);
+  }
+  if (healthIssueCount > 0) {
+    impact.push(`${healthIssueCount} existing health issue${healthIssueCount === 1 ? '' : 's'} should be reviewed before changing runtime state`);
+  }
+
+  if (impact.length === 0) {
+    return 'This removes the plugin runtime. Re-enabling later will provision it again if needed.';
+  }
+
+  return `${impact.join('. ')}. Re-enabling later can provision the runtime again, but removed records are not restored automatically.`;
+}
+
+function pluginBlockedReason(plugin: PluginManifest) {
+  if (plugin.missingEnvKeys.length > 0) {
+    return `Missing env vars: ${plugin.missingEnvKeys.join(', ')}`;
+  }
+
+  const dependencyIssues = unsatisfiedDependencies(plugin);
+  if (dependencyIssues.length > 0) {
+    return dependencyIssues
+      .map((dependency) => dependency.reason || `${dependency.pluginId} must be enabled first`)
+      .join(' • ');
+  }
+
+  return null;
+}
+
 function mergeDisplayDefaults(plugin: PluginManifest): PluginConfig {
   const merged: PluginConfig = { ...plugin.installState.config };
   for (const field of plugin.configSchema) {
@@ -379,8 +456,7 @@ export function PluginsPage() {
   const requestDisable = async (plugin: PluginManifest) => {
     const confirmed = await confirm({
       title: `Disable ${plugin.label}?`,
-      description:
-        'This removes the plugin runtime and rolls back provisioned plugin data where supported. Re-enabling the plugin will provision it again, but deleted plugin records will not be restored.',
+      description: disablePluginDescription(plugin),
       confirmLabel: 'Disable plugin',
       cancelLabel: 'Keep enabled',
       variant: 'destructive',
@@ -474,8 +550,11 @@ export function PluginsPage() {
                 {plugins.map((plugin) => {
                   const status = pluginStatus(plugin);
                   const canDisable = !plugin.required;
+                  const canEnable = canEnablePlugin(plugin);
                   const enabledCapabilities = plugin.capabilities.filter((capability) => capability.enabled).length;
                   const provisionedModels = plugin.models.filter((model) => model.provisioned).length;
+                  const lifecycleWarnings = pluginLifecycleWarnings(plugin);
+                  const blockedReason = pluginBlockedReason(plugin);
 
                   return (
                     <Card key={plugin.id} className="border-border shadow-sm">
@@ -533,9 +612,16 @@ export function PluginsPage() {
                           <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary">
                             <p className="font-semibold">Required system plugin</p>
                             <p className="mt-1 leading-relaxed opacity-90">
-                              This plugin is enabled by default and stays on because Authend bootstrap and admin access depend on
+                              This plugin is enabled by default and stays on because AuthEnd bootstrap and admin access depend on
                               it.
                             </p>
+                          </div>
+                        ) : null}
+
+                        {lifecycleWarnings.length > 0 ? (
+                          <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                            <p className="font-semibold text-foreground">Lifecycle impact</p>
+                            <p className="mt-1 leading-relaxed">{lifecycleWarnings.join(' • ')}</p>
                           </div>
                         ) : null}
 
@@ -562,12 +648,19 @@ export function PluginsPage() {
                               size="sm"
                               className="h-8"
                               onClick={() => enableMutation.mutate(plugin.id)}
-                              disabled={status === 'requires-env' || enableMutation.isPending}
+                              disabled={!canEnable || enableMutation.isPending}
                             >
                               Enable
                             </Button>
                           )}
                         </div>
+
+                        {!plugin.installState.enabled && blockedReason ? (
+                          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700">
+                            <p className="font-semibold">Cannot enable yet</p>
+                            <p className="mt-1 leading-relaxed opacity-90">{blockedReason}</p>
+                          </div>
+                        ) : null}
                       </CardContent>
                     </Card>
                   );
@@ -614,6 +707,24 @@ export function PluginsPage() {
                 <span>Health: {selectedPlugin.installState.health.status}</span>
               </div>
             </div>
+
+            {!selectedPlugin.installState.enabled && pluginBlockedReason(selectedPlugin) ? (
+              <section className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700">
+                <p className="font-semibold text-foreground">Cannot enable yet</p>
+                <p className="mt-1 leading-relaxed">{pluginBlockedReason(selectedPlugin)}</p>
+              </section>
+            ) : null}
+
+            {pluginLifecycleWarnings(selectedPlugin).length > 0 ? (
+              <section className="rounded-xl border border-border/60 bg-muted/20 px-4 py-3 text-sm">
+                <p className="font-semibold text-foreground">Lifecycle impact</p>
+                <ul className="mt-2 space-y-2 text-muted-foreground">
+                  {pluginLifecycleWarnings(selectedPlugin).map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
 
             <section className="space-y-3 border-t border-border/50 pt-5">
               <div>

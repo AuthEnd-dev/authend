@@ -58,7 +58,7 @@ describe("extensions entrypoints", () => {
       trustedOrigins: ["http://localhost:7001"],
       generalSettings: {
         projectLabel: "Test",
-        appName: "Authend",
+        appName: "AuthEnd",
         appUrl: "http://localhost:7002",
         adminUrl: "http://localhost:7001",
         timezone: "UTC",
@@ -76,7 +76,7 @@ describe("extensions entrypoints", () => {
         smtpUsername: "",
         smtpPassword: "",
         smtpSecure: false,
-        senderName: "Authend",
+        senderName: "AuthEnd",
         senderEmail: "no-reply@example.com",
         replyToEmail: undefined,
         passwordResetSubject: "Reset your password",

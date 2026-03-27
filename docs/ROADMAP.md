@@ -1,6 +1,6 @@
-# Authend Roadmap
+# AuthEnd Roadmap
 
-This roadmap turns Authend from a strong self-hosted backend scaffold into a fast, easy, TypeScript-first BaaS.
+This roadmap turns AuthEnd from a strong self-hosted backend scaffold into a fast, easy, TypeScript-first BaaS.
 
 The priority order is deliberate:
 
@@ -20,7 +20,7 @@ The priority order is deliberate:
 
 ## North Star
 
-Authend should let a TypeScript developer:
+AuthEnd should let a TypeScript developer:
 
 1. boot a backend in minutes
 2. model data visually
@@ -102,7 +102,7 @@ Goal: move from superadmin-operated CRUD to a true BaaS runtime.
 
 ## Phase 2: Make The TypeScript DX Best-In-Class
 
-Goal: remove generic-client friction and make Authend feel native to TS apps.
+Goal: remove generic-client friction and make AuthEnd feel native to TS apps.
 
 ### SDK Generation
 
@@ -164,12 +164,18 @@ Goal: fill the most important missing product categories.
 
 ### Exit Criteria
 
-- [x] Authend can support common app needs without requiring a separate storage or realtime service.
+- [x] AuthEnd can support common app needs without requiring a separate storage or realtime service.
 - [x] Event-driven workflows are available for both internal automation and external integrations.
 
 ## Phase 4: Level Up The Admin Product Experience
 
 Goal: make the product easy, not just powerful.
+
+Priority inside this phase:
+
+1. operator diagnostics and remediation
+2. schema authoring safety and guided flows
+3. remaining API design polish that is not already covered
 
 ### Schema Builder
 
@@ -180,15 +186,15 @@ Goal: make the product easy, not just powerful.
 
 ### API Designer
 
-- [ ] Add visual route naming, SDK naming, tags, descriptions, and operation toggles.
-- [ ] Add field picker UI for filters, sorting, hidden fields, and includes.
+- [x] Close the remaining gaps in API design UX for route naming, SDK naming, tags, descriptions, and operation toggles.
+- [x] Tighten API field-picker UX for filters, sorting, hidden fields, and includes.
 
 ### Operator Experience
 
-- [ ] Add setup wizard for first run.
-- [ ] Add actionable diagnostics for email, storage, backups, and cron jobs.
-- [ ] Add “why is this failing?” troubleshooting surfaces in the UI.
-- [ ] Add safer plugin lifecycle UX, especially for stateful plugins.
+- [x] Add actionable diagnostics for email, storage, backups, and cron jobs.
+- [x] Add “why is this failing?” troubleshooting surfaces in the UI.
+- [x] Add safer plugin lifecycle UX, especially for stateful plugins.
+- [x] Add a lightweight first-run setup guide only if diagnostics and current bootstrap status are not enough.
 
 ### Exit Criteria
 
@@ -197,7 +203,7 @@ Goal: make the product easy, not just powerful.
 
 ## Phase 5: Production Hardening
 
-Goal: make Authend reliable enough for serious production use.
+Goal: make AuthEnd reliable enough for serious production use.
 
 ### Observability
 
@@ -242,7 +248,7 @@ Goal: make single-project deployments repeatable across environments.
 
 ### Exit Criteria
 
-- [ ] Operators can deploy and promote Authend safely across local, staging, and production environments.
+- [ ] Operators can deploy and promote AuthEnd safely across local, staging, and production environments.
 
 ## Later, Not Now
 
@@ -274,7 +280,7 @@ If work starts now, the next sequence should be:
 
 The roadmap is complete when all of the following are true:
 
-- [x] Authend can serve app users directly, not just superadmins
+- [x] AuthEnd can serve app users directly, not just superadmins
 - [x] TS clients are generated with exact per-resource types
 - [x] Storage and realtime are first-class features
 - [x] Event-driven integrations are supported

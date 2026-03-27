@@ -25,7 +25,7 @@ function createBootstrapEnv(databaseUrl: string, overrides: Record<string, strin
     BETTER_AUTH_SECRET: "phase0a-super-secret-value-123456",
     SUPERADMIN_EMAIL: "admin@authend.test",
     SUPERADMIN_PASSWORD: "ChangeMe123!",
-    SUPERADMIN_NAME: "Authend Admin",
+    SUPERADMIN_NAME: "AuthEnd Admin",
     ...overrides,
   };
 }

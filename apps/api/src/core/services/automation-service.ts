@@ -34,7 +34,7 @@ export async function executeAutomationRecipe(recipeId: string, payload: Automat
 
 async function handleSendEmail(payload: AutomationPayload, config: Record<string, any>) {
   const to = config.to || "admin@example.com";
-  const subject = config.subject || `Authend Notification: ${payload.eventType} on ${payload.table}`;
+  const subject = config.subject || `AuthEnd Notification: ${payload.eventType} on ${payload.table}`;
   const body = config.body || JSON.stringify(payload.data, null, 2);
 
   await sendEmail({
@@ -55,7 +55,7 @@ async function handleSlackNotification(payload: AutomationPayload, config: Recor
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      text: `*Authend Alert:* ${payload.eventType} on table \`${payload.table}\`\n\`\`\`${JSON.stringify(payload.data, null, 2)}\`\`\``,
+      text: `*AuthEnd Alert:* ${payload.eventType} on table \`${payload.table}\`\n\`\`\`${JSON.stringify(payload.data, null, 2)}\`\`\``,
     }),
   });
 

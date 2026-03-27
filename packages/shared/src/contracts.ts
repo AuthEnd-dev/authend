@@ -1043,8 +1043,8 @@ export const settingsSectionIdSchema = z.enum([
 export type SettingsSectionId = z.infer<typeof settingsSectionIdSchema>;
 
 export const generalSettingsSchema = z.object({
-  projectLabel: z.string().default("Authend Project"),
-  appName: z.string().default("Authend"),
+  projectLabel: z.string().default("AuthEnd Project"),
+  appName: z.string().default("AuthEnd"),
   appUrl: z.string().url().default("http://localhost:7002"),
   adminUrl: z.string().url().default("http://localhost:7001"),
   timezone: z.string().default("Africa/Lagos"),
@@ -1082,7 +1082,7 @@ export const emailSettingsSchema = z.object({
   smtpUsername: z.string().default(""),
   smtpPassword: z.string().default(""),
   smtpSecure: z.boolean().default(false),
-  senderName: z.string().default("Authend"),
+  senderName: z.string().default("AuthEnd"),
   senderEmail: z.string().email().default("no-reply@example.com"),
   replyToEmail: z.string().email().nullish(),
   passwordResetSubject: z.string().default("Reset your password"),

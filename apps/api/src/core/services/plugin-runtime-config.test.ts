@@ -189,7 +189,7 @@ describe("plugin runtime config wiring", () => {
       runtimeContext({
         pluginId: "twoFactor",
         config: {
-          issuer: "Authend QA",
+          issuer: "AuthEnd QA",
           skipVerificationOnEnable: true,
           twoFactorCookieMaxAge: 180,
           trustDeviceMaxAge: 86400,
@@ -201,7 +201,7 @@ describe("plugin runtime config wiring", () => {
       }),
     ) as unknown as { options: Record<string, unknown> };
 
-    expect(plugin.options.issuer).toBe("Authend QA");
+    expect(plugin.options.issuer).toBe("AuthEnd QA");
     expect(plugin.options.skipVerificationOnEnable).toBe(true);
     expect(plugin.options.twoFactorCookieMaxAge).toBe(180);
     expect(plugin.options.trustDeviceMaxAge).toBe(86400);

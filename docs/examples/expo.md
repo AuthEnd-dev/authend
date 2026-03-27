@@ -1,6 +1,6 @@
 # Expo Example (Mobile App)
 
-Use this when integrating Authend in an Expo React Native app.
+Use this when integrating AuthEnd in an Expo React Native app.
 
 ## 1) Install and generate schema
 

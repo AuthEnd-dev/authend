@@ -1,8 +1,8 @@
-# Authend Documentation
+# AuthEnd Documentation
 
 ## 1. What We Are Trying To Build
 
-Authend is meant to be a self-hosted backend template that gives a developer a usable backend immediately after forking the repository and configuring environment variables.
+AuthEnd is meant to be a self-hosted backend template that gives a developer a usable backend immediately after forking the repository and configuring environment variables.
 
 The intended experience is:
 
@@ -37,7 +37,7 @@ The product goal is to combine:
 
 into a backend template that stays editable and source-controlled.
 
-That last point matters. Authend is not supposed to hide everything inside opaque runtime metadata. It is supposed to keep the backend understandable:
+That last point matters. AuthEnd is not supposed to hide everything inside opaque runtime metadata. It is supposed to keep the backend understandable:
 
 - schema changes become SQL files
 - generated schema code is written to the repo
@@ -104,7 +104,7 @@ These are deliberately out of scope in the current design:
 
 ## 5. System Overview
 
-Authend is organized as a Bun workspace:
+AuthEnd is organized as a Bun workspace:
 
 - `apps/api`: backend runtime
 - `apps/admin`: admin dashboard
@@ -179,7 +179,7 @@ Drizzle is used as the code-level schema representation for:
 There are three categories of data:
 
 1. Better Auth tables
-2. system tables used by Authend
+2. system tables used by AuthEnd
 3. generated application tables created from dashboard actions
 
 Important files:
@@ -224,8 +224,8 @@ Important files:
 The SDK is a typed client wrapper around:
 
 - Better Auth client methods
-- Authend admin APIs
-- Authend CRUD APIs
+- AuthEnd admin APIs
+- AuthEnd CRUD APIs
 - normalized API resource manifests used by the preview and future code generation
 
 Important file:
@@ -247,7 +247,7 @@ Core auth-related tables currently defined include:
 
 ### 7.2 System Tables
 
-Authend-specific metadata tables include:
+AuthEnd-specific metadata tables include:
 
 - `system_admins`
 - `plugin_configs`
@@ -459,7 +459,7 @@ The current dashboard is enough to exercise flows, but not yet refined for onboa
 
 ## 14. What Success Looks Like
 
-Authend is successful when a user can:
+AuthEnd is successful when a user can:
 
 1. fork the repository
 2. configure env vars
@@ -485,7 +485,7 @@ If the goal is to turn the current scaffold into a reliable v1, the next priorit
 
 ## 16. Short Plain-English Summary
 
-Authend is trying to be a forkable, self-hosted backend product starter.
+AuthEnd is trying to be a forkable, self-hosted backend product starter.
 
 Instead of giving you only a code skeleton, it is trying to give you:
 

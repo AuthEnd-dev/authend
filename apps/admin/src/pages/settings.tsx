@@ -69,6 +69,7 @@ type SettingsField = {
 };
 
 export const settingsNavItems: SettingsNavItem[] = [
+  { id: "overview", to: "/", label: "Overview" },
   { id: "general", to: "/general", label: "General", section: "general" },
   { id: "authentication", to: "/authentication", label: "Authentication", section: "authentication" },
   { id: "sessions-security", to: "/sessions-security", label: "Sessions & Security", section: "sessionsSecurity" },
@@ -103,7 +104,10 @@ function renderValue(value: unknown) {
     return "—";
   }
   if (Array.isArray(value)) {
-    return value.join(", ");
+    const primitiveValues = value.every(
+      (entry) => entry === null || entry === undefined || typeof entry === "string" || typeof entry === "number" || typeof entry === "boolean",
+    );
+    return primitiveValues ? value.map((entry) => String(entry)).join(", ") : JSON.stringify(value, null, 2);
   }
   if (typeof value === "boolean") {
     return value ? "Yes" : "No";
@@ -115,6 +119,188 @@ function renderValue(value: unknown) {
     return String(value);
   }
   return "—";
+}
+
+type DiagnosticSummary = {
+  status: "healthy" | "warning" | "error";
+  title: string;
+  description: string;
+};
+
+type DiagnosticCheck = {
+  label: string;
+  status: "healthy" | "warning" | "error";
+  value?: unknown;
+  detail?: string;
+};
+
+type ActionableDiagnostics = {
+  summary: DiagnosticSummary;
+  checks: DiagnosticCheck[];
+  issues?: Array<{
+    severity: "warning" | "error";
+    title: string;
+    reason: string;
+    fix: string;
+  }>;
+  nextSteps?: string[];
+};
+
+function isDiagnosticStatus(value: unknown): value is DiagnosticSummary["status"] {
+  return value === "healthy" || value === "warning" || value === "error";
+}
+
+function parseActionableDiagnostics(diagnostics: Record<string, unknown>): ActionableDiagnostics | null {
+  const summary = diagnostics.summary;
+  const checks = diagnostics.checks;
+  const issues = diagnostics.issues;
+  const nextSteps = diagnostics.nextSteps;
+
+  if (!summary || typeof summary !== "object" || !Array.isArray(checks)) {
+    return null;
+  }
+
+  const summaryRecord = summary as Record<string, unknown>;
+  if (
+    !isDiagnosticStatus(summaryRecord.status) ||
+    typeof summaryRecord.title !== "string" ||
+    typeof summaryRecord.description !== "string"
+  ) {
+    return null;
+  }
+
+  const parsedChecks: DiagnosticCheck[] = [];
+  for (const check of checks) {
+    if (!check || typeof check !== "object") {
+      continue;
+    }
+    const record = check as Record<string, unknown>;
+    if (!isDiagnosticStatus(record.status) || typeof record.label !== "string") {
+      continue;
+    }
+
+    parsedChecks.push({
+      label: record.label,
+      status: record.status,
+      value: record.value,
+      detail: typeof record.detail === "string" ? record.detail : undefined,
+    });
+  }
+
+  return {
+    summary: {
+      status: summaryRecord.status,
+      title: summaryRecord.title,
+      description: summaryRecord.description,
+    },
+    checks: parsedChecks,
+    issues: Array.isArray(issues)
+      ? issues
+          .map((issue) => {
+            if (!issue || typeof issue !== "object") {
+              return null;
+            }
+            const record = issue as Record<string, unknown>;
+            if (
+              (record.severity !== "warning" && record.severity !== "error") ||
+              typeof record.title !== "string" ||
+              typeof record.reason !== "string" ||
+              typeof record.fix !== "string"
+            ) {
+              return null;
+            }
+            return {
+              severity: record.severity,
+              title: record.title,
+              reason: record.reason,
+              fix: record.fix,
+            };
+          })
+          .filter(
+            (
+              issue,
+            ): issue is {
+              severity: "warning" | "error";
+              title: string;
+              reason: string;
+              fix: string;
+            } => issue !== null,
+          )
+      : [],
+    nextSteps: Array.isArray(nextSteps) ? nextSteps.filter((step): step is string => typeof step === "string") : [],
+  };
+}
+
+function diagnosticTone(status: DiagnosticSummary["status"]) {
+  switch (status) {
+    case "healthy":
+      return {
+        badge: "secondary" as const,
+        badgeLabel: "Ready",
+        panelClassName: "border-emerald-500/30 bg-emerald-500/5",
+        icon: CheckCircle2,
+        iconClassName: "text-emerald-600",
+      };
+    case "warning":
+      return {
+        badge: "secondary" as const,
+        badgeLabel: "Needs review",
+        panelClassName: "border-amber-500/30 bg-amber-500/5",
+        icon: ShieldAlert,
+        iconClassName: "text-amber-600",
+      };
+    default:
+      return {
+        badge: "destructive" as const,
+        badgeLabel: "Action required",
+        panelClassName: "border-destructive/30 bg-destructive/5",
+        icon: XCircle,
+        iconClassName: "text-destructive",
+      };
+  }
+}
+
+function checkTone(status: DiagnosticCheck["status"]) {
+  switch (status) {
+    case "healthy":
+      return {
+        icon: CheckCircle2,
+        iconClassName: "text-emerald-600",
+        borderClassName: "border-emerald-500/20",
+      };
+    case "warning":
+      return {
+        icon: Clock,
+        iconClassName: "text-amber-600",
+        borderClassName: "border-amber-500/20",
+      };
+    default:
+      return {
+        icon: XCircle,
+        iconClassName: "text-destructive",
+        borderClassName: "border-destructive/20",
+      };
+  }
+}
+
+function issueTone(severity: "warning" | "error") {
+  if (severity === "error") {
+    return {
+      icon: XCircle,
+      iconClassName: "text-destructive",
+      borderClassName: "border-destructive/20 bg-destructive/5",
+      badge: "destructive" as const,
+      badgeLabel: "Blocking",
+    };
+  }
+
+  return {
+    icon: ShieldAlert,
+    iconClassName: "text-amber-600",
+    borderClassName: "border-amber-500/20 bg-amber-500/5",
+    badge: "secondary" as const,
+    badgeLabel: "Risk",
+  };
 }
 
 function serializeEnvValue(value: string) {
@@ -192,6 +378,101 @@ function SettingsDiagnostics({ diagnostics }: { diagnostics: Record<string, unkn
   const entries = Object.entries(diagnostics ?? {});
   if (entries.length === 0) {
     return null;
+  }
+
+  const actionable = parseActionableDiagnostics(diagnostics);
+  if (actionable) {
+    const summaryTone = diagnosticTone(actionable.summary.status);
+    const SummaryIcon = summaryTone.icon;
+
+    return (
+      <div className="flex flex-col gap-4">
+        <section className={cn("rounded-2xl border p-4 md:p-5", summaryTone.panelClassName)}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <SummaryIcon className={cn("h-4 w-4", summaryTone.iconClassName)} />
+                <h3 className="text-sm font-semibold text-foreground">{actionable.summary.title}</h3>
+              </div>
+              <p className="max-w-3xl text-sm text-muted-foreground">{actionable.summary.description}</p>
+            </div>
+            <Badge variant={summaryTone.badge}>{summaryTone.badgeLabel}</Badge>
+          </div>
+        </section>
+
+        <section className="grid gap-3 md:grid-cols-2">
+          {actionable.checks.map((check) => {
+            const tone = checkTone(check.status);
+            const Icon = tone.icon;
+            return (
+              <div key={check.label} className={cn("rounded-2xl border bg-background p-4", tone.borderClassName)}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Icon className={cn("h-4 w-4", tone.iconClassName)} />
+                      <span className="text-sm font-medium text-foreground">{check.label}</span>
+                    </div>
+                    {check.detail ? <p className="text-xs text-muted-foreground">{check.detail}</p> : null}
+                  </div>
+                  <Badge variant={check.status === "error" ? "destructive" : "secondary"}>{renderValue(check.value)}</Badge>
+                </div>
+              </div>
+            );
+          })}
+        </section>
+
+        {(actionable.issues ?? []).length > 0 ? (
+          <section className="space-y-3">
+            <div className="space-y-1">
+              <h4 className="text-sm font-semibold text-foreground">Why this is failing</h4>
+              <p className="text-sm text-muted-foreground">Specific blockers and the shortest useful fix for each one.</p>
+            </div>
+            <div className="space-y-3">
+              {actionable.issues?.map((issue, index) => {
+                const tone = issueTone(issue.severity);
+                const Icon = tone.icon;
+                return (
+                  <div key={`${issue.title}-${index}`} className={cn("rounded-2xl border p-4", tone.borderClassName)}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Icon className={cn("h-4 w-4", tone.iconClassName)} />
+                          <h5 className="text-sm font-semibold text-foreground">{issue.title}</h5>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Why</p>
+                          <p className="text-sm text-foreground">{issue.reason}</p>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fix</p>
+                          <p className="text-sm text-foreground">{issue.fix}</p>
+                        </div>
+                      </div>
+                      <Badge variant={tone.badge}>{tone.badgeLabel}</Badge>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
+
+        {(actionable.nextSteps ?? []).length > 0 ? (
+          <CollapsiblePanel title="Next steps" description="Concrete actions to get this section into a production-ready state.">
+            <div className="space-y-3">
+              {actionable.nextSteps?.map((step, index) => (
+                <div key={`${step}-${index}`} className="flex items-start gap-3 rounded-xl border border-border/60 bg-background px-3 py-3">
+                  <span className="mt-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">
+                    {index + 1}
+                  </span>
+                  <p className="text-sm text-foreground">{step}</p>
+                </div>
+              ))}
+            </div>
+          </CollapsiblePanel>
+        ) : null}
+      </div>
+    );
   }
 
   return (

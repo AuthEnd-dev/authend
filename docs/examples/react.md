@@ -1,6 +1,6 @@
 # React Example (Browser App)
 
-Use this when your app calls Authend directly from the browser and authenticates with Better Auth session cookies.
+Use this when your app calls AuthEnd directly from the browser and authenticates with Better Auth session cookies.
 
 ## 1) Install and generate schema
 

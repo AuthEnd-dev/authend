@@ -5,6 +5,7 @@ import { MigrationsPage } from '../pages/migrations';
 import { AuditPage } from '../pages/audit';
 import { RealtimeDiagnosticsPage } from '../pages/realtime';
 import { StorageFilesPage } from '../pages/storage';
+import { DashboardPage } from '../pages/dashboard';
 import {
   AiAssistantSettingsPage,
   AdminAccessSettingsPage,
@@ -72,7 +73,7 @@ const storageGroup = createRoute({
 const indexRoute = createRoute({
   getParentRoute: () => settingsGroup,
   path: '/',
-  component: GeneralSettingsPage,
+  component: DashboardPage,
 });
 
 const pluginsRoute = createRoute({

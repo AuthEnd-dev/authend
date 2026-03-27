@@ -24,6 +24,21 @@ import { listRecentDeliveries, listWebhooks } from "./webhook-service";
 
 const CORE_ENV_KEYS = ["APP_URL", "DATABASE_URL", "BETTER_AUTH_SECRET", "SUPERADMIN_EMAIL", "SUPERADMIN_PASSWORD"];
 const ENV_FILE_PATH = resolve(process.cwd(), ".env");
+type DiagnosticStatus = "healthy" | "warning" | "error";
+
+type DiagnosticCheck = {
+  label: string;
+  status: DiagnosticStatus;
+  value?: string | number | boolean | null;
+  detail?: string;
+};
+
+type DiagnosticIssue = {
+  severity: "warning" | "error";
+  title: string;
+  reason: string;
+  fix: string;
+};
 
 function envValue(key: string) {
   const value = process.env[key];
@@ -39,11 +54,49 @@ function envValue(key: string) {
   return undefined;
 }
 
+function buildActionableDiagnostics(input: {
+  title: string;
+  healthyDescription: string;
+  warningDescription?: string;
+  errorDescription?: string;
+  checks: DiagnosticCheck[];
+  nextSteps?: string[];
+  issues?: DiagnosticIssue[];
+}) {
+  const hasError = input.checks.some((check) => check.status === "error");
+  const hasWarning = input.checks.some((check) => check.status === "warning");
+  const status: DiagnosticStatus = hasError ? "error" : hasWarning ? "warning" : "healthy";
+  const description =
+    status === "error"
+      ? input.errorDescription ?? input.warningDescription ?? input.healthyDescription
+      : status === "warning"
+        ? input.warningDescription ?? input.healthyDescription
+        : input.healthyDescription;
+
+  return {
+    summary: {
+      status,
+      title: input.title,
+      description,
+    },
+    checks: input.checks,
+    issues: input.issues ?? [],
+    nextSteps: input.nextSteps ?? [],
+  } satisfies Record<string, unknown>;
+}
+
 async function storageDiagnostics() {
   const { config, updatedAt } = await readSettingsSection("storage");
-  const diagnostics: Record<string, unknown> = {
-    driver: config.driver,
-  };
+  const checks: DiagnosticCheck[] = [
+    {
+      label: "Storage driver",
+      status: "healthy",
+      value: config.driver,
+      detail: config.driver === "local" ? "Using the project filesystem for object storage." : "Using an S3-compatible object store.",
+    },
+  ];
+  const nextSteps: string[] = [];
+  const issues: DiagnosticIssue[] = [];
 
   if (config.driver === "local") {
     const absoluteRoot = resolve(process.cwd(), config.rootPath);
@@ -61,22 +114,104 @@ async function storageDiagnostics() {
       error = cause instanceof Error ? cause.message : "Storage path check failed";
     }
 
-    diagnostics.absoluteRoot = absoluteRoot;
-    diagnostics.writable = writable;
-    diagnostics.error = error;
+    checks.push({
+      label: "Filesystem path",
+      status: writable ? "healthy" : "error",
+      value: absoluteRoot,
+      detail: writable ? "AuthEnd can create and remove a healthcheck file in the configured directory." : error ?? "Storage path is not writable.",
+    });
+    if (!writable) {
+      issues.push({
+        severity: "error",
+        title: "Uploads will fail because the storage directory is not writable",
+        reason: error ?? "AuthEnd could not create and remove a healthcheck file in the configured local storage directory.",
+        fix: `Update the local storage path or fix filesystem permissions for ${absoluteRoot}.`,
+      });
+    }
   } else {
-    diagnostics.bucket = config.bucket;
-    diagnostics.region = config.region;
-    diagnostics.endpoint = config.endpoint || null;
-    diagnostics.credentialsConfigured = Boolean(config.accessKeyId && config.secretAccessKey);
-    diagnostics.bucketConfigured = Boolean(config.bucket);
+    const credentialsConfigured = Boolean(config.accessKeyId && config.secretAccessKey);
+    const bucketConfigured = Boolean(config.bucket);
+    const regionConfigured = Boolean(config.region);
+
+    checks.push(
+      {
+        label: "Bucket",
+        status: bucketConfigured ? "healthy" : "error",
+        value: config.bucket || null,
+        detail: bucketConfigured ? "Bucket name is configured." : "Set the bucket name before uploads can succeed.",
+      },
+      {
+        label: "Credentials",
+        status: credentialsConfigured ? "healthy" : "error",
+        value: credentialsConfigured,
+        detail: credentialsConfigured ? "Access key and secret are configured." : "Add access key and secret access key for the object store.",
+      },
+      {
+        label: "Region",
+        status: regionConfigured ? "healthy" : "warning",
+        value: config.region || null,
+        detail: regionConfigured ? "Region is configured." : "Region is blank. Some S3-compatible providers require it explicitly.",
+      },
+      {
+        label: "Endpoint",
+        status: config.endpoint ? "healthy" : "warning",
+        value: config.endpoint || null,
+        detail: config.endpoint ? "Custom endpoint configured for the storage provider." : "Using the provider default endpoint. Leave blank only when that is intentional.",
+      },
+    );
+  }
+
+  if (config.driver === "local" && !config.rootPath.trim()) {
+    nextSteps.push("Set a root path for local storage before enabling uploads.");
+    issues.push({
+      severity: "error",
+      title: "Uploads will fail because no local storage path is configured",
+      reason: "The local storage driver is selected, but the root path is blank.",
+      fix: "Set a root path under File Storage and save the settings.",
+    });
+  }
+  if (config.driver === "s3") {
+    if (!config.bucket.trim()) {
+      nextSteps.push("Add the S3 bucket name.");
+      issues.push({
+        severity: "error",
+        title: "Uploads will fail because the S3 bucket is missing",
+        reason: "The S3-compatible driver needs a bucket name for object writes and reads.",
+        fix: "Enter the bucket name in File Storage settings and save the configuration.",
+      });
+    }
+    if (!config.accessKeyId.trim() || !config.secretAccessKey.trim()) {
+      nextSteps.push("Add object storage credentials.");
+      issues.push({
+        severity: "error",
+        title: "Uploads will fail because object storage credentials are missing",
+        reason: "The S3-compatible driver cannot authenticate without both access key ID and secret access key.",
+        fix: "Add the object storage credentials in File Storage settings.",
+      });
+    }
+    if (!config.region.trim()) {
+      issues.push({
+        severity: "warning",
+        title: "Storage may fail against providers that require an explicit region",
+        reason: "The region field is blank. Some S3-compatible providers accept this, others reject requests.",
+        fix: "Set the region expected by your object storage provider.",
+      });
+    }
   }
 
   return {
     section: "storage" as const,
     config,
     updatedAt,
-    diagnostics,
+    diagnostics: buildActionableDiagnostics({
+      title: "Storage readiness",
+      healthyDescription: "Storage is configured for uploads and signed URLs.",
+      warningDescription: "Storage works, but some configuration details should be reviewed before production use.",
+      errorDescription: "Storage is not ready for reliable uploads yet.",
+      checks,
+      issues,
+      nextSteps,
+    }),
   } satisfies StorageSettingsResponse;
 }
 
@@ -92,17 +227,105 @@ async function backupDiagnostics() {
     }
   };
 
+  const latestRun = runs[0];
+  const checks: DiagnosticCheck[] = [
+    {
+      label: "Backups enabled",
+      status: config.enabled ? "healthy" : "warning",
+      value: config.enabled,
+      detail: config.enabled ? "Manual and cron-triggered backups are allowed." : "Backups are disabled, so no new archives will be created.",
+    },
+    {
+      label: "Backup directory",
+      status: config.directoryPath.trim() ? "healthy" : "error",
+      value: resolve(process.cwd(), config.directoryPath),
+      detail: config.directoryPath.trim() ? "Backup archives will be written here." : "Set a directory path for backup output.",
+    },
+    {
+      label: "pg_dump",
+      status: commandAvailable(config.pgDumpPath) ? "healthy" : "error",
+      value: config.pgDumpPath,
+      detail: commandAvailable(config.pgDumpPath)
+        ? "Backup creation command is available."
+        : "The configured pg_dump binary could not be executed.",
+    },
+    {
+      label: "pg_restore",
+      status: commandAvailable(config.pgRestorePath) ? "healthy" : "warning",
+      value: config.pgRestorePath,
+      detail: commandAvailable(config.pgRestorePath)
+        ? "Restore command is available for recovery drills."
+        : "The configured pg_restore binary could not be executed.",
+    },
+    {
+      label: "Latest run",
+      status:
+        latestRun?.status === "failed"
+          ? "error"
+          : latestRun?.status === "running"
+            ? "warning"
+            : latestRun
+              ? "healthy"
+              : "warning",
+      value: latestRun?.status ?? "none",
+      detail: latestRun
+        ? latestRun.error ?? `Last backup started at ${latestRun.startedAt}.`
+        : "No backup runs recorded yet.",
+    },
+  ];
+  const nextSteps: string[] = [];
+  const issues: DiagnosticIssue[] = [];
+  if (!config.enabled) {
+    nextSteps.push("Enable backups before relying on cron or manual recovery workflows.");
+    issues.push({
+      severity: "warning",
+      title: "No new backups will be created because backups are disabled",
+      reason: "Manual and scheduled backup runs are blocked when backups are turned off.",
+      fix: "Enable backups in the Backups settings before relying on recovery workflows.",
+    });
+  }
+  if (!commandAvailable(config.pgDumpPath)) {
+    nextSteps.push(`Install or correct the pg_dump path (${config.pgDumpPath}).`);
+    issues.push({
+      severity: "error",
+      title: "Backup creation will fail because pg_dump is unavailable",
+      reason: `AuthEnd could not execute the configured pg_dump binary at ${config.pgDumpPath}.`,
+      fix: "Install pg_dump or update the configured path to a working binary.",
+    });
+  }
+  if (latestRun?.status === "failed") {
+    nextSteps.push("Inspect the latest backup failure and run a manual backup after fixing the command or database access.");
+    issues.push({
+      severity: "error",
+      title: "The latest backup run failed",
+      reason: latestRun.error ?? "The most recent backup did not complete successfully.",
+      fix: "Correct the failing dependency or credential, then run a manual backup again to confirm recovery.",
+    });
+  }
+  if (!latestRun) {
+    nextSteps.push("Run a manual backup now to verify the configuration before production use.");
+    issues.push({
+      severity: "warning",
+      title: "Backup recovery is unverified because no backup has run yet",
+      reason: "The configuration may look valid, but there is no successful backup on record.",
+      fix: "Run a manual backup now and confirm the archive is created where you expect.",
+    });
+  }
+
   return {
     section: "backups" as const,
     config,
     updatedAt,
     runs,
-    diagnostics: {
-      absoluteDirectoryPath: resolve(process.cwd(), config.directoryPath),
-      pgDumpAvailable: commandAvailable(config.pgDumpPath),
-      pgRestoreAvailable: commandAvailable(config.pgRestorePath),
-      lastRunStatus: runs[0]?.status ?? null,
-    },
+    diagnostics: buildActionableDiagnostics({
+      title: "Backup readiness",
+      healthyDescription: "Backup creation is configured and recent runs look healthy.",
+      warningDescription: "Backups are partially configured, but you should verify the recovery path before production use.",
+      errorDescription: "Backups are not dependable yet.",
+      checks,
+      issues,
+      nextSteps,
+    }),
   } satisfies BackupSettingsResponse;
 }
 
@@ -111,6 +334,55 @@ async function cronDiagnostics() {
   const jobs = await listCronJobs();
   const runs = await listCronRuns(25);
   const diagnostics = await listCronDiagnostics();
+  const enabledJobs = jobs.filter((job) => job.enabled);
+  const latestRun = runs[0];
+  const failedRecentRuns = runs.filter((run) => run.status === "failed").length;
+  const nextSteps: string[] = [];
+  const issues: DiagnosticIssue[] = [];
+  if (!config.schedulerEnabled) {
+    nextSteps.push("Enable the scheduler if you expect jobs to run automatically.");
+    issues.push({
+      severity: "warning",
+      title: "Cron jobs will not run automatically because the scheduler is disabled",
+      reason: "The scheduler toggle is off, so only manual runs are possible.",
+      fix: "Enable the scheduler in Crons settings if you want jobs to run on schedule.",
+    });
+  }
+  if (config.schedulerEnabled && !diagnostics.schedulerStarted) {
+    nextSteps.push("Restart the API process so the in-process scheduler starts.");
+    issues.push({
+      severity: "error",
+      title: "Scheduled jobs are blocked because the scheduler loop is not running",
+      reason: "This API process has scheduler support configured, but the in-process scheduler has not started.",
+      fix: "Restart the API process and verify the scheduler starts cleanly.",
+    });
+  }
+  if (enabledJobs.length === 0) {
+    nextSteps.push("Create at least one enabled cron job to validate the scheduler.");
+    issues.push({
+      severity: "warning",
+      title: "Nothing will run because there are no enabled cron jobs",
+      reason: "The scheduler has no active job definitions to execute.",
+      fix: "Create or enable at least one cron job.",
+    });
+  }
+  if (diagnostics.dueJobs > 0) {
+    nextSteps.push("Investigate overdue jobs. A backlog usually means the scheduler is paused, blocked, or underprovisioned.");
+    issues.push({
+      severity: "warning",
+      title: "Some jobs are overdue and waiting to run",
+      reason: `${diagnostics.dueJobs} enabled job(s) are due right now and have not executed yet.`,
+      fix: "Check whether the scheduler is running, whether concurrency limits are too low, or whether a previous run is blocking progress.",
+    });
+  }
+  if (failedRecentRuns > 0) {
+    issues.push({
+      severity: "warning",
+      title: "Recent cron runs have failed",
+      reason: `${failedRecentRuns} recent cron run(s) failed.`,
+      fix: "Inspect the recent run history below, fix the failing handler or dependency, then rerun the job manually.",
+    });
+  }
 
   return {
     section: "crons" as const,
@@ -118,7 +390,67 @@ async function cronDiagnostics() {
     updatedAt,
     jobs,
     runs,
-    diagnostics,
+    diagnostics: buildActionableDiagnostics({
+      title: "Scheduler readiness",
+      healthyDescription: "The scheduler is running with active jobs and no visible backlog.",
+      warningDescription: "The scheduler is configured, but there are gaps you should review.",
+      errorDescription: "The scheduler is not in a healthy state for automated jobs.",
+      checks: [
+        {
+          label: "Scheduler enabled",
+          status: config.schedulerEnabled ? "healthy" : "warning",
+          value: config.schedulerEnabled,
+          detail: config.schedulerEnabled ? "Automatic job execution is enabled." : "Jobs will run only when triggered manually.",
+        },
+        {
+          label: "Scheduler process",
+          status: diagnostics.schedulerStarted ? "healthy" : "error",
+          value: diagnostics.schedulerStarted,
+          detail: diagnostics.schedulerStarted ? "The in-process scheduler loop is running." : "The scheduler loop is not running in this API process.",
+        },
+        {
+          label: "Enabled jobs",
+          status: enabledJobs.length > 0 ? "healthy" : "warning",
+          value: enabledJobs.length,
+          detail: enabledJobs.length > 0 ? "At least one job is enabled." : "No enabled cron jobs are currently scheduled.",
+        },
+        {
+          label: "Overdue jobs",
+          status: diagnostics.dueJobs === 0 ? "healthy" : "warning",
+          value: diagnostics.dueJobs,
+          detail:
+            diagnostics.dueJobs === 0
+              ? "No jobs are currently overdue."
+              : `${diagnostics.dueJobs} enabled job(s) are due right now and waiting to run.`,
+        },
+        {
+          label: "Recent failures",
+          status: failedRecentRuns === 0 ? "healthy" : "warning",
+          value: failedRecentRuns,
+          detail:
+            failedRecentRuns === 0
+              ? "No failed cron runs in the recent history."
+              : `${failedRecentRuns} recent cron run(s) failed. Inspect the run history below.`,
+        },
+        {
+          label: "Latest run",
+          status:
+            latestRun?.status === "failed"
+              ? "error"
+              : latestRun?.status === "skipped"
+                ? "warning"
+                : latestRun
+                  ? "healthy"
+                  : "warning",
+          value: latestRun?.status ?? "none",
+          detail: latestRun
+            ? latestRun.error ?? `${latestRun.jobName} last ran at ${latestRun.startedAt}.`
+            : "No cron runs recorded yet.",
+        },
+      ],
+      issues,
+      nextSteps,
+    }),
   } satisfies CronSettingsResponse;
 }
 
@@ -231,15 +563,92 @@ async function genericDiagnostics(section: Exclude<SettingsSectionId, "storage" 
     }
     case "email": {
       const state = await readSettingsSection("email");
-      return {
-        smtpConfigured: Boolean(
-          (state.config.smtpHost || env.SMTP_HOST) &&
-            (state.config.smtpUsername || env.SMTP_USER) &&
-            (state.config.smtpPassword || env.SMTP_PASS),
-        ),
-        smtpHost: state.config.smtpHost || env.SMTP_HOST || null,
-        sender: `${state.config.senderName} <${state.config.senderEmail}>`,
-      };
+      const smtpHost = state.config.smtpHost || env.SMTP_HOST || "";
+      const smtpUsername = state.config.smtpUsername || env.SMTP_USER || "";
+      const smtpPassword = state.config.smtpPassword || env.SMTP_PASS || "";
+      const smtpPort = Number(state.config.smtpPort);
+      const checks: DiagnosticCheck[] = [
+        {
+          label: "SMTP host",
+          status: smtpHost ? "healthy" : "error",
+          value: smtpHost || null,
+          detail: smtpHost ? "SMTP host is configured." : "Set an SMTP host before sending auth emails.",
+        },
+        {
+          label: "SMTP credentials",
+          status: smtpUsername && smtpPassword ? "healthy" : "error",
+          value: smtpUsername ? "configured" : "missing",
+          detail: smtpUsername && smtpPassword ? "SMTP username and password are configured." : "Add SMTP username and password.",
+        },
+        {
+          label: "SMTP port",
+          status: Number.isFinite(smtpPort) && smtpPort > 0 ? "healthy" : "warning",
+          value: Number.isFinite(smtpPort) ? smtpPort : null,
+          detail: Number.isFinite(smtpPort) && smtpPort > 0 ? "Port looks valid." : "Review the SMTP port. Common values are 465 for secure SMTP or 587 for STARTTLS.",
+        },
+        {
+          label: "Sender address",
+          status: state.config.senderEmail ? "healthy" : "error",
+          value: state.config.senderEmail || null,
+          detail: state.config.senderEmail ? "Auth emails will use this sender." : "Set the sender email shown in password reset and verification emails.",
+        },
+        {
+          label: "Test recipient",
+          status: state.config.testRecipient ? "healthy" : "warning",
+          value: state.config.testRecipient || null,
+          detail: state.config.testRecipient
+            ? "A test recipient is configured for verification emails."
+            : "Add a test recipient so you can verify delivery without editing settings again.",
+        },
+      ];
+      const nextSteps: string[] = [];
+      const issues: DiagnosticIssue[] = [];
+      if (!smtpHost) {
+        nextSteps.push("Set the SMTP host.");
+        issues.push({
+          severity: "error",
+          title: "Auth emails cannot send because the SMTP host is missing",
+          reason: "Email delivery requires a reachable SMTP host, but none is configured.",
+          fix: "Set the SMTP host in Email settings or provide it through environment variables.",
+        });
+      }
+      if (!smtpUsername || !smtpPassword) {
+        nextSteps.push("Add SMTP credentials in settings or environment variables.");
+        issues.push({
+          severity: "error",
+          title: "Auth emails cannot authenticate because SMTP credentials are incomplete",
+          reason: "The SMTP username or password is missing.",
+          fix: "Add SMTP username and password in Email settings or environment variables.",
+        });
+      }
+      if (!state.config.senderEmail) {
+        nextSteps.push("Set the sender email before using password reset or verification flows.");
+        issues.push({
+          severity: "error",
+          title: "Auth emails are not ready because the sender email is missing",
+          reason: "Password reset and verification emails need a sender address.",
+          fix: "Set the sender email in Email settings.",
+        });
+      }
+      if (!state.config.testRecipient) {
+        nextSteps.push("Add a test recipient and send a verification email to confirm delivery.");
+        issues.push({
+          severity: "warning",
+          title: "Email delivery is still unverified",
+          reason: "There is no test recipient configured, so operators have no quick way to validate delivery after saving changes.",
+          fix: "Set a test recipient and send a verification or reset email to confirm SMTP works.",
+        });
+      }
+
+      return buildActionableDiagnostics({
+        title: "Email readiness",
+        healthyDescription: "SMTP settings are configured for auth email flows.",
+        warningDescription: "Email is partly configured, but operator validation is still missing.",
+        errorDescription: "Email is not ready for password reset and verification flows.",
+        checks,
+        issues,
+        nextSteps,
+      });
     }
     case "domainsOrigins": {
       const state = await readSettingsSection("domainsOrigins");

@@ -1,6 +1,6 @@
 # Node Backend Example (Server-to-Server)
 
-Use this in backend services, jobs, or scripts that call Authend with API key auth.
+Use this in backend services, jobs, or scripts that call AuthEnd with API key auth.
 
 ## 1) Install and generate schema
 

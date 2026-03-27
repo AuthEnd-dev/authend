@@ -52,7 +52,7 @@ const socialAuthDefinition = attachSocialAuthRuntime(socialAuthPluginDefinition)
 
 const adminDefinition = attachAdminRuntime(adminPluginDefinition);
 
-/** Curated Authend plugins. Fork-specific plugins belong in `extensions/plugins.ts`. */
+/** Curated AuthEnd plugins. Fork-specific plugins belong in `extensions/plugins.ts`. */
 export const builtinPluginRegistry: PluginDefinition[] = [
   usernameDefinition,
   socialAuthDefinition,

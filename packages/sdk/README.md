@@ -1,11 +1,11 @@
 # @authend/sdk
 
-Typed Authend client for external web, mobile, and server projects.
+Typed AuthEnd client for external web, mobile, and server projects.
 
 `@authend/sdk` is intentionally small:
 
 - `auth`: Better Auth client access
-- `data`: typed Authend resource access
+- `data`: typed AuthEnd resource access
 
 It does not expose the admin control-plane surface.
 
@@ -31,7 +31,7 @@ Use `init` for first-time setup in a client project. After that, run `generate` 
 The SDK uses two pieces:
 
 1. The runtime client from `@authend/sdk`
-2. Generated types from your deployed Authend backend
+2. Generated types from your deployed AuthEnd backend
 
 Your backend exposes a schema manifest at:
 
@@ -198,7 +198,7 @@ const client = createAuthendClient<AuthendSchema>({
 
 ## Framework guides
 
-See framework-specific integration guides in the Authend repo docs:
+See framework-specific integration guides in the AuthEnd repo docs:
 
 - React: `docs/examples/react.md`
 - Next.js: `docs/examples/nextjs.md`

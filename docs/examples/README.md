@@ -1,6 +1,6 @@
 # SDK Integration Examples
 
-This folder contains framework-focused guides for integrating `@authend/sdk`.
+This folder contains framework-focused guides for integrating `@authend/sdk` with AuthEnd.
 
 All guides follow the same structure:
 

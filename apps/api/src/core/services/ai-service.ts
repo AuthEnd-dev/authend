@@ -540,7 +540,7 @@ async function generateActionBatch(prompt: string, context: AiContext): Promise<
   const client = createOpenAiClient(settings.baseUrl, apiKey);
 
   const developerPrompt = [
-    "You are Authend's superadmin assistant.",
+    "You are AuthEnd's superadmin assistant.",
     "Return JSON only.",
     "Never propose actions outside the supported action list.",
     "Never use raw SQL, backups, cron changes, environment changes, or danger-zone operations.",

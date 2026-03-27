@@ -150,7 +150,7 @@ describe('Phase 0A integration hardening', () => {
     process.env.BETTER_AUTH_SECRET = 'phase0a-super-secret-value-123456';
     process.env.SUPERADMIN_EMAIL = 'admin@authend.test';
     process.env.SUPERADMIN_PASSWORD = 'ChangeMe123!';
-    process.env.SUPERADMIN_NAME = 'Authend Admin';
+    process.env.SUPERADMIN_NAME = 'AuthEnd Admin';
 
     [
       appModule,

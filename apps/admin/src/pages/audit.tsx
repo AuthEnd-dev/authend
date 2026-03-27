@@ -600,7 +600,7 @@ export function AuditPage() {
               <div className="h-3 w-px bg-border" />
               <span>{filteredLogs.length} records total</span>
             </div>
-            <span className="hidden font-mono uppercase tracking-widest opacity-50 sm:inline-block">Authend</span>
+            <span className="hidden font-mono uppercase tracking-widest opacity-50 sm:inline-block">AuthEnd</span>
           </div>
         )}
       </div>
