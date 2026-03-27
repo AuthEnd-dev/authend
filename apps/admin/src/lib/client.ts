@@ -242,6 +242,52 @@ export const client = {
           byTable: Record<string, number>;
         }>('/api/admin/realtime/stats'),
     },
+    metrics: () =>
+      request<{
+        flows: {
+          auth: {
+            requestsTotal: number;
+            errorsTotal: number;
+            totalDurationMs: number;
+            maxDurationMs: number;
+            averageDurationMs: number;
+          };
+          crud: {
+            requestsTotal: number;
+            errorsTotal: number;
+            totalDurationMs: number;
+            maxDurationMs: number;
+            averageDurationMs: number;
+          };
+          storage: {
+            requestsTotal: number;
+            errorsTotal: number;
+            totalDurationMs: number;
+            maxDurationMs: number;
+            averageDurationMs: number;
+          };
+          realtime: {
+            requestsTotal: number;
+            errorsTotal: number;
+            totalDurationMs: number;
+            maxDurationMs: number;
+            averageDurationMs: number;
+            connections: number;
+            subscriptions: number;
+            eventsSentTotal: number;
+          };
+          webhook: {
+            requestsTotal: number;
+            errorsTotal: number;
+            totalDurationMs: number;
+            maxDurationMs: number;
+            averageDurationMs: number;
+            dispatchesTotal: number;
+            deliveriesSucceeded: number;
+            deliveriesFailed: number;
+          };
+        };
+      }>('/api/admin/metrics'),
     webhooks: {
       create: (payload: any) => request<any>('/api/admin/webhooks', { method: 'POST', body: JSON.stringify(payload) }),
       update: (id: string, payload: any) => request<any>(`/api/admin/webhooks/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),

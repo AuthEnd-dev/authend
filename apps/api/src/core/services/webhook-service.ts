@@ -5,6 +5,7 @@ import { db } from '../db/client';
 import { webhookDeliveries, webhooks } from '../db/schema/system';
 import { HttpError } from '../lib/http';
 import { logger } from '../lib/logger';
+import { recordWebhookDispatchMetric } from './metrics-service';
 import { writeAuditLog } from './audit-service';
 import { readSettingsSection } from './settings-store';
 
@@ -271,6 +272,7 @@ export async function dispatchWebhookEvent(eventType: WebhookEventType, payload:
   const body = JSON.stringify({ event: eventType, payload, timestamp: new Date().toISOString() });
 
   for (const webhook of matching) {
+    recordWebhookDispatchMetric('attempt');
     const deliveryId = crypto.randomUUID();
 
     await db.insert(webhookDeliveries).values({
@@ -288,11 +290,13 @@ export async function dispatchWebhookEvent(eventType: WebhookEventType, payload:
         const signature = await signPayload(webhook.secret, body);
         try {
           await attemptDelivery(deliveryId, webhook, body, signature, config.timeoutSeconds);
+          recordWebhookDispatchMetric('success');
 
           await db.update(webhookDeliveries).set({ attemptCount: 1 }).where(eq(webhookDeliveries.id, deliveryId));
 
           logger.info('webhook.delivery.succeeded', { deliveryId, webhookId: webhook.id, eventType });
         } catch (error) {
+          recordWebhookDispatchMetric('failure');
           const message = error instanceof Error ? error.message : String(error);
           const nextBackoff = new Date(Date.now() + backoffSeconds(0) * 1000);
 
@@ -342,12 +346,14 @@ export async function retryDelivery(deliveryId: string): Promise<WebhookDelivery
 
   try {
     await attemptDelivery(deliveryId, webhook, body, signature, config.timeoutSeconds);
+    recordWebhookDispatchMetric('success');
     await db
       .update(webhookDeliveries)
       .set({ attemptCount: currentCount + 1 })
       .where(eq(webhookDeliveries.id, deliveryId));
     logger.info('webhook.delivery.retried.succeeded', { deliveryId });
   } catch (error) {
+    recordWebhookDispatchMetric('failure');
     const message = error instanceof Error ? error.message : String(error);
     const newCount = currentCount + 1;
     const isDead = newCount >= config.maxAttempts;
@@ -401,12 +407,14 @@ export async function retryPendingDeliveries(): Promise<void> {
 
     try {
       await attemptDelivery(delivery.id, webhook, body, signature, config.timeoutSeconds);
+      recordWebhookDispatchMetric('success');
       await db
         .update(webhookDeliveries)
         .set({ attemptCount: currentCount + 1 })
         .where(eq(webhookDeliveries.id, delivery.id));
       logger.info('webhook.retry.succeeded', { deliveryId: delivery.id });
     } catch (error) {
+      recordWebhookDispatchMetric('failure');
       const message = error instanceof Error ? error.message : String(error);
       const newCount = currentCount + 1;
       const isDead = newCount >= config.maxAttempts;

@@ -3,6 +3,7 @@ import { requireSuperAdmin, type SessionContext } from '../../middleware/auth';
 import { adminAiRouter } from './ai';
 import { adminApiPreviewRouter } from './api-preview';
 import { adminAuditRouter } from './audit';
+import { adminMetricsRouter } from './metrics';
 import { adminRealtimeRouter } from './realtime';
 import { adminMigrationsRouter } from './migrations';
 import { adminPluginsRouter } from './plugins';
@@ -19,6 +20,6 @@ export const adminRouter = new Hono<{ Variables: { auth: SessionContext } }>()
   .route('/', adminMigrationsRouter)
   .route('/', adminApiPreviewRouter)
   .route('/', adminAuditRouter)
+  .route('/', adminMetricsRouter)
   .route('/', adminRealtimeRouter)
   .route('/', adminWebhooksRouter);
-

@@ -7,6 +7,7 @@ import { HttpError, jsonError } from './lib/http';
 import { env } from './config/env';
 import { getRequestLogContext, updateRequestLogContext } from './lib/request-context';
 import { registerCoreRoutes } from './register-core-routes';
+import { classifyMetricsFlow, recordFlowRequestMetric } from './services/metrics-service';
 import { registerExtensionRoutes } from '../extensions/routes';
 
 const adminDist = resolve(import.meta.dir, '../../../admin/dist');
@@ -81,6 +82,11 @@ export function createApp() {
       };
 
       logger.info('request', requestMeta);
+
+      const metricsFlow = classifyMetricsFlow(c.req.path);
+      if (metricsFlow) {
+        recordFlowRequestMetric(metricsFlow, requestMeta.status, requestMeta.durationMs);
+      }
 
       if (requestMeta.durationMs >= SLOW_REQUEST_THRESHOLD_MS) {
         logger.warn('request.slow', {

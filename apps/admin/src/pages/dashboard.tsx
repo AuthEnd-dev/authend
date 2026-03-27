@@ -58,6 +58,11 @@ export function DashboardPage() {
     queryKey: ["setup-status"],
     queryFn: () => client.system.setupStatus(),
   });
+  const metricsQuery = useQuery({
+    queryKey: ["runtime-metrics"],
+    queryFn: () => client.system.metrics(),
+    refetchInterval: 5000,
+  });
   const diagnosticsQueries = useQueries({
     queries: [
       {
@@ -320,6 +325,87 @@ export function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+      </section>
+
+      <section className="space-y-4">
+        <div className="space-y-1">
+          <h3 className="text-lg font-semibold text-foreground">Runtime metrics</h3>
+          <p className="text-sm text-muted-foreground">
+            Lightweight in-memory metrics for the main API flows. These reset when the API process restarts.
+          </p>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {metricsQuery.data
+            ? [
+                {
+                  key: "auth",
+                  label: "Auth",
+                  requests: metricsQuery.data.flows.auth.requestsTotal,
+                  errors: metricsQuery.data.flows.auth.errorsTotal,
+                  avg: metricsQuery.data.flows.auth.averageDurationMs,
+                  max: metricsQuery.data.flows.auth.maxDurationMs,
+                  extra: null,
+                },
+                {
+                  key: "crud",
+                  label: "CRUD",
+                  requests: metricsQuery.data.flows.crud.requestsTotal,
+                  errors: metricsQuery.data.flows.crud.errorsTotal,
+                  avg: metricsQuery.data.flows.crud.averageDurationMs,
+                  max: metricsQuery.data.flows.crud.maxDurationMs,
+                  extra: null,
+                },
+                {
+                  key: "storage",
+                  label: "Storage",
+                  requests: metricsQuery.data.flows.storage.requestsTotal,
+                  errors: metricsQuery.data.flows.storage.errorsTotal,
+                  avg: metricsQuery.data.flows.storage.averageDurationMs,
+                  max: metricsQuery.data.flows.storage.maxDurationMs,
+                  extra: null,
+                },
+                {
+                  key: "realtime",
+                  label: "Realtime",
+                  requests: metricsQuery.data.flows.realtime.requestsTotal,
+                  errors: metricsQuery.data.flows.realtime.errorsTotal,
+                  avg: metricsQuery.data.flows.realtime.averageDurationMs,
+                  max: metricsQuery.data.flows.realtime.maxDurationMs,
+                  extra: `${metricsQuery.data.flows.realtime.connections} conn / ${metricsQuery.data.flows.realtime.subscriptions} subs / ${metricsQuery.data.flows.realtime.eventsSentTotal} events`,
+                },
+                {
+                  key: "webhook",
+                  label: "Webhooks",
+                  requests: metricsQuery.data.flows.webhook.requestsTotal,
+                  errors: metricsQuery.data.flows.webhook.errorsTotal,
+                  avg: metricsQuery.data.flows.webhook.averageDurationMs,
+                  max: metricsQuery.data.flows.webhook.maxDurationMs,
+                  extra: `${metricsQuery.data.flows.webhook.dispatchesTotal} dispatched / ${metricsQuery.data.flows.webhook.deliveriesSucceeded} ok / ${metricsQuery.data.flows.webhook.deliveriesFailed} failed`,
+                },
+              ].map((metric) => (
+                <Card key={metric.key} className="border-border shadow-sm">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">{metric.label}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="text-2xl font-semibold tabular-nums text-foreground">{metric.requests}</div>
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      <p>{metric.errors} errors</p>
+                      <p>{metric.avg}ms avg</p>
+                      <p>{metric.max}ms max</p>
+                      {metric.extra ? <p>{metric.extra}</p> : null}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            : Array.from({ length: 5 }).map((_, index) => (
+                <Card key={index} className="border-border shadow-sm">
+                  <CardContent className="flex h-full min-h-32 items-center justify-center text-sm text-muted-foreground">
+                    {metricsQuery.isError ? "Could not load metrics." : "Loading metrics..."}
+                  </CardContent>
+                </Card>
+              ))}
+        </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
