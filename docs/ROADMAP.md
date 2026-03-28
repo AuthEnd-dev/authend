@@ -180,9 +180,9 @@ Priority inside this phase:
 ### Schema Builder
 
 - [x] Replace JSON-first authoring as the primary flow with a visual schema builder.
-- [ ] Add guided creation for tables, relations, enums, indexes, and defaults.
-- [ ] Add migration diff review with clear before/after explanations.
-- [ ] Add guarded destructive changes with backup prompts and rollback guidance.
+- [x] Add guided creation for tables, relations, enums, indexes, and defaults.
+- [x] Add migration diff review with clear before/after explanations.
+- [x] Add guarded destructive changes with backup prompts and rollback guidance.
 
 ### API Designer
 
@@ -198,7 +198,7 @@ Priority inside this phase:
 
 ### Exit Criteria
 
-- [ ] A new user can create tables, policies, and APIs without editing raw JSON.
+- [x] A new user can create tables, policies, and APIs without editing raw JSON.
 - [x] Common failure states have clear remediation paths in the UI.
 
 ## Phase 5: Production Hardening
@@ -284,6 +284,6 @@ The roadmap is complete when all of the following are true:
 - [x] TS clients are generated with exact per-resource types
 - [x] Storage and realtime are first-class features
 - [x] Event-driven integrations are supported
-- [ ] The admin UI supports visual setup for schema, API, and policy design
+- [x] The admin UI supports visual setup for schema, API, and policy design
 - [x] Production hardening and recovery workflows are in place
 - [x] Docs, tests, and examples stay aligned with the shipped behavior

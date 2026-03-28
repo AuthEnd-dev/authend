@@ -25,8 +25,11 @@ import type {
   TableDescriptor,
 } from '@authend/shared';
 import { client } from '../lib/client';
+import { summarizeSchemaDraftReview } from '../lib/schema-draft-review';
 import { SidePanel } from './ui/side-panel';
 import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { CodeBlock } from './ui/code-block';
 import { TooltipComponent as Tooltip } from './ui/tooltip';
 import { Input } from './ui/input';
 import { getErrorMessage, useFeedback } from './ui/feedback';
@@ -51,6 +54,23 @@ type EditableField = FieldBlueprint;
 type EditableRelation = RelationBlueprint & {
   sourceFieldMode: 'existing' | 'auto';
   generatedSourceField: string;
+};
+type TablePreset = {
+  id: string;
+  label: string;
+  description: string;
+  create: () => {
+    name: string;
+    displayName: string;
+    fields: EditableField[];
+    indexes: string[][];
+    apiConfig: TableApiConfig;
+  };
+};
+type FieldTemplate = {
+  id: string;
+  label: string;
+  create: () => EditableField;
 };
 
 const tableEditorTabs = [
@@ -87,6 +107,10 @@ function emptyField(): EditableField {
     size: 255,
     enumValues: [],
   };
+}
+
+function booleanDefaultValue(value: boolean) {
+  return value ? 'true' : 'false';
 }
 
 function defaultTableApiConfig(): TableApiConfig {
@@ -126,6 +150,151 @@ function defaultTableApiConfig(): TableApiConfig {
     tag: null,
     description: null,
   };
+}
+
+const tablePresets: TablePreset[] = [
+  {
+    id: 'content',
+    label: 'Content',
+    description: 'Title/body publishing flow with slug and publish date.',
+    create: () => ({
+      name: 'posts',
+      displayName: 'Posts',
+      fields: [
+        { name: 'title', type: 'text', nullable: false, default: '', unique: false, indexed: false, size: 255, enumValues: [] },
+        { name: 'slug', type: 'varchar', nullable: false, default: '', unique: true, indexed: true, size: 160, enumValues: [] },
+        { name: 'status', type: 'enum', nullable: false, default: 'draft', unique: false, indexed: true, size: 255, enumValues: ['draft', 'published', 'archived'] },
+        { name: 'body', type: 'text', nullable: true, default: '', unique: false, indexed: false, size: 255, enumValues: [] },
+        { name: 'published_at', type: 'timestamp', nullable: true, default: '', unique: false, indexed: true, size: 255, enumValues: [] },
+      ],
+      indexes: [['status', 'published_at']],
+      apiConfig: {
+        ...defaultTableApiConfig(),
+        authMode: 'public',
+        access: buildTableApiAccessPreset('publicReadOnly'),
+        routeSegment: 'posts',
+        sdkName: 'posts',
+        tag: 'content',
+      },
+    }),
+  },
+  {
+    id: 'profile',
+    label: 'Profile',
+    description: 'One-user-owned profile or preferences table.',
+    create: () => ({
+      name: 'profiles',
+      displayName: 'Profiles',
+      fields: [
+        { name: 'user_id', type: 'uuid', nullable: false, default: '', unique: true, indexed: true, size: 255, enumValues: [] },
+        { name: 'display_name', type: 'varchar', nullable: true, default: '', unique: false, indexed: false, size: 120, enumValues: [] },
+        { name: 'bio', type: 'text', nullable: true, default: '', unique: false, indexed: false, size: 255, enumValues: [] },
+        { name: 'avatar_url', type: 'text', nullable: true, default: '', unique: false, indexed: false, size: 255, enumValues: [] },
+      ],
+      indexes: [],
+      apiConfig: {
+        ...defaultTableApiConfig(),
+        authMode: 'session',
+        access: buildTableApiAccessPreset('sessionPrivate', 'user_id'),
+        routeSegment: 'profiles',
+        sdkName: 'profiles',
+        tag: 'users',
+      },
+    }),
+  },
+  {
+    id: 'lookup',
+    label: 'Lookup',
+    description: 'Small reusable list such as categories or statuses.',
+    create: () => ({
+      name: 'categories',
+      displayName: 'Categories',
+      fields: [
+        { name: 'name', type: 'varchar', nullable: false, default: '', unique: true, indexed: true, size: 120, enumValues: [] },
+        { name: 'slug', type: 'varchar', nullable: false, default: '', unique: true, indexed: true, size: 120, enumValues: [] },
+        { name: 'sort_order', type: 'integer', nullable: false, default: '0', unique: false, indexed: true, size: 255, enumValues: [] },
+      ],
+      indexes: [['sort_order', 'name']],
+      apiConfig: {
+        ...defaultTableApiConfig(),
+        authMode: 'public',
+        access: buildTableApiAccessPreset('publicReadOnly'),
+        routeSegment: 'categories',
+        sdkName: 'categories',
+        tag: 'lookup',
+      },
+    }),
+  },
+  {
+    id: 'join',
+    label: 'Join table',
+    description: 'Two foreign keys plus created-at for many-to-many links.',
+    create: () => ({
+      name: 'memberships',
+      displayName: 'Memberships',
+      fields: [
+        { name: 'left_id', type: 'uuid', nullable: false, default: '', unique: false, indexed: true, size: 255, enumValues: [] },
+        { name: 'right_id', type: 'uuid', nullable: false, default: '', unique: false, indexed: true, size: 255, enumValues: [] },
+        { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()', unique: false, indexed: true, size: 255, enumValues: [] },
+      ],
+      indexes: [['left_id', 'right_id']],
+      apiConfig: {
+        ...defaultTableApiConfig(),
+        routeSegment: 'memberships',
+        sdkName: 'memberships',
+        tag: 'relations',
+      },
+    }),
+  },
+];
+
+const fieldTemplates: FieldTemplate[] = [
+  {
+    id: 'email',
+    label: 'Email',
+    create: () => ({ name: 'email', type: 'varchar', nullable: false, default: '', unique: true, indexed: true, size: 255, enumValues: [] }),
+  },
+  {
+    id: 'slug',
+    label: 'Slug',
+    create: () => ({ name: 'slug', type: 'varchar', nullable: false, default: '', unique: true, indexed: true, size: 160, enumValues: [] }),
+  },
+  {
+    id: 'status',
+    label: 'Status enum',
+    create: () => ({ name: 'status', type: 'enum', nullable: false, default: 'draft', unique: false, indexed: true, size: 255, enumValues: ['draft', 'published', 'archived'] }),
+  },
+  {
+    id: 'published_at',
+    label: 'Published at',
+    create: () => ({ name: 'published_at', type: 'timestamp', nullable: true, default: '', unique: false, indexed: true, size: 255, enumValues: [] }),
+  },
+  {
+    id: 'owner_id',
+    label: 'Owner id',
+    create: () => ({ name: 'owner_id', type: 'uuid', nullable: false, default: '', unique: false, indexed: true, size: 255, enumValues: [] }),
+  },
+];
+
+function defaultSuggestions(field: EditableField) {
+  switch (field.type) {
+    case 'uuid':
+      return ['gen_random_uuid()'];
+    case 'timestamp':
+      return ['now()'];
+    case 'date':
+      return ['current_date'];
+    case 'boolean':
+      return [booleanDefaultValue(false), booleanDefaultValue(true)];
+    case 'integer':
+    case 'bigint':
+    case 'numeric':
+      return ['0', '1'];
+    case 'enum':
+      return field.enumValues?.length ? [field.enumValues[0]] : [];
+    default:
+      return [];
+  }
 }
 
 function actorLabel(actor: ApiAccessActor) {
@@ -371,11 +540,23 @@ export function TableSchemaPanel({
   const [relations, setRelations] = useState<EditableRelation[]>([]);
   const [relationRowIds, setRelationRowIds] = useState<string[]>([]);
   const [collapsedRelations, setCollapsedRelations] = useState<boolean[]>([]);
+  const [indexes, setIndexes] = useState<string[][]>([]);
+  const [indexRowIds, setIndexRowIds] = useState<string[]>([]);
   const [apiConfig, setApiConfig] = useState<TableApiConfig>(defaultTableApiConfig());
   const [hooks, setHooks] = useState<TableHook[]>([]);
   const [activeTab, setActiveTab] = useState<(typeof tableEditorTabs)[number]['key']>('fields');
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [reviewState, setReviewState] = useState<{
+    mode: 'save' | 'delete';
+    nextDraft: SchemaDraft;
+    previousDraft: SchemaDraft;
+    sql: string[];
+    warnings: string[];
+    summary: ReturnType<typeof summarizeSchemaDraftReview>;
+  } | null>(null);
+  const [sqlReviewed, setSqlReviewed] = useState(false);
+  const [destructiveAcknowledged, setDestructiveAcknowledged] = useState(false);
   const [collapsedQuerySections, setCollapsedQuerySections] = useState<Record<QueryCapabilityKey, boolean>>({
     hiddenFields: true,
     pagination: true,
@@ -440,6 +621,8 @@ export function TableSchemaPanel({
     setRelations([]);
     setRelationRowIds([]);
     setCollapsedRelations([]);
+    setIndexes([]);
+    setIndexRowIds([]);
     setApiConfig(defaultTableApiConfig());
     setHooks([]);
     setCollapsedFieldVisibility({});
@@ -484,6 +667,8 @@ export function TableSchemaPanel({
         setRelations(editableRelations);
         setRelationRowIds(editableRelations.map(() => nextSchemaEditorRowId()));
         setCollapsedRelations(editableRelations.map(() => true));
+        setIndexes(table.indexes ?? []);
+        setIndexRowIds((table.indexes ?? []).map(() => nextSchemaEditorRowId()));
         setApiConfig({
           ...defaultTableApiConfig(),
           ...table.api,
@@ -523,6 +708,8 @@ export function TableSchemaPanel({
       setRelations([]);
       setRelationRowIds([]);
       setCollapsedRelations([]);
+      setIndexes([]);
+      setIndexRowIds([]);
       setApiConfig(defaultTableApiConfig());
       return;
     }
@@ -535,6 +722,8 @@ export function TableSchemaPanel({
     setRelations([]);
     setRelationRowIds([]);
     setCollapsedRelations([]);
+    setIndexes([]);
+    setIndexRowIds([]);
     setApiConfig(defaultTableApiConfig());
   }, [editingDescriptor, isEditing, isOpen, schemaData, tableName]);
 
@@ -553,6 +742,12 @@ export function TableSchemaPanel({
 
   const handleAddField = () => {
     setFields((current) => [...current, emptyField()]);
+    setFieldRowIds((current) => [...current, nextSchemaEditorRowId()]);
+    setCollapsedFields((current) => [...current, false]);
+  };
+
+  const handleAddFieldTemplate = (template: FieldTemplate) => {
+    setFields((current) => [...current, template.create()]);
     setFieldRowIds((current) => [...current, nextSchemaEditorRowId()]);
     setCollapsedFields((current) => [...current, false]);
   };
@@ -612,6 +807,17 @@ export function TableSchemaPanel({
     setCollapsedRelations((current) => [...current, false]);
   };
 
+  const handleAddQuickRelation = (targetTable: string, alias?: string) => {
+    const nextRelation = emptyRelation(currentSourceTable, targetTable);
+    if (alias) {
+      nextRelation.alias = alias;
+      nextRelation.generatedSourceField = buildGeneratedSourceFieldName(targetTable, nextRelation.targetField, alias);
+    }
+    setRelations((current) => [...current, nextRelation]);
+    setRelationRowIds((current) => [...current, nextSchemaEditorRowId()]);
+    setCollapsedRelations((current) => [...current, false]);
+  };
+
   const handleRelationChange = (index: number, key: keyof EditableRelation, value: string) => {
     setRelations((current) =>
       current.map((relation, relationIndex) => {
@@ -663,6 +869,48 @@ export function TableSchemaPanel({
 
   const setAllRelationsCollapsed = (collapsed: boolean) => {
     setCollapsedRelations(relations.map(() => collapsed));
+  };
+
+  const handleAddIndex = () => {
+    setIndexes((current) => [...current, []]);
+    setIndexRowIds((current) => [...current, nextSchemaEditorRowId()]);
+  };
+
+  const handleRemoveIndex = (index: number) => {
+    setIndexes((current) => current.filter((_, indexPosition) => indexPosition !== index));
+    setIndexRowIds((current) => current.filter((_, indexPosition) => indexPosition !== index));
+  };
+
+  const toggleIndexField = (index: number, field: string) => {
+    setIndexes((current) =>
+      current.map((columns, indexPosition) => {
+        if (indexPosition !== index) {
+          return columns;
+        }
+        return toggleListValue(columns, field);
+      }),
+    );
+  };
+
+  const applyTablePreset = (preset: TablePreset) => {
+    if (isEditing) {
+      return;
+    }
+
+    const next = preset.create();
+    setName(next.name);
+    setDisplayName(next.displayName);
+    setFields(next.fields);
+    setFieldRowIds(next.fields.map(() => nextSchemaEditorRowId()));
+    setCollapsedFields(next.fields.map(() => true));
+    setRelations([]);
+    setRelationRowIds([]);
+    setCollapsedRelations([]);
+    setIndexes(next.indexes);
+    setIndexRowIds(next.indexes.map(() => nextSchemaEditorRowId()));
+    setApiConfig(next.apiConfig);
+    setHooks([]);
+    setActiveTab('fields');
   };
 
   const toggleQuerySectionCollapsed = (section: QueryCapabilityKey) => {
@@ -765,7 +1013,7 @@ export function TableSchemaPanel({
       name,
       displayName: displayName || name,
       primaryKey: resolvedPrimaryKey,
-      indexes: [],
+      indexes: indexes.filter((columns) => columns.length > 0),
       fields: [primaryKeyField, ...manualFields.filter((field) => field.name !== resolvedPrimaryKey), ...autoFields],
       api: {
         ...apiConfig,
@@ -987,6 +1235,89 @@ export function TableSchemaPanel({
     });
   };
 
+  const resetReview = () => {
+    setReviewState(null);
+    setSqlReviewed(false);
+    setDestructiveAcknowledged(false);
+  };
+
+  const applyReviewedDraft = async (input: { nextDraft: SchemaDraft; previousDraft: SchemaDraft; mode: 'save' | 'delete' }) => {
+    try {
+      if (input.mode === 'save') {
+        setIsSaving(true);
+      } else {
+        setIsDeleting(true);
+      }
+
+      await client.system.schema.apply(input.nextDraft);
+      await invalidateSchemaQueries(queryClient);
+
+      onSuccess?.();
+      onClose();
+      resetReview();
+      void navigate({ to: '/data', search: { table: input.mode === 'delete' ? 'user' : name, page: undefined, pageSize: undefined } });
+
+      showNotice({
+        title: input.mode === 'delete' ? `Deleted ${tableName}` : isEditing ? `Saved ${name}` : `Created ${name}`,
+        description:
+          input.mode === 'delete'
+            ? 'Undo reapplies the previous schema draft only. Recreated tables will be empty unless you restore from a backup.'
+            : 'Undo reapplies the previous schema draft only (no full-table row snapshot). Use backups for large or critical data.',
+        variant: 'success',
+        durationMs: 30000,
+        actionLabel: 'Undo',
+        onAction: async () => {
+          await client.system.schema.apply(input.previousDraft);
+          await invalidateSchemaQueries(queryClient);
+          onSuccess?.();
+          void navigate({ to: '/data', search: { table: tableName ?? 'user', page: undefined, pageSize: undefined } });
+        },
+      });
+    } catch (error) {
+      showNotice({
+        title: input.mode === 'delete' ? 'Failed to delete table' : 'Failed to save schema',
+        description: getErrorMessage(error, input.mode === 'delete' ? 'The table could not be deleted.' : 'The schema change could not be applied.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+      setIsDeleting(false);
+    }
+  };
+
+  const startReview = async (input: { nextDraft: SchemaDraft; previousDraft: SchemaDraft; mode: 'save' | 'delete' }) => {
+    try {
+      if (input.mode === 'save') {
+        setIsSaving(true);
+      } else {
+        setIsDeleting(true);
+      }
+
+      const preview = await client.system.schema.preview(input.nextDraft);
+      const summary = summarizeSchemaDraftReview(input.previousDraft, input.nextDraft);
+      setReviewState({
+        mode: input.mode,
+        nextDraft: input.nextDraft,
+        previousDraft: input.previousDraft,
+        sql: preview.sql,
+        warnings: preview.warnings,
+        summary,
+      });
+      setSqlReviewed(false);
+      setDestructiveAcknowledged(false);
+      setActiveTab('fields');
+    } catch (error) {
+      showNotice({
+        title: 'Preview failed',
+        description: getErrorMessage(error, 'The schema preview could not be generated.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+      setIsDeleting(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!name.trim()) {
       showNotice({
@@ -1007,7 +1338,6 @@ export function TableSchemaPanel({
     }
 
     try {
-      setIsSaving(true);
       const previousDraft = schemaData;
       const newTable = buildTableDraft();
       const newRelations = buildRelationDraft();
@@ -1031,29 +1361,13 @@ export function TableSchemaPanel({
         ...newRelations,
       ];
 
-      await client.system.schema.apply({
+      await startReview({
+        mode: 'save',
+        previousDraft,
+        nextDraft: {
         ...baseDraft,
         tables: nextTables,
         relations: nextRelations,
-      });
-      await invalidateSchemaQueries(queryClient);
-
-      onSuccess?.();
-      onClose();
-      void navigate({ to: '/data', search: { table: name, page: undefined, pageSize: undefined } });
-
-      showNotice({
-        title: isEditing ? `Saved ${name}` : `Created ${name}`,
-        description:
-          'Undo reapplies the previous schema draft only (no full-table row snapshot). Use backups for large or critical data.',
-        variant: 'success',
-        durationMs: 30000,
-        actionLabel: 'Undo',
-        onAction: async () => {
-          await client.system.schema.apply(previousDraft);
-          await invalidateSchemaQueries(queryClient);
-          onSuccess?.();
-          void navigate({ to: '/data', search: { table: tableName ?? 'user', page: undefined, pageSize: undefined } });
         },
       });
     } catch (error) {
@@ -1062,8 +1376,6 @@ export function TableSchemaPanel({
         description: getErrorMessage(error, 'The schema change could not be applied.'),
         variant: 'destructive',
       });
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -1093,46 +1405,21 @@ export function TableSchemaPanel({
     }
 
     try {
-      setIsDeleting(true);
       const previousDraft = schemaData;
       const baseDraft: SchemaDraft = schemaData;
 
-      await client.system.schema.apply({
+      await startReview({
+        mode: 'delete',
+        previousDraft,
+        nextDraft: {
         ...baseDraft,
         tables: baseDraft.tables.filter((table) => table.name !== tableName),
         relations: baseDraft.relations.filter(
           (relation) => relation.sourceTable !== tableName && relation.targetTable !== tableName,
         ),
-      });
-      await invalidateSchemaQueries(queryClient);
-
-      onSuccess?.();
-      onClose();
-      void navigate({ to: '/data', search: { table: 'user', page: undefined, pageSize: undefined } });
-
-      showNotice({
-        title: `Deleted ${tableName}`,
-        description:
-          'Undo reapplies the previous schema draft only. Recreated tables will be empty unless you restore from a backup.',
-        variant: 'success',
-        durationMs: 30000,
-        actionLabel: 'Undo',
-        onAction: async () => {
-          await client.system.schema.apply(previousDraft);
-          await invalidateSchemaQueries(queryClient);
-          onSuccess?.();
-          void navigate({ to: '/data', search: { table: tableName, page: undefined, pageSize: undefined } });
         },
       });
-    } catch (error) {
-      showNotice({
-        title: 'Failed to delete table',
-        description: getErrorMessage(error, 'The table could not be deleted.'),
-        variant: 'destructive',
-      });
-    } finally {
-      setIsDeleting(false);
-    }
+    } catch {}
   };
 
   return (
@@ -1166,14 +1453,128 @@ export function TableSchemaPanel({
             <Button variant="outline" onClick={onClose} disabled={isSaving || isDeleting}>
               Cancel
             </Button>
-            <Button onClick={handleSubmit} disabled={isSaving || isDeleting || isSchemaLoading || isCatalogLoading}>
-              {isSaving ? 'Saving...' : isEditing ? 'Save' : 'Create'}
-            </Button>
+            {reviewState ? (
+              <>
+                <Button variant="outline" onClick={resetReview} disabled={isSaving || isDeleting}>
+                  Back to edit
+                </Button>
+                <Button
+                  onClick={() => void applyReviewedDraft(reviewState)}
+                  disabled={
+                    isSaving ||
+                    isDeleting ||
+                    !sqlReviewed ||
+                    (reviewState.summary.destructive && !destructiveAcknowledged)
+                  }
+                >
+                  {reviewState.mode === 'delete'
+                    ? isDeleting
+                      ? 'Deleting...'
+                      : 'Confirm delete'
+                    : isSaving
+                      ? 'Applying...'
+                      : 'Apply reviewed changes'}
+                </Button>
+              </>
+            ) : (
+              <Button onClick={handleSubmit} disabled={isSaving || isDeleting || isSchemaLoading || isCatalogLoading}>
+                {isSaving ? 'Previewing...' : isEditing ? 'Review changes' : 'Review creation'}
+              </Button>
+            )}
           </div>
         </div>
       }
     >
       <div className="flex flex-col gap-8 pb-10">
+        {reviewState ? (
+          <section className="grid gap-4 rounded-2xl border border-border/60 bg-background p-5">
+            <div className="flex items-center justify-between border-b border-border/50 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-foreground">Review before apply</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  SQL preview, before/after summary, and destructive-change acknowledgements are required before schema apply.
+                </p>
+              </div>
+              <Badge variant={reviewState.summary.level === 'destructive' ? 'destructive' : 'secondary'}>
+                {reviewState.summary.level}
+              </Badge>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+              <div className="space-y-3">
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Change summary</div>
+                  <div className="mt-3 space-y-2">
+                    {reviewState.summary.changes.length > 0 ? (
+                      reviewState.summary.changes.map((change, index) => (
+                        <div key={`${change.title}-${index}`} className="rounded-lg border border-border/60 bg-background px-3 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-sm font-semibold text-foreground">{change.title}</div>
+                            <Badge variant={change.severity === 'destructive' ? 'destructive' : 'secondary'}>
+                              {change.severity}
+                            </Badge>
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">{change.detail}</div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-lg border border-border/60 bg-background px-3 py-3 text-sm text-muted-foreground">
+                        No structural diff detected beyond metadata normalization.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {reviewState.warnings.length > 0 ? (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/8 p-3">
+                    <div className="text-xs font-bold uppercase tracking-wider text-amber-700">Server warnings</div>
+                    <div className="mt-3 space-y-2">
+                      {reviewState.warnings.map((warning, index) => (
+                        <div key={`${warning}-${index}`} className="text-sm text-foreground">
+                          {warning}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="rounded-xl border border-border/60 bg-background p-3">
+                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Required before apply</div>
+                  <div className="mt-3 space-y-3">
+                    <label className="flex items-start gap-3 text-sm text-foreground">
+                      <input
+                        type="checkbox"
+                        checked={sqlReviewed}
+                        onChange={(event) => setSqlReviewed(event.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
+                      />
+                      <span>I reviewed the generated SQL and understand what will run.</span>
+                    </label>
+                    {reviewState.summary.destructive ? (
+                      <label className="flex items-start gap-3 text-sm text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={destructiveAcknowledged}
+                          onChange={(event) => setDestructiveAcknowledged(event.target.checked)}
+                          className="mt-0.5 h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
+                        />
+                        <span>I understand this can remove or invalidate data. Recovery means backups and rollback work, not undo from the browser.</span>
+                      </label>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border/60 bg-muted/20">
+                <div className="border-b border-border/60 px-3 py-2">
+                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">SQL preview</div>
+                </div>
+                <CodeBlock code={reviewState.sql.join('\n\n') || '-- No SQL changes --'} language="sql" className="max-h-[520px] overflow-auto p-3 text-xs" />
+              </div>
+            </div>
+          </section>
+        ) : null}
+
         <section className="grid gap-4 rounded-2xl border border-border/60 bg-background p-5">
           <div className="flex flex-col gap-1.5">
             <label className="text-[13px] font-bold text-foreground">
@@ -1198,6 +1599,28 @@ export function TableSchemaPanel({
               className="text-sm"
             />
           </div>
+
+          {!isEditing ? (
+            <div className="grid gap-3 border-t border-border/60 pt-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-[13px] font-bold text-foreground">Guided start</label>
+                <p className="text-[11px] text-muted-foreground">Use a starter template, then adjust fields, relations, and API rules visually.</p>
+              </div>
+              <div className="grid gap-2 lg:grid-cols-2">
+                {tablePresets.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => applyTablePreset(preset)}
+                    className="rounded-xl border border-border/70 px-3 py-3 text-left transition hover:border-foreground/20 hover:bg-muted/20"
+                  >
+                    <div className="text-sm font-semibold text-foreground">{preset.label}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{preset.description}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/60 bg-background p-2">
@@ -1324,6 +1747,20 @@ export function TableSchemaPanel({
                               placeholder="optional"
                               className="h-9 font-mono text-xs"
                             />
+                            {defaultSuggestions(field).length > 0 ? (
+                              <div className="flex flex-wrap gap-2">
+                                {defaultSuggestions(field).map((suggestion) => (
+                                  <button
+                                    key={`${field.name || index}-${suggestion}`}
+                                    type="button"
+                                    onClick={() => handleFieldChange(index, 'default', suggestion)}
+                                    className="rounded-md border border-border/70 px-2 py-1 font-mono text-[10px] text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+                                  >
+                                    {suggestion}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
 
@@ -1402,10 +1839,17 @@ export function TableSchemaPanel({
                 ))}
               </div>
 
-              <Button variant="outline" size="sm" onClick={handleAddField} className="border-dashed">
-                <Plus className="mr-1.5 h-3.5 w-3.5" />
-                New Field
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" size="sm" onClick={handleAddField} className="border-dashed">
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                  New Field
+                </Button>
+                {fieldTemplates.map((template) => (
+                  <Button key={template.id} variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => handleAddFieldTemplate(template)}>
+                    {template.label}
+                  </Button>
+                ))}
+              </div>
             </section>
 
             <section className="grid gap-4 rounded-2xl border border-border/60 bg-background p-5">
@@ -1442,6 +1886,23 @@ export function TableSchemaPanel({
               <div className="rounded-lg border border-border/60 px-3 py-2 text-xs text-muted-foreground">
                 Define named joins from this table to any existing table. Aliases become the stable relation names for include
                 rules and client-side query composition.
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {availableTableNames
+                  .filter((entry) => entry !== currentSourceTable)
+                  .slice(0, 4)
+                  .map((entry) => (
+                    <Button
+                      key={`quick-relation-${entry}`}
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2 text-xs"
+                      onClick={() => handleAddQuickRelation(entry, entry === 'user' ? 'owner' : undefined)}
+                    >
+                      Link to {entry}
+                    </Button>
+                  ))}
               </div>
 
               <div className="grid gap-3">
@@ -1712,6 +2173,87 @@ export function TableSchemaPanel({
                 <Plus className="mr-1.5 h-3.5 w-3.5" />
                 New Relation
               </Button>
+            </section>
+
+            <section className="grid gap-4 rounded-2xl border border-border/60 bg-background p-5">
+              <div className="flex items-center justify-between border-b border-border/50 pb-3">
+                <h3 className="flex items-center gap-2 text-sm font-bold">
+                  <Settings2 className="h-4 w-4 text-muted-foreground" />
+                  Compound Indexes
+                </h3>
+                <span className="font-mono text-xs text-muted-foreground">{indexes.length} defined</span>
+              </div>
+
+              <div className="rounded-lg border border-border/60 px-3 py-2 text-xs text-muted-foreground">
+                Use compound indexes for common filter and sort paths. Single-field unique and indexed flags still live on each field.
+              </div>
+
+              <div className="grid gap-3">
+                {indexes.map((columns, index) => (
+                  <div key={indexRowIds[index] ?? index} className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-semibold text-foreground">
+                        {columns.length > 0 ? columns.join(', ') : `Index ${index + 1}`}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => handleRemoveIndex(index)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="mt-3 grid gap-2 md:grid-cols-2">
+                      {['id', ...availableFieldNames]
+                        .filter((field, fieldIndex, collection) => collection.indexOf(field) === fieldIndex)
+                        .map((field) => (
+                          <label
+                            key={`index-${index}-${field}`}
+                            className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
+                              columns.includes(field) ? 'border-foreground/30 bg-background' : 'border-border/70 bg-background'
+                            }`}
+                          >
+                            <span className="font-mono">{field}</span>
+                            <input
+                              type="checkbox"
+                              checked={columns.includes(field)}
+                              onChange={() => toggleIndexField(index, field)}
+                              className="h-4 w-4 rounded-sm border-muted-foreground/40 accent-primary"
+                            />
+                          </label>
+                        ))}
+                    </div>
+                  </div>
+                ))}
+                {indexes.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border/70 px-3 py-4 text-sm text-muted-foreground">
+                    No compound indexes yet. Add one for multi-column lookup or sorting paths.
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" size="sm" onClick={handleAddIndex} className="border-dashed">
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                  New Index
+                </Button>
+                {availableFieldNames.includes('slug') ? (
+                  <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setIndexes((current) => [...current, ['slug']])}>
+                    Add slug index
+                  </Button>
+                ) : null}
+                {availableFieldNames.includes('status') && availableFieldNames.includes('published_at') ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-xs"
+                    onClick={() => setIndexes((current) => [...current, ['status', 'published_at']])}
+                  >
+                    Add status + published_at
+                  </Button>
+                ) : null}
+              </div>
             </section>
           </>
         )}
