@@ -32,6 +32,7 @@ Use the folder name **`extensions/`** for fork-owned code. Do **not** name custo
 | [`auth.ts`](../apps/api/src/extensions/auth.ts) | Implement `forkAuthContributions()` to add Better Auth plugins or option fragments; merged after dashboard-driven runtime plugins in [`auth-service.ts`](../apps/api/src/core/services/auth-service.ts). |
 | [`schema.ts`](../apps/api/src/extensions/schema.ts) | Define fork-owned `SchemaDraft` tables/relations. Use helper builders from [`core/services/schema-helpers.ts`](../apps/api/src/core/services/schema-helpers.ts) to keep definitions concise and Drizzle-like. Merged into the effective schema draft by [`schema-service.ts`](../apps/api/src/core/services/schema-service.ts) during read/preview/apply. |
 | [`plugin-defaults.ts`](../apps/api/src/extensions/plugin-defaults.ts) | Declare fork-owned defaults for existing built-in AuthEnd plugins. This is the correct place to enable or preconfigure built-in plugins for a fork without editing core startup. |
+| [`lifecycle.ts`](../apps/api/src/extensions/lifecycle.ts) | Register narrow startup hooks for fork-owned bootstrap tasks and long-lived runtime services without editing core bootstrap directly. |
 
 ## Choose the right extension point
 
@@ -42,6 +43,8 @@ Use the folder name **`extensions/`** for fork-owned code. Do **not** name custo
 | Add fork-owned schema tables or relations | `apps/api/src/extensions/schema.ts` |
 | Register a new fork-owned AuthEnd plugin definition | `apps/api/src/extensions/plugins.ts` |
 | Set defaults for an existing built-in AuthEnd plugin | `apps/api/src/extensions/plugin-defaults.ts` |
+| Seed fork-owned data during startup | `apps/api/src/extensions/lifecycle.ts` (`forkBootstrapTasks`) |
+| Start fork-owned schedulers or background workers | `apps/api/src/extensions/lifecycle.ts` (`forkRuntimeServices`) |
 
 When defining relations in `extensions/schema.ts`, relation aliases (`alias`, `sourceAlias`, `targetAlias`) may use `snake_case` or `camelCase`, but they must start with a lowercase letter and may only contain letters, numbers, and underscores.
 
@@ -56,9 +59,16 @@ When defining relations in `extensions/schema.ts`, relation aliases (`alias`, `s
 
 Do not perform side effects or persistence directly from that file.
 
+`lifecycle.ts` is intentionally narrow:
+
+- `forkBootstrapTasks` run during `bootstrapSystem()` after extension schema provisioning and superadmin seeding.
+- `forkRuntimeServices` start from `src/index.ts` after `bootstrapSystem()` and built-in schedulers are running.
+- bootstrap tasks must be idempotent and must not start timers or long-lived loops
+- runtime services may start loops, but should not persist built-in plugin defaults or act like ad hoc plugin bootstrap
+
 ## Anti-patterns
 
-- Do not import `extensions/bootstrap.ts` or any fork bootstrap module into core startup.
+- Do not invent a separate `extensions/bootstrap.ts` or ad hoc fork bootstrap module outside `extensions/lifecycle.ts`.
 - Do not configure built-in AuthEnd plugin install state from `extensions/auth.ts`.
 - Do not write durable DB or plugin state from ad hoc fork bootstrap logic in core when the same outcome can be expressed through extension defaults.
 

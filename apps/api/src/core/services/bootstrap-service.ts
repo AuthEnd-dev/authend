@@ -7,6 +7,7 @@ import { ensureCoreSchema, applyPendingMigrations, previewPendingMigrations } fr
 import { ensureExtensionSchemaProvisioned } from "./schema-service";
 import { ensureEnabledPluginsProvisioned, seedPluginConfigs } from "./plugin-service";
 import { writeAuditLog } from "./audit-service";
+import { runExtensionBootstrapTasks } from "./lifecycle-service";
 import { startWebhookScheduler } from "./webhook-service";
 
 export async function seedSuperAdmin() {
@@ -77,6 +78,7 @@ export async function bootstrapSystem() {
   await applyPendingMigrations();
   await ensureExtensionSchemaProvisioned();
   await seedSuperAdmin();
+  await runExtensionBootstrapTasks();
   startWebhookScheduler();
   logger.info("system.bootstrapped");
 }

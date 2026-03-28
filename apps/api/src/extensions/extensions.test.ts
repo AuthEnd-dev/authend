@@ -12,6 +12,7 @@ import {
   timestampField,
 } from "../core/services/schema-helpers";
 import { forkAuthContributions } from "./auth";
+import { forkBootstrapTasks, forkRuntimeServices } from "./lifecycle";
 import { extensionPluginDefaults } from "./plugin-defaults";
 import { extensionPluginDefinitions } from "./plugins";
 import { registerExtensionRoutes } from "./routes";
@@ -103,6 +104,11 @@ describe("extensions entrypoints", () => {
 
   test("plugin defaults registry defaults to an array", () => {
     expect(Array.isArray(extensionPluginDefaults)).toBe(true);
+  });
+
+  test("lifecycle registries default to arrays", () => {
+    expect(Array.isArray(forkBootstrapTasks)).toBe(true);
+    expect(Array.isArray(forkRuntimeServices)).toBe(true);
   });
 
   test("auth contribution hook stays runtime-only and does not return plugin state mutations", async () => {
@@ -199,6 +205,7 @@ describe("schema helpers used by extensions", () => {
     expect(created.primaryKey).toBe("id");
     expect(created.indexes).toEqual([]);
     expect(created.api.authMode).toBe("session");
+    expect(created.hooks).toEqual([]);
   });
 
   test("belongsTo helper fills defaults", () => {

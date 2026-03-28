@@ -63,6 +63,9 @@ If an extension point can handle the request, use it instead of editing core.
 - `apps/api/src/extensions/plugin-defaults.ts`
   Use for declarative defaults for existing built-in AuthEnd plugins.
 
+- `apps/api/src/extensions/lifecycle.ts`
+  Use for narrow fork-owned startup hooks: idempotent bootstrap tasks and runtime services.
+
 ### Admin extension points
 
 - `apps/admin/src/extensions/routes.tsx`
@@ -85,6 +88,8 @@ If the request is about:
 - adding tables or relations: use `apps/api/src/extensions/schema.ts`
 - adding a new fork-owned AuthEnd plugin: use `apps/api/src/extensions/plugins.ts`
 - enabling or preconfiguring an existing built-in AuthEnd plugin: use `apps/api/src/extensions/plugin-defaults.ts`
+- seeding fork-owned data during startup: use `apps/api/src/extensions/lifecycle.ts` via `forkBootstrapTasks`
+- starting fork-owned schedulers or background workers: use `apps/api/src/extensions/lifecycle.ts` via `forkRuntimeServices`
 - adding admin routes/screens through the extension layer: use `apps/admin/src/extensions/routes.tsx`
 - changing admin navigation: use `apps/admin/src/config/navigation.ts`
 - changing MCP tools or transports: use `packages/mcp-server`
@@ -148,15 +153,33 @@ They must:
 - start with a lowercase letter
 - contain only letters, numbers, and underscores
 
+### `extensions/lifecycle.ts`
+
+This file is for the sanctioned fork lifecycle hooks:
+
+- `forkBootstrapTasks` for idempotent setup tasks
+- `forkRuntimeServices` for long-lived process services
+
+Do not use it to:
+
+- persist built-in plugin defaults or plugin install state
+- replace `plugin-defaults.ts`
+- hide general fork logic in a catch-all startup escape hatch
+- start timers from bootstrap tasks
+
 ### Core bootstrap and startup
 
-Do not add ad hoc imports from `extensions/` into core bootstrap/startup code for fork-specific behavior.
+Do not add ad hoc imports from `extensions/` into core bootstrap/startup code for fork-specific behavior beyond the documented lifecycle hook.
 
 Avoid patterns like:
 
 - `extensions/bootstrap.ts` imported by `bootstrap-service.ts`
 - startup code that writes durable DB state for fork configuration
 - core startup code that configures built-in plugin install state directly for a specific product
+
+Allowed pattern:
+
+- `extensions/lifecycle.ts` for idempotent bootstrap tasks and runtime service registration
 
 If the feature needs startup-time fork behavior and no extension point exists, stop and explain that a new core hook is required.
 

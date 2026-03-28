@@ -124,19 +124,21 @@ export function sessionOwnedApi(ownerField: string): TableApiConfig {
  * - `primaryKey` defaults to `id`
  * - `indexes` defaults to `[]`
  * - `api` defaults to `sessionOwnedApi("id")`
+ * - `hooks` defaults to `[]`
  *
  * @param input Table blueprint input.
  * @returns A fully shaped `TableBlueprint`.
  */
 export function table(
-  input: Omit<TableBlueprint, "primaryKey" | "indexes" | "api"> &
-    Partial<Pick<TableBlueprint, "primaryKey" | "indexes" | "api">>,
+  input: Omit<TableBlueprint, "primaryKey" | "indexes" | "api" | "hooks"> &
+    Partial<Pick<TableBlueprint, "primaryKey" | "indexes" | "api" | "hooks">>,
 ): TableBlueprint {
   return {
     ...input,
     primaryKey: input.primaryKey ?? "id",
     indexes: input.indexes ?? [],
     api: input.api ?? sessionOwnedApi("id"),
+    hooks: input.hooks ?? [],
   };
 }
 

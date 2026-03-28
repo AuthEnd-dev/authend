@@ -4,6 +4,7 @@ import { bootstrapSystem } from './core/services/bootstrap-service';
 import { logger } from './core/lib/logger';
 import { startCronScheduler } from './core/services/cron-service';
 import { setDataMutationSubscriber } from './core/services/crud-service';
+import { startExtensionRuntimeServices } from './core/services/lifecycle-service';
 import {
   broadcastDataMutation,
   createRealtimeWebSocketHandlers,
@@ -41,6 +42,7 @@ function printPrettyRoutes(routes: RegisteredRoute[]) {
 
 await bootstrapSystem();
 startCronScheduler();
+await startExtensionRuntimeServices();
 
 setDataMutationSubscriber(broadcastDataMutation);
 
