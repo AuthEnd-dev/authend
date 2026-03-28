@@ -97,4 +97,19 @@ describe("bootstrap script", () => {
     expect(output).toContain("SUPERADMIN_EMAIL");
     expect(output).toContain("Populate the required environment variables");
   });
+
+  test("bun run bootstrap fails fast when BETTER_AUTH_SECRET is missing", () => {
+    const command = spawnSync("bun", ["run", "bootstrap"], {
+      cwd: rootDir,
+      env: createBootstrapEnv(sourceDatabaseUrl, {
+        BETTER_AUTH_SECRET: "",
+      }),
+      encoding: "utf8",
+    });
+
+    const output = `${command.stdout}\n${command.stderr}`;
+    expect(command.status).toBe(1);
+    expect(output).toContain("BETTER_AUTH_SECRET");
+    expect(output).toContain("Populate the required environment variables");
+  });
 });

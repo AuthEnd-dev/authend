@@ -4,7 +4,7 @@
 
 The stack is **TypeScript**, the **Bun** runtime, **Better Auth**, **Drizzle**, **Hono**, and **Postgres**.
 
-For architecture, API details, and client examples, see [`docs/`](./docs/) (start with [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)). For fork-specific routes, plugins, and admin UI hooks without merge pain, see [`docs/EXTENSIONS.md`](./docs/EXTENSIONS.md).
+For architecture, API details, deployment workflow, and client examples, see [`docs/`](./docs/) (start with [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md), [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md), and [`docs/COMPATIBILITY.md`](./docs/COMPATIBILITY.md)). For fork-specific routes, plugins, and admin UI hooks without merge pain, see [`docs/EXTENSIONS.md`](./docs/EXTENSIONS.md).
 
 ## Quick start
 
@@ -66,3 +66,9 @@ The API emits Drizzle schema and SQL migrations under [`apps/api/generated/`](./
 ## Production-ish run
 
 Build the admin, then start the API (see root `package.json` for `build` / `start`). Run `bun test` when you change server behavior.
+
+Before staging or production deploys, run:
+
+```bash
+bun run --cwd apps/api validate-env
+```

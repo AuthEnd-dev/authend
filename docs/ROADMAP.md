@@ -199,7 +199,7 @@ Priority inside this phase:
 ### Exit Criteria
 
 - [ ] A new user can create tables, policies, and APIs without editing raw JSON.
-- [ ] Common failure states have clear remediation paths in the UI.
+- [x] Common failure states have clear remediation paths in the UI.
 
 ## Phase 5: Production Hardening
 
@@ -221,14 +221,14 @@ Goal: make AuthEnd reliable enough for serious production use.
 ### Recovery And Reliability
 
 - [x] Add backup restore workflows, not just backup creation.
-- [ ] Add migration rollback guidance and safety checks.
-- [ ] Add health probes for dependent services like SMTP and S3.
-- [ ] Add failure-mode tests for partial migrations, auth misconfig, and unavailable dependencies.
+- [x] Add migration rollback guidance and safety checks.
+- [x] Add health probes for dependent services like SMTP and S3.
+- [x] Add failure-mode tests for partial migrations, auth misconfig, and unavailable dependencies.
 
 ### Exit Criteria
 
-- [ ] Operators can detect, diagnose, and recover from the common failure modes.
-- [ ] Security controls exist for public traffic and automation traffic.
+- [x] Operators can detect, diagnose, and recover from the common failure modes.
+- [x] Security controls exist for public traffic and automation traffic.
 
 ## Phase 6: Deployment And Environment Workflows
 
@@ -236,19 +236,19 @@ Goal: make single-project deployments repeatable across environments.
 
 ### Environments
 
-- [ ] Add explicit local, staging, and production config promotion guidance.
-- [ ] Add migration promotion workflows across environments.
-- [ ] Add environment validation before deploy.
+- [x] Add explicit local, staging, and production config promotion guidance.
+- [x] Add migration promotion workflows across environments.
+- [x] Add environment validation before deploy.
 
 ### Distribution
 
-- [ ] Add reference deployment guides for Docker and VPS hosting.
-- [ ] Add example reverse-proxy and TLS configurations.
-- [ ] Add release/version compatibility notes between server and SDK.
+- [x] Add reference deployment guides for Docker and VPS hosting.
+- [x] Add example reverse-proxy and TLS configurations.
+- [x] Add release/version compatibility notes between server and SDK.
 
 ### Exit Criteria
 
-- [ ] Operators can deploy and promote AuthEnd safely across local, staging, and production environments.
+- [x] Operators can deploy and promote AuthEnd safely across local, staging, and production environments.
 
 ## Later, Not Now
 
@@ -285,5 +285,5 @@ The roadmap is complete when all of the following are true:
 - [x] Storage and realtime are first-class features
 - [x] Event-driven integrations are supported
 - [ ] The admin UI supports visual setup for schema, API, and policy design
-- [ ] Production hardening and recovery workflows are in place
-- [ ] Docs, tests, and examples stay aligned with the shipped behavior
+- [x] Production hardening and recovery workflows are in place
+- [x] Docs, tests, and examples stay aligned with the shipped behavior

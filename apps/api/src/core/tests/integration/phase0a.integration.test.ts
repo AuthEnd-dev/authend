@@ -813,6 +813,37 @@ if (process.env.AUTHEND_INTEGRATION_SUBPROCESS !== '1') {
       expect(adminResponse.status).toBe(200);
     });
 
+    test('backup diagnostics report unavailable pg_dump dependencies', async () => {
+      const adminJar = await createAdminSession();
+      const previous = (await settingsStoreModule.readSettingsSection('backups')).config;
+
+      await settingsStoreModule.writeSettingsSection('backups', {
+        ...previous,
+        enabled: true,
+        pgDumpPath: 'definitely-not-a-real-pg-dump-binary',
+      });
+
+      try {
+        const response = await app.request(`${appUrl}/api/admin/settings/backups`, {
+          headers: {
+            origin: appUrl,
+            cookie: adminJar.toHeader(),
+          },
+        });
+
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        const diagnostics = body.diagnostics as Record<string, unknown>;
+        const summary = diagnostics.summary as Record<string, unknown>;
+        const issues = diagnostics.issues as Array<Record<string, unknown>>;
+
+        expect(summary.status).toBe('error');
+        expect(issues.some((issue) => String(issue.title).includes('pg_dump'))).toBe(true);
+      } finally {
+        await settingsStoreModule.writeSettingsSection('backups', previous);
+      }
+    });
+
     test('password sign-in resets the failure streak after a successful login and later blocks repeated failures', async () => {
       await createUserSession('bruteforce@authend.test', 'Brute Force User');
 
@@ -885,6 +916,29 @@ if (process.env.AUTHEND_INTEGRATION_SUBPROCESS !== '1') {
       });
       expect(blockedResponse.status).toBe(429);
       expect(blockedResponse.headers.get('retry-after')).toBeTruthy();
+    });
+
+    test('pending migration application stops on the first failing migration and preserves earlier applied runs', async () => {
+      const firstKey = `9100_partial_apply_ok_${Date.now()}`;
+      const secondKey = `9101_partial_apply_fail_${Date.now()}`;
+
+      await migrationModule.writeGeneratedMigration(
+        firstKey,
+        `create table if not exists "${firstKey}" ("id" uuid primary key default gen_random_uuid());`,
+      );
+      await migrationModule.writeGeneratedMigration(
+        secondKey,
+        `alter table "${firstKey}" add column ;`,
+      );
+
+      await expect(migrationModule.applyPendingMigrations()).rejects.toThrow();
+
+      const history = await migrationModule.listMigrationHistory();
+      const firstRun = history.find((item) => item.migrationKey === firstKey);
+      const secondRun = history.find((item) => item.migrationKey === secondKey);
+
+      expect(firstRun?.status).toBe('applied');
+      expect(secondRun).toBeUndefined();
     });
 
     test('schema policy changes create dedicated audit entries', async () => {

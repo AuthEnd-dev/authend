@@ -5,6 +5,16 @@ import { readSettingsSection } from "../services/settings-store";
 
 let transporterPromise: Promise<ReturnType<typeof nodemailer.createTransport> | null> | null = null;
 let transporterKey: string | null = null;
+let transportProbeCache:
+  | {
+      key: string;
+      expiresAt: number;
+      result: {
+        ok: boolean;
+        detail: string;
+      };
+    }
+  | null = null;
 
 async function resolveEmailConfig() {
   const { config } = await readSettingsSection("email");
@@ -57,6 +67,66 @@ async function getTransporter() {
   }
 
   return transporterPromise;
+}
+
+export async function verifyEmailTransport() {
+  const config = await resolveEmailConfig();
+  if (!config.host || !config.user || !config.pass) {
+    return {
+      ok: false,
+      detail: "SMTP host and credentials must be configured before AuthEnd can probe email delivery.",
+    };
+  }
+
+  const cacheKey = JSON.stringify({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    user: config.user,
+  });
+
+  if (transportProbeCache && transportProbeCache.key === cacheKey && transportProbeCache.expiresAt > Date.now()) {
+    return transportProbeCache.result;
+  }
+
+  const transporter = await getTransporter();
+  if (!transporter || typeof transporter !== "object" || !("verify" in transporter)) {
+    const result = {
+      ok: false,
+      detail: "SMTP transport is not available for verification.",
+    };
+    transportProbeCache = {
+      key: cacheKey,
+      expiresAt: Date.now() + 30_000,
+      result,
+    };
+    return result;
+  }
+
+  try {
+    await (transporter as { verify: () => Promise<unknown> }).verify();
+    const result = {
+      ok: true,
+      detail: "SMTP accepted the connection and authentication check.",
+    };
+    transportProbeCache = {
+      key: cacheKey,
+      expiresAt: Date.now() + 30_000,
+      result,
+    };
+    return result;
+  } catch (error) {
+    const result = {
+      ok: false,
+      detail: error instanceof Error ? error.message : "SMTP verification failed.",
+    };
+    transportProbeCache = {
+      key: cacheKey,
+      expiresAt: Date.now() + 30_000,
+      result,
+    };
+    return result;
+  }
 }
 
 export async function sendEmail(input: {

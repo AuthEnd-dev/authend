@@ -69,6 +69,17 @@ type StorageFileRecord = {
   updatedAt: string;
 };
 
+let storageProbeCache:
+  | {
+      key: string;
+      expiresAt: number;
+      result: {
+        ok: boolean;
+        detail: string;
+      };
+    }
+  | null = null;
+
 function sanitizePathSegment(value: string) {
   return value
     .replace(/\\/g, '/')
@@ -235,6 +246,79 @@ function createBunS3Client(config: StorageSettings) {
     secretAccessKey: config.secretAccessKey || undefined,
     virtualHostedStyle: !config.forcePathStyle,
   });
+}
+
+function storageProbeKey(config: StorageSettings) {
+  return JSON.stringify({
+    driver: config.driver,
+    rootPath: config.rootPath,
+    bucket: config.bucket,
+    region: config.region,
+    endpoint: config.endpoint,
+    accessKeyId: config.accessKeyId,
+    forcePathStyle: config.forcePathStyle,
+  });
+}
+
+export async function probeStorageConnection() {
+  const config = await getStorageConfig();
+  const cacheKey = storageProbeKey(config);
+
+  if (storageProbeCache && storageProbeCache.key === cacheKey && storageProbeCache.expiresAt > Date.now()) {
+    return storageProbeCache.result;
+  }
+
+  if (config.driver !== 's3') {
+    const result = {
+      ok: true,
+      detail: 'Local storage uses filesystem health checks instead of an object-storage probe.',
+    };
+    storageProbeCache = {
+      key: cacheKey,
+      expiresAt: Date.now() + 30_000,
+      result,
+    };
+    return result;
+  }
+
+  try {
+    const client = createBunS3Client(config);
+    const key = `.authend-healthcheck/${randomUUID()}.txt`;
+    const body = Buffer.from('ok');
+    const s3Object = client.file(key) as {
+      write: (body: Buffer, options: { type: string }) => Promise<unknown>;
+      delete: () => Promise<unknown>;
+      stat?: () => Promise<unknown>;
+    };
+
+    await s3Object.write(body, { type: 'text/plain' });
+    if (typeof s3Object.stat === 'function') {
+      await s3Object.stat();
+    }
+    await s3Object.delete();
+
+    const result = {
+      ok: true,
+      detail: 'Object storage accepted a write, metadata lookup, and delete probe.',
+    };
+    storageProbeCache = {
+      key: cacheKey,
+      expiresAt: Date.now() + 30_000,
+      result,
+    };
+    return result;
+  } catch (error) {
+    const result = {
+      ok: false,
+      detail: error instanceof Error ? error.message : 'Object storage probe failed.',
+    };
+    storageProbeCache = {
+      key: cacheKey,
+      expiresAt: Date.now() + 30_000,
+      result,
+    };
+    return result;
+  }
 }
 
 export async function writeManagedStorageObject(input: {

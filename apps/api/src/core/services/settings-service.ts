@@ -21,6 +21,8 @@ import { invalidateAuth } from "./auth-service";
 import { readSettingsSection, writeSettingsSection } from "./settings-store";
 import { writeAuditLog } from "./audit-service";
 import { REDACTED_VALUE } from "../lib/redaction";
+import { verifyEmailTransport } from "../lib/email";
+import { probeStorageConnection } from "./storage-service";
 import { listRecentDeliveries, listWebhooks } from "./webhook-service";
 
 const CORE_ENV_KEYS = ["APP_URL", "DATABASE_URL", "BETTER_AUTH_SECRET", "SUPERADMIN_EMAIL", "SUPERADMIN_PASSWORD"];
@@ -173,6 +175,25 @@ async function storageDiagnostics() {
         detail: config.endpoint ? "Custom endpoint configured for the storage provider." : "Using the provider default endpoint. Leave blank only when that is intentional.",
       },
     );
+
+    if (credentialsConfigured && bucketConfigured && regionConfigured) {
+      const probe = await probeStorageConnection();
+      checks.push({
+        label: "Bucket probe",
+        status: probe.ok ? "healthy" : "error",
+        value: probe.ok ? "reachable" : "failed",
+        detail: probe.detail,
+      });
+      if (!probe.ok) {
+        nextSteps.push("Fix object storage connectivity or permissions, then reload diagnostics.");
+        issues.push({
+          severity: "error",
+          title: "Storage credentials are configured, but the bucket probe failed",
+          reason: probe.detail,
+          fix: "Verify bucket permissions, endpoint, region, and network reachability for the configured object store.",
+        });
+      }
+    }
   }
 
   if (config.driver === "local" && !config.rootPath.trim()) {
@@ -675,6 +696,24 @@ async function genericDiagnostics(section: Exclude<SettingsSectionId, "storage" 
           reason: "There is no test recipient configured, so operators have no quick way to validate delivery after saving changes.",
           fix: "Set a test recipient and send a verification or reset email to confirm SMTP works.",
         });
+      }
+      if (smtpHost && smtpUsername && smtpPassword) {
+        const probe = await verifyEmailTransport();
+        checks.push({
+          label: "SMTP probe",
+          status: probe.ok ? "healthy" : "error",
+          value: probe.ok ? "reachable" : "failed",
+          detail: probe.detail,
+        });
+        if (!probe.ok) {
+          nextSteps.push("Fix SMTP connectivity or credentials, then reload diagnostics.");
+          issues.push({
+            severity: "error",
+            title: "SMTP is configured, but AuthEnd could not verify the connection",
+            reason: probe.detail,
+            fix: "Confirm the SMTP host, port, encryption mode, credentials, and network reachability, then test again.",
+          });
+        }
       }
 
       return buildActionableDiagnostics({
