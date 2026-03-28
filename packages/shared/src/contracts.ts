@@ -301,6 +301,7 @@ export const tableBlueprintSchema = z.object({
   hooks: z.array(tableHookSchema).default([]),
 });
 
+export type TableBlueprintInput = z.input<typeof tableBlueprintSchema>;
 export type TableBlueprint = z.infer<typeof tableBlueprintSchema>;
 
 export const schemaDraftSchema = z.object({
@@ -308,6 +309,7 @@ export const schemaDraftSchema = z.object({
   relations: z.array(relationBlueprintSchema).default([]),
 });
 
+export type SchemaDraftInput = z.input<typeof schemaDraftSchema>;
 export type SchemaDraft = z.infer<typeof schemaDraftSchema>;
 
 const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>

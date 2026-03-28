@@ -1,4 +1,4 @@
-import type { FieldBlueprint, SchemaDraft, TableBlueprint } from "@authend/shared";
+import type { FieldBlueprint, SchemaDraft, SchemaDraftInput, TableBlueprint } from "@authend/shared";
 import {
   assertSafeIdentifier,
   ensureFieldDefaults,
@@ -343,6 +343,7 @@ function summarizePolicyChanges(current: SchemaDraft, next: SchemaDraft) {
 
 export const schemaServiceTestUtils = {
   renderSchemaModule,
+  buildPreviewStatements,
 };
 
 function migrationSqlKey(prefix: string) {
@@ -573,6 +574,104 @@ async function readLiveSchemaState(tableNames: string[]) {
   }
 
   return { columns, indexes, foreignKeys, enums };
+}
+
+function buildPreviewStatements(input: {
+  current: SchemaDraftInput;
+  draft: SchemaDraftInput;
+  columns: LiveColumn[];
+  indexes: LiveIndex[];
+  foreignKeys: LiveForeignKey[];
+}) {
+  const currentByName = new Map(input.current.tables.map((table) => [table.name, withDefaultId(table)]));
+  const nextByName = new Map(input.draft.tables.map((table) => [table.name, withDefaultId(table)]));
+  const statements: string[] = [];
+  const warnings: string[] = [];
+
+  const existingLiveTables = new Set(input.columns.map((column) => column.tableName));
+  const existingForeignKeys = new Set(
+    input.foreignKeys.map((foreignKey) => `${foreignKey.tableName}_${foreignKey.columnName}_${foreignKey.foreignTableName}_fk`),
+  );
+  const existingIndexes = new Set(input.indexes.map((index) => index.indexName));
+
+  for (const table of input.current.tables) {
+    if (!nextByName.has(table.name)) {
+      statements.push(`drop table if exists "${table.name}" cascade;`);
+    }
+  }
+
+  const nextTables = input.draft.tables.map(withDefaultId);
+
+  for (const table of nextTables) {
+    if (!currentByName.has(table.name)) {
+      if (existingLiveTables.has(table.name)) {
+        const liveCols = input.columns.filter((column) => column.tableName === table.name);
+        const liveColNames = new Set(liveCols.map((column) => column.columnName));
+        for (const field of table.fields) {
+          if (!liveColNames.has(field.name)) {
+            statements.push(
+              `alter table "${table.name}" add column if not exists ${columnSql(table.name, field, table.primaryKey)};`,
+            );
+          }
+        }
+        for (const field of table.fields) {
+          if (field.indexed && !field.unique && field.name !== table.primaryKey) {
+            const indexName = `${table.name}_${field.name}_idx`;
+            if (!existingIndexes.has(indexName)) {
+              statements.push(`create index if not exists "${indexName}" on "${table.name}" ("${field.name}");`);
+            }
+          }
+        }
+        for (const compound of table.indexes) {
+          const indexName = `${table.name}_${compound.join("_")}_idx`;
+          if (!existingIndexes.has(indexName)) {
+            statements.push(
+              `create index if not exists "${indexName}" on "${table.name}" (${compound.map((column) => `"${column}"`).join(", ")});`,
+            );
+          }
+        }
+        continue;
+      }
+      statements.push(...buildCreateTableSql(table));
+    }
+  }
+
+  for (const table of nextTables) {
+    if (!currentByName.has(table.name)) {
+      continue;
+    }
+
+    const alteration = buildAlterSql(currentByName.get(table.name)!, table);
+    statements.push(...alteration.statements);
+    warnings.push(...alteration.warnings);
+  }
+
+  for (const relation of input.draft.relations) {
+    assertSafeIdentifier(relation.sourceTable);
+    assertSqlIdentifier(relation.sourceField);
+    assertSqlIdentifier(relation.targetTable);
+    assertSqlIdentifier(relation.targetField);
+    const constraintName = `${relation.sourceTable}_${relation.sourceField}_${relation.targetTable}_fk`;
+
+    if (existingForeignKeys.has(constraintName)) {
+      continue;
+    }
+
+    statements.push(`do $$ begin
+  if not exists (
+    select 1 from pg_constraint where conname = '${constraintName}'
+  ) then
+    alter table "${relation.sourceTable}"
+      add constraint "${constraintName}"
+      foreign key ("${relation.sourceField}")
+      references "${relation.targetTable}"("${relation.targetField}")
+      on delete ${relation.onDelete}
+      on update ${relation.onUpdate};
+  end if;
+end $$;`);
+  }
+
+  return { statements, warnings };
 }
 
 export async function getSchemaDriftReport(rawDraft?: SchemaDraft) {
@@ -825,96 +924,20 @@ export async function getSchemaDraft(options: { includeExtensions?: boolean } = 
 export async function previewDraft(rawDraft: SchemaDraft) {
   const draft = mergeDraftWithExtensions(validateDraft(rawDraft));
   const current = await getSchemaDraft({ includeExtensions: false });
-  const currentByName = new Map(current.tables.map((table) => [table.name, table]));
-  const nextByName = new Map(draft.tables.map((table) => [table.name, withDefaultId(table)]));
-  const statements: string[] = [];
-  const warnings: string[] = [];
-
   const tableNames = draft.tables.map((t) => t.name);
   const { columns, indexes, foreignKeys } = await readLiveSchemaState(tableNames);
-  const existingLiveTables = new Set(columns.map((c) => c.tableName));
-  const existingForeignKeys = new Set(
-    foreignKeys.map((fk) => `${fk.tableName}_${fk.columnName}_${fk.foreignTableName}_fk`),
-  );
-  const existingIndexes = new Set(indexes.map((i) => i.indexName));
-
-  for (const table of current.tables) {
-    if (!nextByName.has(table.name)) {
-      statements.push(`drop table if exists "${table.name}" cascade;`);
-    }
-  }
-
-  for (const table of draft.tables.map(withDefaultId)) {
-    if (!currentByName.has(table.name)) {
-      if (existingLiveTables.has(table.name)) {
-        const liveCols = columns.filter((c) => c.tableName === table.name);
-        const liveColNames = new Set(liveCols.map((c) => c.columnName));
-        for (const field of table.fields) {
-          if (!liveColNames.has(field.name)) {
-            statements.push(
-              `alter table "${table.name}" add column if not exists ${columnSql(table.name, field, table.primaryKey)};`,
-            );
-          }
-        }
-        for (const field of table.fields) {
-          if (field.indexed && !field.unique && field.name !== table.primaryKey) {
-            const indexName = `${table.name}_${field.name}_idx`;
-            if (!existingIndexes.has(indexName)) {
-              statements.push(`create index if not exists "${indexName}" on "${table.name}" ("${field.name}");`);
-            }
-          }
-        }
-        for (const compound of table.indexes) {
-          const indexName = `${table.name}_${compound.join("_")}_idx`;
-          if (!existingIndexes.has(indexName)) {
-            statements.push(
-              `create index if not exists "${indexName}" on "${table.name}" (${compound.map((column) => `"${column}"`).join(", ")});`,
-            );
-          }
-        }
-        continue;
-      }
-      statements.push(...buildCreateTableSql(table));
-      continue;
-    }
-
-    const alteration = buildAlterSql(currentByName.get(table.name)!, table);
-    statements.push(...alteration.statements);
-    warnings.push(...alteration.warnings);
-  }
-
-  for (const relation of draft.relations) {
-    assertSafeIdentifier(relation.sourceTable);
-    assertSqlIdentifier(relation.sourceField);
-    assertSqlIdentifier(relation.targetTable);
-    assertSqlIdentifier(relation.targetField);
-    const constraintName = `${relation.sourceTable}_${relation.sourceField}_${relation.targetTable}_fk`;
-
-    if (existingForeignKeys.has(constraintName)) {
-      continue;
-    }
-
-    statements.push(`do $$ begin
-  if not exists (
-    select 1 from pg_constraint where conname = '${constraintName}'
-  ) then
-    alter table "${relation.sourceTable}"
-      add constraint "${constraintName}"
-      foreign key ("${relation.sourceField}")
-      references "${relation.targetTable}"("${relation.targetField}")
-      on delete ${relation.onDelete}
-      on update ${relation.onUpdate};
-  end if;
-end $$;`);
-  }
+  const { statements, warnings } = buildPreviewStatements({
+    current,
+    draft,
+    columns,
+    indexes,
+    foreignKeys,
+  });
 
   return { sql: statements, warnings };
 }
 
 async function replaceMetadata(draft: SchemaDraft) {
-  const extensionDraft = getExtensionSchemaDraft();
-  const extensionTableNames = new Set(extensionDraft.tables.map(t => t.name));
-
   await sql.begin(async (transaction) => {
     // We only delete and replace metadata for tables NOT managed by extensions.
     // However, the current implementation wipes everything and replaces.

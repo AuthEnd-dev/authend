@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { RelationBlueprint, SchemaDraft, TableBlueprint } from "@authend/shared";
+import type { RelationBlueprint, SchemaDraftInput, TableBlueprintInput } from "@authend/shared";
 import {
   createRelationDraft,
   createTableDraft,
@@ -10,7 +10,7 @@ import {
   updateTableDraft,
 } from "./schema-mutations";
 
-const postTable: TableBlueprint = {
+const postTable: TableBlueprintInput = {
   name: "post",
   displayName: "Post",
   primaryKey: "id",
@@ -54,7 +54,7 @@ const relation: RelationBlueprint = {
   description: null,
 };
 
-function baseDraft(): SchemaDraft {
+function baseDraft(): SchemaDraftInput {
   return {
     tables: [postTable],
     relations: [],

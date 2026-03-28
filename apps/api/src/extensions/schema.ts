@@ -1,4 +1,4 @@
-import type { SchemaDraft } from '@authend/shared';
+import type { SchemaDraftInput } from '@authend/shared';
 import {
   belongsTo,
   defineExtensionSchema,
@@ -17,7 +17,7 @@ import {
  * Relation aliases may use `snake_case` or `camelCase`, but must start with a lowercase letter.
  * Avoid spaces, dashes, and dots.
  */
-export function getExtensionSchemaDraft(): SchemaDraft {
+export function getExtensionSchemaDraft(): SchemaDraftInput {
   return defineExtensionSchema({
     tables: [
       // Example starter table. Rename/remove this and add your own extension tables.
@@ -63,7 +63,7 @@ Example: add another fork-owned table and relation.
 
 Uncomment and adapt this for your fork:
 
-export function getExtensionSchemaDraft(): SchemaDraft {
+export function getExtensionSchemaDraft(): SchemaDraftInput {
   return defineExtensionSchema({
     tables: [
       table({

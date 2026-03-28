@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildTableApiAccessPreset, detectTableApiAccessPreset } from "@authend/shared";
-import type { SchemaDraft, TableBlueprint } from "@authend/shared";
+import type { SchemaDraftInput, TableBlueprintInput } from "@authend/shared";
 
 async function getNormaliseTableApiConfig() {
   process.env.APP_URL ??= "http://localhost:7002";
@@ -24,7 +24,7 @@ async function getBuildResource() {
   return module.buildResource;
 }
 
-const baseTable: TableBlueprint = {
+const baseTable: TableBlueprintInput = {
   name: "post",
   displayName: "Post",
   primaryKey: "id",
@@ -106,7 +106,7 @@ const baseTable: TableBlueprint = {
   },
 };
 
-const draft: SchemaDraft = {
+const draft: SchemaDraftInput = {
   tables: [baseTable],
   relations: [],
 };

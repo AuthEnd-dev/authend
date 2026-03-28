@@ -2,8 +2,9 @@ import type {
   FieldBlueprint,
   RelationBlueprint,
   RelationJoinType,
-  SchemaDraft,
+  SchemaDraftInput,
   TableBlueprint,
+  TableBlueprintInput,
   TableApiConfig,
 } from "@authend/shared";
 
@@ -130,8 +131,8 @@ export function sessionOwnedApi(ownerField: string): TableApiConfig {
  * @returns A fully shaped `TableBlueprint`.
  */
 export function table(
-  input: Omit<TableBlueprint, "primaryKey" | "indexes" | "api" | "hooks"> &
-    Partial<Pick<TableBlueprint, "primaryKey" | "indexes" | "api" | "hooks">>,
+  input: Omit<TableBlueprintInput, "primaryKey" | "indexes" | "api" | "hooks"> &
+    Partial<Pick<TableBlueprintInput, "primaryKey" | "indexes" | "api" | "hooks">>,
 ): TableBlueprint {
   return {
     ...input,
@@ -184,6 +185,6 @@ export function belongsTo(input: {
  * @param input Extension schema draft.
  * @returns The same validated-at-call-site draft object.
  */
-export function defineExtensionSchema(input: SchemaDraft): SchemaDraft {
+export function defineExtensionSchema(input: SchemaDraftInput): SchemaDraftInput {
   return input;
 }
