@@ -2,14 +2,12 @@ import { resolve } from "node:path";
 import { migrationRuns } from "../db/schema/system";
 import { db, sql } from "../db/client";
 import { fileExists, listSqlFiles, readTextFile, writeTextFile } from "../lib/fs";
+import { resolveGeneratedMigrationsDir } from "../lib/generated-artifacts";
 import { logger } from "../lib/logger";
 import { writeAuditLog } from "./audit-service";
 
 const coreMigrationDir = resolve(import.meta.dir, "../db/migrations/core");
-const generatedMigrationDir =
-  process.env.AUTHEND_GENERATED_MIGRATIONS_DIR
-    ? resolve(process.env.AUTHEND_GENERATED_MIGRATIONS_DIR)
-    : resolve(import.meta.dir, "../../../generated/migrations");
+const generatedMigrationDir = resolveGeneratedMigrationsDir();
 
 export type MigrationFile = {
   key: string;

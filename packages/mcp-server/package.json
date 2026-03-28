@@ -1,0 +1,17 @@
+{
+  "name": "@authend/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "stdio": "bun src/stdio.ts",
+    "http": "bun src/http.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@authend/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "hono": "^4.7.2",
+    "zod": "^3.24.2"
+  }
+}

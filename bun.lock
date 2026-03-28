@@ -60,6 +60,16 @@
         "drizzle-kit": "^0.30.4",
       },
     },
+    "packages/mcp-server": {
+      "name": "@authend/mcp-server",
+      "version": "0.1.0",
+      "dependencies": {
+        "@authend/shared": "workspace:*",
+        "@modelcontextprotocol/sdk": "^1.27.1",
+        "hono": "^4.7.2",
+        "zod": "^3.24.2",
+      },
+    },
     "packages/sdk": {
       "name": "@authend/sdk",
       "version": "0.1.2",
@@ -83,6 +93,8 @@
     "@authend/admin": ["@authend/admin@workspace:apps/admin"],
 
     "@authend/api": ["@authend/api@workspace:apps/api"],
+
+    "@authend/mcp-server": ["@authend/mcp-server@workspace:packages/mcp-server"],
 
     "@authend/sdk": ["@authend/sdk@workspace:packages/sdk"],
 

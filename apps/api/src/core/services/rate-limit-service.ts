@@ -32,7 +32,11 @@ type RateLimitDecision =
     };
 
 const WINDOW_MS = 60_000;
-const buckets = new Map<RateLimitKey, RateLimitBucket>();
+const globalRateLimitState = globalThis as typeof globalThis & {
+  __authendRateLimitBuckets__?: Map<RateLimitKey, RateLimitBucket>;
+};
+const buckets = globalRateLimitState.__authendRateLimitBuckets__ ?? new Map<RateLimitKey, RateLimitBucket>();
+globalRateLimitState.__authendRateLimitBuckets__ = buckets;
 
 function buildBucketKey(actor: RequestActor, identifier: string) {
   return `data:${actor.kind}:${identifier}`;

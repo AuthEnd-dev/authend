@@ -1,4 +1,3 @@
-import { resolve } from "node:path";
 import type { FieldBlueprint, SchemaDraft, TableBlueprint } from "@authend/shared";
 import {
   assertSafeIdentifier,
@@ -10,6 +9,7 @@ import { db, sql } from "../db/client";
 import { schemaFields, schemaRelations, schemaTables } from "../db/schema/system";
 import { logger } from "../lib/logger";
 import { HttpError } from "../lib/http";
+import { resolveGeneratedSchemaFile } from "../lib/generated-artifacts";
 import { readTextFile, writeTextFile } from "../lib/fs";
 import { applySqlMigration, writeGeneratedMigration } from "./migration-service";
 import { writeAuditLog } from "./audit-service";
@@ -18,10 +18,7 @@ import { dispatchWebhookEvent } from "./webhook-service";
 
 import { getExtensionSchemaDraft } from "../../extensions/schema";
 
-const generatedSchemaFile =
-  process.env.AUTHEND_GENERATED_SCHEMA_FILE
-    ? resolve(process.env.AUTHEND_GENERATED_SCHEMA_FILE)
-    : resolve(import.meta.dir, "../../../generated/schema/generated.ts");
+const generatedSchemaFile = resolveGeneratedSchemaFile();
 
 function sqlDefault(field: FieldBlueprint) {
   if (!field.default) {

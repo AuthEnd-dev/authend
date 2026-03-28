@@ -14,6 +14,7 @@ import type {
 import { apiPreviewSchema, apiResourceSchema, buildTablePolicyPreview, tableApiConfigSchema } from "@authend/shared";
 import { applyDraft, getSchemaDraft } from "./schema-service";
 import { HttpError } from "../lib/http";
+import { logger } from "../lib/logger";
 import { getTableDescriptor, listBrowsableTables } from "./crud-service";
 
 const builtinOperations = {
@@ -633,7 +634,19 @@ export async function buildApiResource(tableInput: string): Promise<ApiResource>
 
 export async function listApiResources(actor?: ApiAccessActor) {
   const tables = await listBrowsableTables(actor);
-  const resources = await Promise.all(tables.map((table) => buildApiResource(table)));
+  const results = await Promise.allSettled(tables.map((table) => buildApiResource(table)));
+  const resources = results.flatMap((result, index) => {
+    if (result.status === "fulfilled") {
+      return [result.value];
+    }
+
+    logger.warn("api.resource.skipped", {
+      table: tables[index],
+      error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+    });
+    return [];
+  });
+
   return resources.sort((left, right) => left.routeSegment.localeCompare(right.routeSegment));
 }
 

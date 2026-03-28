@@ -24,7 +24,11 @@ type BruteForceDecision =
 const WINDOW_MS = 15 * 60 * 1000;
 const IDENTIFIER_FAILURE_LIMIT = 5;
 const IP_FAILURE_LIMIT = 15;
-const protectedBuckets = new Map<string, AuthAttemptBucket>();
+const globalAuthAbuseState = globalThis as typeof globalThis & {
+  __authendProtectedAuthBuckets__?: Map<string, AuthAttemptBucket>;
+};
+const protectedBuckets = globalAuthAbuseState.__authendProtectedAuthBuckets__ ?? new Map<string, AuthAttemptBucket>();
+globalAuthAbuseState.__authendProtectedAuthBuckets__ = protectedBuckets;
 
 function normalizeEmail(value: unknown) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";

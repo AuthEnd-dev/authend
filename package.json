@@ -11,6 +11,8 @@
     "dev:api": "bun run --cwd apps/api dev",
     "dev:admin": "bun run --cwd apps/admin dev",
     "dev": "bun run dev:api & bun run dev:admin",
+    "mcp:stdio": "bun run --cwd packages/mcp-server stdio",
+    "mcp:http": "bun run --cwd packages/mcp-server http",
     "build": "bun run --cwd apps/admin build",
     "build:sdk-package": "bun run --cwd packages/sdk build",
     "bootstrap": "bun run --cwd apps/api bootstrap",

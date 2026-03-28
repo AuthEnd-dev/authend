@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -702,6 +702,11 @@ if (process.env.AUTHEND_INTEGRATION_SUBPROCESS !== '1') {
       await adminSql.end({ timeout: 0 });
     });
 
+    beforeEach(() => {
+      authAbuseModule.clearAuthBruteForceBuckets();
+      rateLimitModule.clearRateLimitBuckets();
+    });
+
     async function appRequest(path: string, init: RequestInit = {}) {
       const response = await app.request(`${appUrl}${path}`, init);
       cookieJar.addFrom(response);
@@ -969,24 +974,33 @@ if (process.env.AUTHEND_INTEGRATION_SUBPROCESS !== '1') {
         ),
       };
 
-      const applyResponse = await app.request(`${appUrl}/api/admin/schema/apply`, {
-        method: 'POST',
-        headers: jsonHeaders(adminJar),
-        body: JSON.stringify(updatedDraft),
-      });
-      expect(applyResponse.status).toBe(200);
+      try {
+        const applyResponse = await app.request(`${appUrl}/api/admin/schema/apply`, {
+          method: 'POST',
+          headers: jsonHeaders(adminJar),
+          body: JSON.stringify(updatedDraft),
+        });
+        expect(applyResponse.status).toBe(200);
 
-      const auditResponse = await app.request(`${appUrl}/api/admin/audit`, {
-        headers: {
-          origin: appUrl,
-          cookie: adminJar.toHeader(),
-        },
-      });
-      expect(auditResponse.status).toBe(200);
-      const auditBody = (await auditResponse.json()) as Array<{ action: string; payload: Record<string, unknown> }>;
-      const policyEntry = auditBody.find((entry) => entry.action === 'schema.policy.updated');
-      expect(policyEntry).toBeTruthy();
-      expect(policyEntry?.payload.tables).toContain('notes');
+        const auditResponse = await app.request(`${appUrl}/api/admin/audit`, {
+          headers: {
+            origin: appUrl,
+            cookie: adminJar.toHeader(),
+          },
+        });
+        expect(auditResponse.status).toBe(200);
+        const auditBody = (await auditResponse.json()) as Array<{ action: string; payload: Record<string, unknown> }>;
+        const policyEntry = auditBody.find((entry) => entry.action === 'schema.policy.updated');
+        expect(policyEntry).toBeTruthy();
+        expect(policyEntry?.payload.tables).toContain('notes');
+      } finally {
+        const restoreResponse = await app.request(`${appUrl}/api/admin/schema/apply`, {
+          method: 'POST',
+          headers: jsonHeaders(adminJar),
+          body: JSON.stringify(schemaBody),
+        });
+        expect(restoreResponse.status).toBe(200);
+      }
     });
 
     test('storage signed download creation and usage are audited', async () => {

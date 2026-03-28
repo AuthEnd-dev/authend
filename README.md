@@ -47,6 +47,24 @@ const rows = await client.data.yourTable.list();
 
 More detail lives in [`packages/sdk/README.md`](./packages/sdk/README.md) and [`docs/examples/`](./docs/examples/).
 
+## MCP Server
+
+AuthEnd also ships with a schema-first MCP server for local AI-assisted app building.
+
+From the repo root:
+
+```bash
+bun run mcp:stdio
+```
+
+or:
+
+```bash
+bun run mcp:http
+```
+
+Use it to create tables, relations, API config, records, plugins, and storage objects through MCP. Full usage docs live in [`packages/mcp-server/README.md`](./packages/mcp-server/README.md).
+
 ## Generated schema and migrations in Git
 
 The API emits Drizzle schema and SQL migrations under [`apps/api/generated/`](./apps/api/generated/). By default that path is ignored via the `generated` line in [`apps/api/.gitignore`](./apps/api/.gitignore). **Remove that line** (or replace it with narrower rules) if you want to **commit** generated schema and migrations—for example so deploys and teammates share the same migration history.
@@ -59,6 +77,7 @@ The API emits Drizzle schema and SQL migrations under [`apps/api/generated/`](./
 | `apps/api/src/extensions` | Your routes, plugins, auth hooks (see [`apps/api/src/README.md`](./apps/api/src/README.md)) |
 | `apps/api/src/core` | Platform implementation (pull upstream here) |
 | `apps/admin` | Operator dashboard |
+| `packages/mcp-server` | Schema-first MCP server for local AI tools |
 | `packages/sdk` | Typed client for your schema |
 | `packages/shared` | Shared types and helpers |
 | `apps/*/src/extensions` | Fork-owned customization (see [`docs/EXTENSIONS.md`](./docs/EXTENSIONS.md)) |
