@@ -3,6 +3,7 @@
 **Forks and product-specific changes**
 
 - [`extensions/`](./extensions/) — add routes, auth options, and plugin definitions here. See [`docs/EXTENSIONS.md`](../../docs/EXTENSIONS.md).
+- AI agents should modify `extensions/` by default and must not edit [`core/`](./core/) unless the user explicitly asks for a core change.
 
 **Application entry**
 

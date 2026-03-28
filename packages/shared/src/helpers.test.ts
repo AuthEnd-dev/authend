@@ -172,6 +172,54 @@ describe("validateDraft", () => {
     expect(draft.relations[0]?.alias).toBe("user");
   });
 
+  test("accepts camelCase relation aliases", () => {
+    const draft = validateDraft({
+      tables: [
+        {
+          name: "posts",
+          displayName: "Posts",
+          primaryKey: "id",
+          fields: [
+            {
+              name: "id",
+              type: "uuid",
+              nullable: false,
+              unique: true,
+              indexed: true,
+              default: "gen_random_uuid()",
+            },
+            {
+              name: "author_id",
+              type: "text",
+              nullable: false,
+              unique: false,
+              indexed: true,
+            },
+          ],
+          indexes: [],
+        },
+      ],
+      relations: [
+        {
+          sourceTable: "posts",
+          sourceField: "author_id",
+          targetTable: "user",
+          targetField: "id",
+          alias: "authorProfile",
+          sourceAlias: "userPosts",
+          targetAlias: "primaryAuthor",
+          joinType: "left",
+          onDelete: "restrict",
+          onUpdate: "cascade",
+        },
+      ],
+    });
+
+    expect(draft.relations[0]?.alias).toBe("authorProfile");
+    expect(draft.relations[0]?.sourceAlias).toBe("userPosts");
+    expect(draft.relations[0]?.targetAlias).toBe("primaryAuthor");
+  });
+
   test("rejects an invalid ownership field", () => {
     expect(() =>
       validateDraft({

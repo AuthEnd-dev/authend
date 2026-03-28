@@ -13,6 +13,9 @@ import {
 /**
  * Fork-owned schema definitions that should always be present in the metadata draft.
  * Add custom tables/relations here to keep upstream `core/` files merge-friendly.
+ *
+ * Relation aliases may use `snake_case` or `camelCase`, but must start with a lowercase letter.
+ * Avoid spaces, dashes, and dots.
  */
 export function getExtensionSchemaDraft(): SchemaDraft {
   return defineExtensionSchema({

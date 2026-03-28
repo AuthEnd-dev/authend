@@ -99,9 +99,21 @@ export const relationBlueprintSchema = z.object({
   sourceField: z.string().min(1),
   targetTable: z.string().min(1),
   targetField: z.string().min(1),
-  alias: z.string().min(1).regex(/^_?[a-z][a-z0-9_]*$/).nullish(),
-  sourceAlias: z.string().min(1).regex(/^_?[a-z][a-z0-9_]*$/).nullish(),
-  targetAlias: z.string().min(1).regex(/^_?[a-z][a-z0-9_]*$/).nullish(),
+  alias: z
+    .string()
+    .min(1)
+    .regex(/^_?[a-z][A-Za-z0-9_]*$/, "Relation aliases must start with a lowercase letter and use letters, numbers, or underscores.")
+    .nullish(),
+  sourceAlias: z
+    .string()
+    .min(1)
+    .regex(/^_?[a-z][A-Za-z0-9_]*$/, "Relation aliases must start with a lowercase letter and use letters, numbers, or underscores.")
+    .nullish(),
+  targetAlias: z
+    .string()
+    .min(1)
+    .regex(/^_?[a-z][A-Za-z0-9_]*$/, "Relation aliases must start with a lowercase letter and use letters, numbers, or underscores.")
+    .nullish(),
   joinType: relationJoinTypeSchema.default("left"),
   onDelete: relationActionSchema.default("no action"),
   onUpdate: relationActionSchema.default("no action"),

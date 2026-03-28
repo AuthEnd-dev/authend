@@ -350,7 +350,7 @@ export function assertSafeIdentifier(value: string) {
 }
 
 function assertLooseIdentifier(value: string) {
-  if (!/^[a-z][a-z0-9_]*$/.test(value)) {
+  if (!/^_?[a-z][A-Za-z0-9_]*$/.test(value)) {
     throw new Error(`Invalid identifier: ${value}`);
   }
 }

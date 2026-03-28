@@ -2,6 +2,18 @@
 
 AuthEnd is meant to be forked and extended. To reduce merge conflicts when you pull upstream changes, put **product-specific** code in the dedicated **`extensions/`** folders and small config modules documented below. Prefer **not** editing large upstream-owned files when a hook exists.
 
+## Rule for AI agents
+
+If an AI agent is making changes in this repo, it should treat `apps/api/src/core/` and other upstream-owned core files as read-only by default.
+
+AI agents should:
+
+- prefer `extensions/` and documented customization hooks first
+- avoid modifying `core/` unless the user explicitly asks for a core change
+- explain when a requested change cannot be completed through extension points alone
+
+This rule exists to keep fork-specific work merge-friendly when pulling upstream changes.
+
 ## Naming
 
 Use the folder name **`extensions/`** for fork-owned code. Do **not** name customization areas `system` or `internal`: those terms already mean something in this repo (for example the HTTP router under `/api/system`, system metadata tables, and security-sensitive paths).
@@ -14,6 +26,8 @@ Use the folder name **`extensions/`** for fork-owned code. Do **not** name custo
 | [`plugins.ts`](../apps/api/src/extensions/plugins.ts) | Append `PluginDefinition` entries; they are merged after the built-in registry in [`plugins/registry.ts`](../apps/api/src/core/plugins/registry.ts). Built-in plugins live in [`plugins/builtin-registry.ts`](../apps/api/src/core/plugins/builtin-registry.ts). |
 | [`auth.ts`](../apps/api/src/extensions/auth.ts) | Implement `forkAuthContributions()` to add Better Auth plugins or option fragments; merged after dashboard-driven runtime plugins in [`auth-service.ts`](../apps/api/src/core/services/auth-service.ts). |
 | [`schema.ts`](../apps/api/src/extensions/schema.ts) | Define fork-owned `SchemaDraft` tables/relations. Use helper builders from [`core/services/schema-helpers.ts`](../apps/api/src/core/services/schema-helpers.ts) to keep definitions concise and Drizzle-like. Merged into the effective schema draft by [`schema-service.ts`](../apps/api/src/core/services/schema-service.ts) during read/preview/apply. |
+
+When defining relations in `extensions/schema.ts`, relation aliases (`alias`, `sourceAlias`, `targetAlias`) may use `snake_case` or `camelCase`, but they must start with a lowercase letter and may only contain letters, numbers, and underscores.
 
 Platform route mounting lives in [`register-core-routes.ts`](../apps/api/src/core/register-core-routes.ts) under `src/core/`. Upstream adds new first-party routes there; forks add HTTP surface in `extensions/routes.ts` or new files imported from it.
 

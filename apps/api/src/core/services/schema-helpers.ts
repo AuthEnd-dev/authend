@@ -144,6 +144,7 @@ export function table(
  * Creates a relation from a source table field to a target table field.
  *
  * @param input Relation properties.
+ * Alias fields accept either `snake_case` or `camelCase`, but must start with a lowercase letter.
  * @returns A `RelationBlueprint` defaulting to `targetField: "id"` and `joinType: "left"`.
  */
 export function belongsTo(input: {
