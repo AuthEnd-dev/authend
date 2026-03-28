@@ -3,11 +3,15 @@ import {
   type SettingsSectionId,
   settingsSectionSchemas,
 } from "@authend/shared";
+import { env } from "../config/env";
 import { db, sql } from "../db/client";
 import { writeAuditLog } from "./audit-service";
 
 const defaultSettings = {
-  general: settingsSectionSchemas.general.parse({}),
+  general: settingsSectionSchemas.general.parse({
+    appUrl: env.APP_URL,
+    adminUrl: env.ADMIN_URL ?? env.ADMIN_DEV_URL,
+  }),
   authentication: settingsSectionSchemas.authentication.parse({}),
   sessionsSecurity: settingsSectionSchemas.sessionsSecurity.parse({}),
   email: settingsSectionSchemas.email.parse({}),
