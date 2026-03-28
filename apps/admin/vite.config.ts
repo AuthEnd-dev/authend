@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath, URL } from "node:url";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -38,21 +38,34 @@ function resolveAdminPort(): number {
   }
 }
 
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  base: "/admin/",
-  resolve: {
-    conditions: ["@tanstack/custom-condition"],
-    alias: {
-      "@authend/sdk": fileURLToPath(new URL("../../packages/sdk/src/index.ts", import.meta.url)),
-      "@authend/shared": fileURLToPath(new URL("../../packages/shared/src/index.ts", import.meta.url)),
+function resolveApiUrl(explicitApiUrl?: string): string {
+  const apiUrl = explicitApiUrl?.trim() || readApiEnvValue("APP_URL");
+  return apiUrl && apiUrl.length > 0 ? apiUrl : "http://localhost:7002";
+}
+
+export default defineConfig(({ mode }) => {
+  const localEnv = loadEnv(mode, process.cwd(), "");
+  const viteApiUrl = resolveApiUrl(localEnv.VITE_API_URL || process.env.VITE_API_URL);
+
+  return {
+    plugins: [react(), tailwindcss()],
+    base: "/admin/",
+    define: {
+      "import.meta.env.VITE_API_URL": JSON.stringify(viteApiUrl),
     },
-  },
-  server: {
-    port: resolveAdminPort(),
-  },
-  build: {
-    outDir: "dist",
-    emptyOutDir: true,
-  },
+    resolve: {
+      conditions: ["@tanstack/custom-condition"],
+      alias: {
+        "@authend/sdk": fileURLToPath(new URL("../../packages/sdk/src/index.ts", import.meta.url)),
+        "@authend/shared": fileURLToPath(new URL("../../packages/shared/src/index.ts", import.meta.url)),
+      },
+    },
+    server: {
+      port: resolveAdminPort(),
+    },
+    build: {
+      outDir: "dist",
+      emptyOutDir: true,
+    },
+  };
 });
