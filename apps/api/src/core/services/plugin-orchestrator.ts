@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import type {
   PluginCapability,
+  PluginCapabilityState,
   PluginCatalogItem,
   PluginConfig,
   PluginConfigUpdate,
@@ -18,12 +19,13 @@ import { pluginConfigs } from "../db/schema/system";
 import { env } from "../config/env";
 import { HttpError } from "../lib/http";
 import { extensionHandlers, getExtensionHandlerDefinition } from "../plugins/extension-registry";
+import { extensionPluginDefaults } from "../../extensions/plugin-defaults";
 import {
   ORGANIZATION_INVITATION_HOOK_KEYS,
   ORGANIZATION_TEAM_HOOK_KEYS,
 } from "../plugins/organization/manifest";
 import { getPluginDefinition, pluginRegistry } from "../plugins/registry";
-import type { PluginContextRow, PluginDefinition, RuntimePluginContext } from "../plugins/types";
+import type { ExtensionPluginDefaults, PluginContextRow, PluginDefinition, RuntimePluginContext } from "../plugins/types";
 
 function asObject(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -35,6 +37,85 @@ function mergeConfigDefaults(definition: PluginDefinition, config: PluginConfig)
     ...config,
   };
 }
+
+function mergePluginDefaults<T extends Record<string, unknown> | undefined>(base: T, patch: T) {
+  return {
+    ...(base ?? {}),
+    ...(patch ?? {}),
+  } as T extends undefined ? Record<string, unknown> : T;
+}
+
+function extensionDefaultsForPlugin(pluginId: PluginId) {
+  return extensionPluginDefaults.filter((entry) => entry.pluginId === pluginId);
+}
+
+function isExtensionDefaultActive(entry: ExtensionPluginDefaults) {
+  return entry.when?.() ?? true;
+}
+
+function applyExtensionDefaultsToSeedState(
+  definition: PluginDefinition,
+  seed: {
+    enabled: boolean;
+    config: PluginConfig;
+    capabilityState: PluginCapabilityState;
+    extensionBindings: PluginExtensionBindings;
+  },
+) {
+  let next = {
+    enabled: seed.enabled,
+    config: seed.config,
+    capabilityState: seed.capabilityState,
+    extensionBindings: seed.extensionBindings,
+  };
+
+  for (const entry of extensionDefaultsForPlugin(definition.id)) {
+    if (!isExtensionDefaultActive(entry)) {
+      continue;
+    }
+
+    next = {
+      enabled: entry.enabled ?? next.enabled,
+      config: mergeConfigDefaults(definition, mergePluginDefaults(next.config, entry.configPatch)),
+      capabilityState: normalizeCapabilityState(definition, mergePluginDefaults(next.capabilityState, entry.capabilityStatePatch)),
+      extensionBindings: normalizeExtensionBindings(
+        definition,
+        mergePluginDefaults(next.extensionBindings, entry.extensionBindingsPatch),
+      ),
+    };
+  }
+
+  return next;
+}
+
+function validateExtensionPluginDefaults() {
+  const definitionIds = new Set(pluginRegistry.map((entry) => entry.id));
+
+  for (const entry of extensionPluginDefaults) {
+    if (!definitionIds.has(entry.pluginId)) {
+      throw new HttpError(500, `Unknown plugin default target ${entry.pluginId}`);
+    }
+
+    const definition = getPluginDefinition(entry.pluginId);
+    if (!definition) {
+      throw new HttpError(500, `Unknown plugin default target ${entry.pluginId}`);
+    }
+
+    const config = mergeConfigDefaults(definition, entry.configPatch ?? {});
+    const configError = validatePluginConfig(definition, config);
+    if (configError) {
+      throw new HttpError(500, `Invalid extension plugin defaults for ${entry.pluginId}: ${configError}`);
+    }
+
+    normalizeCapabilityState(definition, asObject(entry.capabilityStatePatch));
+    normalizeExtensionBindings(definition, asObject(entry.extensionBindingsPatch));
+  }
+}
+
+export const pluginOrchestratorTestUtils = {
+  applyExtensionDefaultsToSeedState,
+  validateExtensionPluginDefaults,
+};
 
 function isEnvConfigured(key: string) {
   const processValue = process.env[key];
@@ -219,6 +300,7 @@ alter table "_plugin_configs" add column if not exists "extension_bindings" json
 
 export async function seedPluginInstallStates() {
   await ensurePluginConfigStateSchema();
+  validateExtensionPluginDefaults();
 
   for (const definition of pluginRegistry) {
     const existing = await db.query.pluginConfigs.findFirst({
@@ -239,17 +321,24 @@ export async function seedPluginInstallStates() {
       continue;
     }
 
+    const seedState = applyExtensionDefaultsToSeedState(definition, {
+      enabled: definition.defaultEnabled === true,
+      config: mergeConfigDefaults(definition, {}),
+      capabilityState: normalizeCapabilityState(definition, {}),
+      extensionBindings: normalizeExtensionBindings(definition, {}),
+    });
+
     await db.insert(pluginConfigs).values({
       id: crypto.randomUUID(),
       pluginId: definition.id,
-      enabled: definition.defaultEnabled === true,
+      enabled: seedState.enabled,
       version: definition.version,
-      config: mergeConfigDefaults(definition, {}),
-      capabilityState: normalizeCapabilityState(definition, {}),
+      config: seedState.config,
+      capabilityState: seedState.capabilityState,
       dependencyState: [],
       health: { status: "unknown", issues: [] },
       provisioningState: { status: "not-required", appliedMigrationKeys: [], rollbackMigrationKeys: [], details: [] },
-      extensionBindings: normalizeExtensionBindings(definition, {}),
+      extensionBindings: seedState.extensionBindings,
     });
   }
 }

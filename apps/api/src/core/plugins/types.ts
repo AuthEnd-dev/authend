@@ -124,3 +124,12 @@ export type PluginDefinition = {
   composeAuthOptions?: (context: RuntimePluginContext) => Record<string, unknown> | null;
   composeClient?: (state: PluginInstallState) => string[];
 };
+
+export type ExtensionPluginDefaults = {
+  pluginId: PluginId;
+  when?: () => boolean;
+  enabled?: boolean;
+  configPatch?: PluginConfig;
+  capabilityStatePatch?: PluginCapabilityState;
+  extensionBindingsPatch?: PluginExtensionBindings;
+};

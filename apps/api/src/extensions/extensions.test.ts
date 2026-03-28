@@ -12,6 +12,7 @@ import {
   timestampField,
 } from "../core/services/schema-helpers";
 import { forkAuthContributions } from "./auth";
+import { extensionPluginDefaults } from "./plugin-defaults";
 import { extensionPluginDefinitions } from "./plugins";
 import { registerExtensionRoutes } from "./routes";
 import { getExtensionSchemaDraft } from "./schema";
@@ -98,6 +99,56 @@ describe("extensions entrypoints", () => {
 
   test("plugin extension registry defaults to an array", () => {
     expect(Array.isArray(extensionPluginDefinitions)).toBe(true);
+  });
+
+  test("plugin defaults registry defaults to an array", () => {
+    expect(Array.isArray(extensionPluginDefaults)).toBe(true);
+  });
+
+  test("auth contribution hook stays runtime-only and does not return plugin state mutations", async () => {
+    const result = await forkAuthContributions({
+      kind: "app",
+      baseURL: "http://localhost:7002",
+      appBaseUrl: "http://localhost:7002",
+      adminBaseUrl: "http://localhost:7001",
+      trustedOrigins: ["http://localhost:7001"],
+      generalSettings: {
+        projectLabel: "Test",
+        appName: "AuthEnd",
+        appUrl: "http://localhost:7002",
+        adminUrl: "http://localhost:7001",
+        timezone: "UTC",
+        locale: "en-US",
+      },
+      authSettings: {
+        allowSignUp: true,
+        requireEmailVerification: false,
+        minPasswordLength: 8,
+        maxPasswordLength: 128,
+      },
+      emailSettings: {
+        smtpHost: "",
+        smtpPort: 587,
+        smtpUsername: "",
+        smtpPassword: "",
+        smtpSecure: false,
+        senderName: "AuthEnd",
+        senderEmail: "no-reply@example.com",
+        replyToEmail: undefined,
+        passwordResetSubject: "Reset your password",
+        verificationSubject: "Verify your email",
+        testRecipient: undefined,
+      },
+      domainSettings: {
+        trustedOrigins: [],
+        corsOrigins: [],
+        redirectOrigins: [],
+        cookieDomain: undefined,
+        secureCookies: false,
+      },
+    });
+
+    expect("pluginDefaults" in result).toBe(false);
   });
 });
 

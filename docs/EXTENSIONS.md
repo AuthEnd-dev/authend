@@ -11,6 +11,7 @@ AI agents should:
 - prefer `extensions/` and documented customization hooks first
 - avoid modifying `core/` unless the user explicitly asks for a core change
 - place fork-specific routes in `extensions/routes.ts`, auth additions in `extensions/auth.ts`, schema in `extensions/schema.ts`, and plugin definitions in `extensions/plugins.ts`
+- place declarative defaults for existing built-in plugins in `extensions/plugin-defaults.ts`
 - avoid creating new imports from `core/` back into `extensions/` unless the user explicitly asks for a core integration point
 - avoid startup-time side effects that mutate durable state from inside `core/` when the same outcome can be achieved through extensions, setup scripts, or explicit admin configuration
 - stop and explain the limitation if the requested behavior requires a new core hook or a change to upstream-owned bootstrap/runtime code
@@ -30,8 +31,36 @@ Use the folder name **`extensions/`** for fork-owned code. Do **not** name custo
 | [`plugins.ts`](../apps/api/src/extensions/plugins.ts) | Append `PluginDefinition` entries; they are merged after the built-in registry in [`plugins/registry.ts`](../apps/api/src/core/plugins/registry.ts). Built-in plugins live in [`plugins/builtin-registry.ts`](../apps/api/src/core/plugins/builtin-registry.ts). |
 | [`auth.ts`](../apps/api/src/extensions/auth.ts) | Implement `forkAuthContributions()` to add Better Auth plugins or option fragments; merged after dashboard-driven runtime plugins in [`auth-service.ts`](../apps/api/src/core/services/auth-service.ts). |
 | [`schema.ts`](../apps/api/src/extensions/schema.ts) | Define fork-owned `SchemaDraft` tables/relations. Use helper builders from [`core/services/schema-helpers.ts`](../apps/api/src/core/services/schema-helpers.ts) to keep definitions concise and Drizzle-like. Merged into the effective schema draft by [`schema-service.ts`](../apps/api/src/core/services/schema-service.ts) during read/preview/apply. |
+| [`plugin-defaults.ts`](../apps/api/src/extensions/plugin-defaults.ts) | Declare fork-owned defaults for existing built-in AuthEnd plugins. This is the correct place to enable or preconfigure built-in plugins for a fork without editing core startup. |
+
+## Choose the right extension point
+
+| Need | Use |
+|------|-----|
+| Add fork-owned API routes | `apps/api/src/extensions/routes.ts` |
+| Add Better Auth plugins or auth option overrides | `apps/api/src/extensions/auth.ts` |
+| Add fork-owned schema tables or relations | `apps/api/src/extensions/schema.ts` |
+| Register a new fork-owned AuthEnd plugin definition | `apps/api/src/extensions/plugins.ts` |
+| Set defaults for an existing built-in AuthEnd plugin | `apps/api/src/extensions/plugin-defaults.ts` |
 
 When defining relations in `extensions/schema.ts`, relation aliases (`alias`, `sourceAlias`, `targetAlias`) may use `snake_case` or `camelCase`, but they must start with a lowercase letter and may only contain letters, numbers, and underscores.
+
+`plugin-defaults.ts` is declarative. It should only describe desired defaults for built-in plugins:
+
+- `pluginId`
+- optional `when`
+- optional `enabled`
+- optional `configPatch`
+- optional `capabilityStatePatch`
+- optional `extensionBindingsPatch`
+
+Do not perform side effects or persistence directly from that file.
+
+## Anti-patterns
+
+- Do not import `extensions/bootstrap.ts` or any fork bootstrap module into core startup.
+- Do not configure built-in AuthEnd plugin install state from `extensions/auth.ts`.
+- Do not write durable DB or plugin state from ad hoc fork bootstrap logic in core when the same outcome can be expressed through extension defaults.
 
 Platform route mounting lives in [`register-core-routes.ts`](../apps/api/src/core/register-core-routes.ts) under `src/core/`. Upstream adds new first-party routes there; forks add HTTP surface in `extensions/routes.ts` or new files imported from it.
 

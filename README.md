@@ -7,6 +7,7 @@ The stack is **TypeScript**, the **Bun** runtime, **Better Auth**, **Drizzle**, 
 For architecture, API details, deployment workflow, and client examples, see [`docs/`](./docs/) (start with [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md), [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md), and [`docs/COMPATIBILITY.md`](./docs/COMPATIBILITY.md)). For fork-specific routes, plugins, and admin UI hooks without merge pain, see [`docs/EXTENSIONS.md`](./docs/EXTENSIONS.md).
 
 When using AI coding agents in this repo, they should prefer documented extension points and should not modify upstream-owned `core/` files unless you explicitly ask for a core change.
+For built-in plugin defaults in a fork, use `apps/api/src/extensions/plugin-defaults.ts` rather than ad hoc bootstrap logic in core.
 
 ## Quick start
 

@@ -5,6 +5,7 @@
 - [`extensions/`](./extensions/) — add routes, auth options, and plugin definitions here. See [`docs/EXTENSIONS.md`](../../docs/EXTENSIONS.md).
 - AI agents should modify `extensions/` by default and must not edit [`core/`](./core/) unless the user explicitly asks for a core change.
 - AI agents should keep fork-specific startup/setup behavior out of `core/` unless the user explicitly asks for a new core hook.
+- Use [`extensions/plugin-defaults.ts`](./extensions/plugin-defaults.ts) for declarative defaults for existing built-in plugins.
 
 **Application entry**
 
