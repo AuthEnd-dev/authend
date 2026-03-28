@@ -1,157 +1,205 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
-import type { SchemaDraft } from '@authend/shared';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Code2, Database, GitBranchPlus, PencilLine, Table2 } from 'lucide-react';
 import { client } from '../lib/client';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { TableSchemaPanel } from '../components/table-schema-panel';
 import { Button } from '../components/ui/button';
-import { Textarea } from '../components/ui/textarea';
-
-const initialDraft: SchemaDraft = {
-  tables: [
-    {
-      name: 'profiles',
-      displayName: 'Profiles',
-      primaryKey: 'id',
-      fields: [
-        {
-          name: 'id',
-          type: 'uuid',
-          nullable: false,
-          unique: true,
-          indexed: true,
-          default: 'gen_random_uuid()',
-        },
-        {
-          name: 'bio',
-          type: 'text',
-          nullable: true,
-          indexed: false,
-          unique: false,
-        },
-      ],
-      indexes: [],
-      api: {
-        authMode: 'superadmin',
-        access: {
-          ownershipField: null,
-          list: { actors: ['superadmin'], scope: 'all' },
-          get: { actors: ['superadmin'], scope: 'all' },
-          create: { actors: ['superadmin'], scope: 'all' },
-          update: { actors: ['superadmin'], scope: 'all' },
-          delete: { actors: ['superadmin'], scope: 'all' },
-        },
-        operations: {
-          list: true,
-          get: true,
-          create: true,
-          update: true,
-          delete: true,
-        },
-        pagination: {
-          enabled: true,
-          defaultPageSize: 20,
-          maxPageSize: 100,
-        },
-        filtering: {
-          enabled: true,
-          fields: [],
-        },
-        sorting: {
-          enabled: true,
-          fields: [],
-          defaultOrder: 'desc',
-        },
-        includes: {
-          enabled: true,
-          fields: [],
-        },
-        hiddenFields: [],
-        fieldVisibility: {},
-      },
-      hooks: [],
-    },
-  ],
-  relations: [],
-};
+import { Badge } from '../components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { CodeBlock } from '../components/ui/code-block';
 
 export function SchemaPage() {
-  const [draft, setDraft] = useState<SchemaDraft>(initialDraft);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedTable, setSelectedTable] = useState<string | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  const { data: liveDraft } = useQuery({
+  const { data: liveDraft, refetch, isFetching } = useQuery({
     queryKey: ['schema'],
     queryFn: () => client.system.schema.get(),
   });
 
-  const previewMutation = useMutation({
-    mutationFn: (payload: SchemaDraft) => client.system.schema.preview(payload),
-  });
+  const relationCountByTable = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const relation of liveDraft?.relations ?? []) {
+      counts.set(relation.sourceTable, (counts.get(relation.sourceTable) ?? 0) + 1);
+    }
+    return counts;
+  }, [liveDraft]);
 
-  const applyMutation = useMutation({
-    mutationFn: (payload: SchemaDraft) => client.system.schema.apply(payload),
-  });
+  const generatedTables = liveDraft?.tables ?? [];
 
   return (
-    <div className="grid lg:grid-cols-[1fr_400px] xl:grid-cols-[1fr_500px] gap-6 h-full">
-      <div className="flex flex-col h-[calc(100vh-10rem)] rounded-xl border border-border bg-card shadow-sm overflow-hidden min-h-[500px]">
-        <div className="flex items-center justify-between p-3 px-4 border-b border-border bg-muted/20 shrink-0">
-          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Draft Spec JSON</span>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="h-8 shadow-sm" onClick={() => previewMutation.mutate(draft)}>
-              Preview SQL
+    <>
+      <div className="flex flex-col gap-6">
+        <section className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <h2 className="text-xl font-semibold tracking-tight text-foreground">Schema Builder</h2>
+            <p className="max-w-3xl text-sm text-muted-foreground">
+              Create and edit generated tables visually. Raw schema JSON is still available for debugging, but it is no longer the primary authoring surface.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setAdvancedOpen((current) => !current)}>
+              <Code2 className="mr-2 h-4 w-4" />
+              {advancedOpen ? 'Hide JSON debug' : 'Show JSON debug'}
             </Button>
-            <Button size="sm" className="h-8 shadow-sm" onClick={() => applyMutation.mutate(draft)}>
-              Apply Draft
+            <Button
+              onClick={() => {
+                setSelectedTable(null);
+                setPanelOpen(true);
+              }}
+            >
+              <GitBranchPlus className="mr-2 h-4 w-4" />
+              New table
             </Button>
           </div>
-        </div>
-        <div className="flex-1 p-0 m-0 relative">
-          <Textarea
-            id="schema-draft"
-            className="absolute inset-0 h-full w-full font-mono text-sm resize-none border-0 rounded-none bg-transparent p-4 focus-visible:ring-0 focus-visible:ring-offset-0 ring-0 selection:bg-primary/20"
-            value={JSON.stringify(draft, null, 2)}
-            onChange={(event) => {
-              try {
-                setDraft(JSON.parse(event.target.value) as SchemaDraft);
-              } catch {
-                // Ignore invalid JSON while typing
-              }
-            }}
-          />
-        </div>
+        </section>
+
+        <section className="grid gap-4 md:grid-cols-3">
+          <Card className="border-border/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-foreground">Generated tables</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold text-foreground">{generatedTables.length}</div>
+              <p className="mt-1 text-sm text-muted-foreground">Tables currently managed by the schema draft.</p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-foreground">Relations</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold text-foreground">{liveDraft?.relations.length ?? 0}</div>
+              <p className="mt-1 text-sm text-muted-foreground">Joins defined in the generated schema draft.</p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-foreground">Refresh state</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold text-foreground">{isFetching ? 'Updating' : 'Ready'}</div>
+              <p className="mt-1 text-sm text-muted-foreground">Schema metadata reloads after each successful visual change.</p>
+            </CardContent>
+          </Card>
+        </section>
+
+        <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+          <Card className="border-border/60">
+            <CardHeader className="border-b border-border/60">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-sm font-semibold text-foreground">Generated tables</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Use the visual editor for table fields, relations, API rules, and hooks.
+                  </p>
+                </div>
+                <Badge variant="secondary">Visual-first</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="grid gap-3 p-4">
+              {generatedTables.length > 0 ? (
+                generatedTables.map((table) => (
+                  <div key={table.name} className="rounded-2xl border border-border/60 bg-background p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Table2 className="h-4 w-4 text-muted-foreground" />
+                          <p className="text-sm font-semibold text-foreground">{table.displayName || table.name}</p>
+                          <Badge variant="outline">{table.name}</Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {table.fields.length} fields, {relationCountByTable.get(table.name) ?? 0} relations, auth mode {table.api.authMode}.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="secondary">{table.api.operations.list ? 'list' : 'no list'}</Badge>
+                          <Badge variant="secondary">{table.api.operations.create ? 'create' : 'read only'}</Badge>
+                          <Badge variant="secondary">{table.hooks.length} hooks</Badge>
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setSelectedTable(table.name);
+                          setPanelOpen(true);
+                        }}
+                      >
+                        <PencilLine className="mr-2 h-4 w-4" />
+                        Edit
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 p-8 text-center">
+                  <Database className="mx-auto h-6 w-6 text-muted-foreground" />
+                  <p className="mt-3 text-sm font-medium text-foreground">No generated tables yet</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Start with a visual table definition instead of writing the draft by hand.
+                  </p>
+                  <Button
+                    className="mt-4"
+                    onClick={() => {
+                      setSelectedTable(null);
+                      setPanelOpen(true);
+                    }}
+                  >
+                    Create first table
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/60">
+            <CardHeader className="border-b border-border/60">
+              <CardTitle className="text-sm font-semibold text-foreground">How to use this page</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 p-4 text-sm text-muted-foreground">
+              <div className="rounded-xl border border-border/60 bg-background px-4 py-3">
+                Create or edit tables from the list. The panel already covers fields, relations, API rules, and hooks.
+              </div>
+              <div className="rounded-xl border border-border/60 bg-background px-4 py-3">
+                Use the JSON view only when you need to inspect the raw draft or compare it with another environment.
+              </div>
+              <div className="rounded-xl border border-border/60 bg-background px-4 py-3">
+                Destructive schema work still belongs behind backups. The visual editor applies the real schema, not a sandbox copy.
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+
+        {advancedOpen ? (
+          <Card className="border-border/60">
+            <CardHeader className="border-b border-border/60">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-sm font-semibold text-foreground">Advanced JSON debug</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Inspect the live schema draft directly. Keep visual editing as the default workflow.
+                  </p>
+                </div>
+                <Badge variant="outline">Advanced</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <CodeBlock code={JSON.stringify(liveDraft ?? { tables: [], relations: [] }, null, 2)} language="json" className="max-h-[480px] overflow-auto p-4 text-xs" />
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
 
-      <div className="flex flex-col gap-4 overflow-y-auto h-[calc(100vh-10rem)] pr-1 pb-4">
-        <Card className="shadow-sm border-border shrink-0">
-          <CardHeader className="py-2.5 px-4 bg-muted/20 border-b border-border">
-            <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Live Draft</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0 max-h-[400px] overflow-auto">
-            <pre className="p-4 bg-transparent text-muted-foreground font-mono text-xs">{JSON.stringify(liveDraft, null, 2)}</pre>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm border-border shrink-0">
-          <CardHeader className="py-2.5 px-4 bg-muted/20 border-b border-border">
-            <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Preview Result</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <pre className="p-4 bg-transparent text-muted-foreground font-mono text-xs overflow-x-auto">
-              {JSON.stringify(previewMutation.data, null, 2)}
-            </pre>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm border-border shrink-0">
-          <CardHeader className="py-2.5 px-4 bg-muted/20 border-b border-border">
-            <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Apply Result</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <pre className="p-4 bg-transparent text-muted-foreground font-mono text-xs overflow-x-auto">
-              {JSON.stringify(applyMutation.data, null, 2)}
-            </pre>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+      <TableSchemaPanel
+        tableName={selectedTable}
+        isOpen={panelOpen}
+        onClose={() => setPanelOpen(false)}
+        onSuccess={() => {
+          void refetch();
+        }}
+      />
+    </>
   );
 }

@@ -179,7 +179,7 @@ Priority inside this phase:
 
 ### Schema Builder
 
-- [ ] Replace JSON-first authoring as the primary flow with a visual schema builder.
+- [x] Replace JSON-first authoring as the primary flow with a visual schema builder.
 - [ ] Add guided creation for tables, relations, enums, indexes, and defaults.
 - [ ] Add migration diff review with clear before/after explanations.
 - [ ] Add guarded destructive changes with backup prompts and rollback guidance.
