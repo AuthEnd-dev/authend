@@ -10,6 +10,10 @@ AI agents should:
 
 - prefer `extensions/` and documented customization hooks first
 - avoid modifying `core/` unless the user explicitly asks for a core change
+- place fork-specific routes in `extensions/routes.ts`, auth additions in `extensions/auth.ts`, schema in `extensions/schema.ts`, and plugin definitions in `extensions/plugins.ts`
+- avoid creating new imports from `core/` back into `extensions/` unless the user explicitly asks for a core integration point
+- avoid startup-time side effects that mutate durable state from inside `core/` when the same outcome can be achieved through extensions, setup scripts, or explicit admin configuration
+- stop and explain the limitation if the requested behavior requires a new core hook or a change to upstream-owned bootstrap/runtime code
 - explain when a requested change cannot be completed through extension points alone
 
 This rule exists to keep fork-specific work merge-friendly when pulling upstream changes.

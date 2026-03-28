@@ -12,6 +12,8 @@ This package exposes AuthEnd as an MCP server so local AI tools can inspect and 
 
 It is designed for local development workflows where the AI helps scaffold the app by shaping the AuthEnd backend first.
 
+When AI agents work in this repo, they should prefer documented extension points and should not modify upstream-owned `core/` files unless the user explicitly asks for a core change.
+
 ## What It Does
 
 The MCP server wraps existing AuthEnd services. It does not create a second backend path.
