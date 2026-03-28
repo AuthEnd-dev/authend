@@ -174,6 +174,10 @@ export const client = {
         request<BackupRun>('/api/admin/settings/backups/run', {
           method: 'POST',
         }),
+      restoreBackup: (runId: string) =>
+        request<BackupRun>(`/api/admin/settings/backups/${runId}/restore`, {
+          method: 'POST',
+        }),
       cronJobs: () => request<CronJob[]>('/api/admin/settings/crons/jobs'),
       createCronJob: (payload: CronJobInput) =>
         request<CronJob>('/api/admin/settings/crons/jobs', {

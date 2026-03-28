@@ -1150,6 +1150,8 @@ export type BackupFormat = z.infer<typeof backupFormatSchema>;
 export const backupSettingsSchema = z.object({
   enabled: z.boolean().default(true),
   directoryPath: z.string().default("./var/backups"),
+  artifactStorage: z.enum(["filesystem", "storage"]).default("filesystem"),
+  storagePrefix: z.string().default("backups"),
   retentionDays: z.number().int().positive().max(3650).default(14),
   pgDumpPath: z.string().default("pg_dump"),
   pgRestorePath: z.string().default("pg_restore"),

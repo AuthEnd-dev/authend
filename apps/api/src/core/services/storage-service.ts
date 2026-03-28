@@ -237,6 +237,68 @@ function createBunS3Client(config: StorageSettings) {
   });
 }
 
+export async function writeManagedStorageObject(input: {
+  key: string;
+  body: Buffer;
+  mimeType: string;
+  visibility?: 'public' | 'private';
+}) {
+  const config = await getStorageConfig();
+  const visibility = input.visibility ?? config.defaultVisibility;
+
+  if (config.driver === 'local') {
+    const root = resolve(process.cwd(), config.rootPath);
+    const absolutePath = resolve(root, input.key);
+    const parent = absolutePath.slice(0, absolutePath.lastIndexOf('/'));
+    await mkdir(parent, { recursive: true });
+    await Bun.write(absolutePath, input.body);
+    const result = {
+      key: input.key,
+      visibility,
+      driver: 'local' as const,
+      sizeBytes: input.body.length,
+      mimeType: input.mimeType,
+      url: buildPublicUrl(config.publicBaseUrl, input.key),
+    };
+    await upsertStorageFileRecord(result);
+    return result;
+  }
+
+  const client = createBunS3Client(config);
+  const s3Object = client.file(input.key);
+  await s3Object.write(input.body, {
+    type: input.mimeType,
+  });
+
+  const result = {
+    key: input.key,
+    visibility,
+    driver: 's3' as const,
+    sizeBytes: input.body.length,
+    mimeType: input.mimeType,
+    url: buildPublicUrl(config.publicBaseUrl, input.key),
+  };
+  await upsertStorageFileRecord(result);
+  return result;
+}
+
+export async function readStoredObjectBuffer(key: string) {
+  const config = await getStorageConfig();
+
+  if (config.driver === 'local') {
+    const file = await readLocalStoredFile(key);
+    return Buffer.from(await file.arrayBuffer());
+  }
+
+  const client = createBunS3Client(config);
+  const s3Object = client.file(key) as { arrayBuffer: () => Promise<ArrayBuffer> };
+  try {
+    return Buffer.from(await s3Object.arrayBuffer());
+  } catch {
+    throw new HttpError(404, 'Storage file not found');
+  }
+}
+
 export async function uploadFile(input: UploadInput): Promise<UploadResult> {
   const config = await getStorageConfig();
   const visibility = input.visibility ?? config.defaultVisibility;

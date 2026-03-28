@@ -220,7 +220,7 @@ Goal: make AuthEnd reliable enough for serious production use.
 
 ### Recovery And Reliability
 
-- [ ] Add backup restore workflows, not just backup creation.
+- [x] Add backup restore workflows, not just backup creation.
 - [ ] Add migration rollback guidance and safety checks.
 - [ ] Add health probes for dependent services like SMTP and S3.
 - [ ] Add failure-mode tests for partial migrations, auth misconfig, and unavailable dependencies.

@@ -42,6 +42,11 @@ type CompatibleApiRateLimitSettings = {
   maxRateLimitPerMinute: number;
 };
 
+type CompatibleBackupSettings = {
+  artifactStorage?: "filesystem" | "storage";
+  storagePrefix?: string;
+};
+
 type DiagnosticIssue = {
   severity: "warning" | "error";
   title: string;
@@ -226,6 +231,7 @@ async function storageDiagnostics() {
 
 async function backupDiagnostics() {
   const { config, updatedAt } = await readSettingsSection("backups");
+  const compatibleConfig = config as typeof config & CompatibleBackupSettings;
   const runs = await listBackupRuns(15);
 
   const commandAvailable = (command: string) => {
@@ -238,6 +244,15 @@ async function backupDiagnostics() {
 
   const latestRun = runs[0];
   const checks: DiagnosticCheck[] = [
+    {
+      label: "Artifact destination",
+      status: "healthy",
+      value: compatibleConfig.artifactStorage ?? "filesystem",
+      detail:
+        compatibleConfig.artifactStorage === "storage"
+          ? "Backup archives are staged locally, then copied into configured storage."
+          : "Backup archives are kept on the local filesystem.",
+    },
     {
       label: "Backups enabled",
       status: config.enabled ? "healthy" : "warning",
@@ -291,6 +306,15 @@ async function backupDiagnostics() {
       title: "No new backups will be created because backups are disabled",
       reason: "Manual and scheduled backup runs are blocked when backups are turned off.",
       fix: "Enable backups in the Backups settings before relying on recovery workflows.",
+    });
+  }
+  if (compatibleConfig.artifactStorage === "storage" && !(compatibleConfig.storagePrefix ?? "").trim()) {
+    nextSteps.push("Set a storage prefix for backup artifacts.");
+    issues.push({
+      severity: "error",
+      title: "Backups cannot be stored in object storage without a prefix",
+      reason: "Storage-backed backups are enabled, but the storage prefix is blank.",
+      fix: "Set a backup storage prefix so archives can be written to the configured storage backend.",
     });
   }
   if (!commandAvailable(config.pgDumpPath)) {

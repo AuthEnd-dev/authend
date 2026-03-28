@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { cronJobInputSchema, settingsSectionIdSchema } from '@authend/shared';
 import type { SessionContext } from '../../middleware/auth';
-import { runBackupNow } from '../../services/backup-service';
+import { restoreBackupNow, runBackupNow } from '../../services/backup-service';
 import {
   createCronJobFromInput,
   getEnvironmentEditorState,
@@ -18,6 +18,10 @@ export const adminSettingsRouter = new Hono<{ Variables: { auth: SessionContext 
   .post('/settings/backups/run', async (c) => {
     const auth = c.get('auth');
     return c.json(await runBackupNow(auth.user.id, 'manual'));
+  })
+  .post('/settings/backups/:runId/restore', async (c) => {
+    const auth = c.get('auth');
+    return c.json(await restoreBackupNow(c.req.param('runId'), auth.user.id));
   })
   .get('/settings/crons/jobs', async (c) => {
     const state = await getSettingsSectionState('crons');

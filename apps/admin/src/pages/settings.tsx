@@ -1571,7 +1571,7 @@ export function EnvironmentsSecretsSettingsPage() {
 
 export function BackupsSettingsPage() {
   const queryClient = useQueryClient();
-  const { showNotice } = useFeedback();
+  const { showNotice, confirm } = useFeedback();
   const { data } = useQuery({
     queryKey: ["settings", "backups"],
     queryFn: () => client.system.settings.get("backups"),
@@ -1619,7 +1619,44 @@ export function BackupsSettingsPage() {
       }),
   });
 
+  const restoreBackupMutation = useMutation({
+    mutationFn: (runId: string) => client.system.settings.restoreBackup(runId),
+    onSuccess: (run) => {
+      void queryClient.invalidateQueries({ queryKey: ["settings", "backups"] });
+      showNotice({
+        title: run.status === "succeeded" ? "Restore completed" : "Restore failed",
+        description:
+          run.status === "succeeded"
+            ? `Database restore finished from ${run.filePath ?? "the selected backup"}.`
+            : run.error ?? "Restore failed.",
+        variant: run.status === "succeeded" ? "success" : "destructive",
+        durationMs: 7000,
+      });
+    },
+    onError: (error) =>
+      showNotice({
+        title: "Restore failed to start",
+        description: getErrorMessage(error, "Could not start the restore workflow."),
+        variant: "destructive",
+        durationMs: 7000,
+      }),
+  });
+
   const response = data as BackupSettingsResponse | undefined;
+  const requestRestore = async (runId: string, filePath: string | null | undefined) => {
+    if (
+      await confirm({
+        title: "Restore database from backup?",
+        description:
+          `This will overwrite current database objects using ${filePath ?? "the selected backup"}. ` +
+          "Use this only when you are intentionally rolling the backend back to a known snapshot.",
+        confirmLabel: "Restore now",
+        variant: "destructive",
+      })
+    ) {
+      restoreBackupMutation.mutate(runId);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -1645,6 +1682,16 @@ export function BackupsSettingsPage() {
           fields={[
             { key: "enabled", label: "Enable backups", kind: "boolean" },
             { key: "directoryPath", label: "Backup directory", kind: "text" },
+            {
+              key: "artifactStorage",
+              label: "Artifact destination",
+              kind: "select",
+              options: [
+                { value: "filesystem", label: "Filesystem" },
+                { value: "storage", label: "Configured storage" },
+              ],
+            },
+            { key: "storagePrefix", label: "Storage prefix", kind: "text" },
             { key: "retentionDays", label: "Retention days", kind: "number" },
             { key: "pgDumpPath", label: "pg_dump path", kind: "text" },
             { key: "pgRestorePath", label: "pg_restore path", kind: "text" },
@@ -1677,13 +1724,30 @@ export function BackupsSettingsPage() {
                   {run.status}
                 </Badge>
                 <div>
-                  <p className="font-medium text-foreground">{run.filePath ?? run.destination}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {run.trigger} • {run.startedAt}
+                  <p className="font-medium text-foreground">
+                    {(run.details?.operation as string | undefined) === "restore" ? "Restore run" : run.filePath ?? run.destination}
                   </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {((run.details?.operation as string | undefined) ?? "backup")} • {run.trigger} • {run.startedAt}
+                  </p>
+                  {(run.details?.sourceRunId as string | undefined) ? (
+                    <p className="mt-1 text-xs text-muted-foreground">Source backup: {run.filePath}</p>
+                  ) : null}
                   {run.error ? <p className="mt-1 text-xs text-destructive">{run.error}</p> : null}
                 </div>
-                <div className="text-sm text-muted-foreground">{run.sizeBytes != null ? `${run.sizeBytes.toLocaleString()} bytes` : "—"}</div>
+                <div className="flex items-start justify-end gap-2">
+                  <div className="text-sm text-muted-foreground">{run.sizeBytes != null ? `${run.sizeBytes.toLocaleString()} bytes` : "—"}</div>
+                  {run.status === "succeeded" && (run.details?.operation as string | undefined) !== "restore" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => requestRestore(run.id, run.filePath)}
+                      disabled={restoreBackupMutation.isPending}
+                    >
+                      Restore
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>
