@@ -7,6 +7,7 @@ const sourceDatabaseUrl =
   process.env.DATABASE_URL ??
   "postgres://postgres:postgres@localhost:5432/authend";
 
+const bunExecutable = process.execPath;
 const apiDir = resolve(import.meta.dir, "../..");
 
 function createValidateEnv(overrides: Record<string, string | undefined> = {}) {
@@ -28,7 +29,7 @@ function createValidateEnv(overrides: Record<string, string | undefined> = {}) {
 
 describe("validate env script", () => {
   test("bun run validate-env succeeds for a valid deployment env", () => {
-    const command = spawnSync("bun", ["run", "validate-env"], {
+    const command = spawnSync(bunExecutable, ["run", "validate-env"], {
       cwd: apiDir,
       env: createValidateEnv(),
       encoding: "utf8",
@@ -40,7 +41,7 @@ describe("validate env script", () => {
   });
 
   test("bun run validate-env reports missing required env keys", () => {
-    const command = spawnSync("bun", ["run", "validate-env"], {
+    const command = spawnSync(bunExecutable, ["run", "validate-env"], {
       cwd: apiDir,
       env: createValidateEnv({
         APP_URL: "",

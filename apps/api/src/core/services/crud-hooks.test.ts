@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { cp } from 'node:fs/promises';
 import type { SchemaDraft, TableBlueprint } from '@authend/shared';
 import postgres from 'postgres';
 
@@ -12,6 +13,7 @@ type MigrationModule = typeof import('./migration-service');
 const sourceDatabaseUrl =
   process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/authend';
 
+const bunExecutable = process.execPath;
 const testDatabaseName = `authend_crud_hooks_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`.replace(/[^a-z0-9_]/g, '_');
 const databaseUrl = new URL(sourceDatabaseUrl);
 const adminDatabaseUrl = new URL(sourceDatabaseUrl);
@@ -98,7 +100,7 @@ function callRelease(fn: (() => void) | null, message: string) {
 
 if (process.env.AUTHEND_CRUD_HOOKS_SUBPROCESS !== '1') {
   test('CRUD hooks integration (subprocess)', () => {
-    const command = spawnSync('bun', ['test', import.meta.path], {
+    const command = spawnSync(bunExecutable, ['test', import.meta.path], {
       cwd: resolve(import.meta.dir, '../../../../..'),
       env: {
         ...process.env,
@@ -140,6 +142,11 @@ if (process.env.AUTHEND_CRUD_HOOKS_SUBPROCESS !== '1') {
       process.env.AUTHEND_GENERATED_MIGRATIONS_DIR = resolve(
         import.meta.dir,
         `../tests/generated/${testDatabaseName}/migrations`,
+      );
+      await cp(
+        resolve(import.meta.dir, '../../../generated/migrations'),
+        process.env.AUTHEND_GENERATED_MIGRATIONS_DIR,
+        { recursive: true, force: true },
       );
       process.env.BETTER_AUTH_SECRET = 'crud-hooks-test-secret-value-123456';
       process.env.SUPERADMIN_EMAIL = 'admin@authend.test';

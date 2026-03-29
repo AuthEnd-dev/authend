@@ -63,7 +63,7 @@ function moduleSpecifier(fromFile: string, toFile: string) {
 
 function splitMigrationStatements(sqlText: string) {
   const chunks = sqlText
-    .split(/^\s*-->\s*statement-breakpoint\s*$/gmu)
+    .split(/-->\s*statement-breakpoint\b/gmu)
     .map((chunk) => chunk.trim())
     .filter(Boolean);
 
@@ -87,6 +87,24 @@ function isIgnorableBootstrapError(error: unknown) {
 }
 
 async function executeBootstrapStatements(
+  executor: {
+    unsafe: (query: string, params?: never[]) => Promise<unknown>;
+  },
+  sqlText: string,
+) {
+  for (const statement of splitMigrationStatements(sqlText)) {
+    try {
+      await executor.unsafe(statement);
+    } catch (error) {
+      if (isIgnorableBootstrapError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+async function executeSchemaApplyStatements(
   executor: {
     unsafe: (query: string, params?: never[]) => Promise<unknown>;
   },
@@ -439,9 +457,9 @@ export async function applySqlMigration(input: {
     return false;
   }
 
-  await sql.begin(async (transaction) => {
-    await executeMigrationStatements(transaction, input.sqlText);
-    await transaction.unsafe(
+  if (input.key.endsWith("_schema_apply")) {
+    await executeSchemaApplyStatements(sql, input.sqlText);
+    await sql.unsafe(
       `insert into _migration_runs (id, migration_key, title, sql, status, created_at, applied_at)
        values ($1, $2, $3, $4, 'applied', now(), now())
        on conflict (migration_key) do update
@@ -451,7 +469,21 @@ export async function applySqlMigration(input: {
            applied_at = excluded.applied_at`,
       [crypto.randomUUID(), input.key, input.title, input.sqlText] as never[],
     );
-  });
+  } else {
+    await sql.begin(async (transaction) => {
+      await executeMigrationStatements(transaction, input.sqlText);
+      await transaction.unsafe(
+        `insert into _migration_runs (id, migration_key, title, sql, status, created_at, applied_at)
+         values ($1, $2, $3, $4, 'applied', now(), now())
+         on conflict (migration_key) do update
+         set title = excluded.title,
+             sql = excluded.sql,
+             status = excluded.status,
+             applied_at = excluded.applied_at`,
+        [crypto.randomUUID(), input.key, input.title, input.sqlText] as never[],
+      );
+    });
+  }
 
   await writeAuditLog({
     action: "migration.applied",
@@ -520,26 +552,6 @@ export async function applyPendingMigrations(actorUserId?: string | null) {
   }
 
   return applied;
-}
-
-export async function writeGeneratedMigration(key: string, sqlText: string) {
-  const preferredPath = resolve(generatedMigrationDir, `${key}.sql`);
-  if (await fileExists(preferredPath)) {
-    return preferredPath;
-  }
-
-  const artifact = await createGeneratedMigration({
-    key,
-    persist: true,
-    customSql: sqlText,
-  });
-
-  if (artifact.sqlPath !== preferredPath) {
-    await writeTextFile(preferredPath, sqlText);
-    await rm(artifact.sqlPath, { force: true });
-  }
-
-  return preferredPath;
 }
 
 export async function previewGeneratedSchemaMigration(input: {

@@ -8,6 +8,7 @@ const sourceDatabaseUrl =
   process.env.DATABASE_URL ??
   "postgres://postgres:postgres@localhost:5432/authend";
 
+const bunExecutable = process.execPath;
 const rootDir = resolve(import.meta.dir, "../../../.."); // monorepo root (matches previous `src/` depth)
 const adminDatabaseUrl = new URL(sourceDatabaseUrl);
 adminDatabaseUrl.pathname = "/postgres";
@@ -52,7 +53,7 @@ describe("bootstrap script", () => {
     await adminSql.unsafe(`create database "${databaseName}"`);
 
     try {
-      const command = spawnSync("bun", ["run", "bootstrap"], {
+      const command = spawnSync(bunExecutable, ["run", "bootstrap"], {
         cwd: rootDir,
         env: createBootstrapEnv(databaseUrl.toString()),
         encoding: "utf8",
@@ -83,7 +84,7 @@ describe("bootstrap script", () => {
   });
 
   test("bun run bootstrap reports actionable env validation failures", () => {
-    const command = spawnSync("bun", ["run", "bootstrap"], {
+    const command = spawnSync(bunExecutable, ["run", "bootstrap"], {
       cwd: rootDir,
       env: createBootstrapEnv(sourceDatabaseUrl, {
         SUPERADMIN_EMAIL: "",
@@ -99,7 +100,7 @@ describe("bootstrap script", () => {
   });
 
   test("bun run bootstrap fails fast when BETTER_AUTH_SECRET is missing", () => {
-    const command = spawnSync("bun", ["run", "bootstrap"], {
+    const command = spawnSync(bunExecutable, ["run", "bootstrap"], {
       cwd: rootDir,
       env: createBootstrapEnv(sourceDatabaseUrl, {
         BETTER_AUTH_SECRET: "",

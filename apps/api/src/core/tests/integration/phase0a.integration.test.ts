@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
+import { cp, mkdir, rm } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import postgres from 'postgres';
 
@@ -18,9 +18,11 @@ type AuthAbuseModule = typeof import('../../services/auth-abuse-service');
 const sourceDatabaseUrl =
   process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/authend';
 
+const bunExecutable = process.execPath;
 const appUrl = 'http://localhost:7002';
 const adminUrl = 'http://localhost:7001';
 const testDatabaseName = `authend_phase0a_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`.replace(/[^a-z0-9_]/g, '_');
+const generatedTestRoot = resolve(import.meta.dir, `../generated/${testDatabaseName}`);
 const databaseUrl = new URL(sourceDatabaseUrl);
 const adminDatabaseUrl = new URL(sourceDatabaseUrl);
 adminDatabaseUrl.pathname = '/postgres';
@@ -94,6 +96,18 @@ async function withCapturedInfoLogs<T>(run: () => Promise<T>) {
   }
 }
 
+async function writeGeneratedMigrationFixture(key: string, sqlText: string) {
+  const migrationsDir = process.env.AUTHEND_GENERATED_MIGRATIONS_DIR;
+  if (!migrationsDir) {
+    throw new Error("AUTHEND_GENERATED_MIGRATIONS_DIR is not configured for this test run.");
+  }
+
+  const migrationPath = resolve(migrationsDir, `_${key}.sql`);
+  await mkdir(dirname(migrationPath), { recursive: true });
+  await Bun.write(migrationPath, sqlText);
+  return migrationPath;
+}
+
 function extractUrlFromPreview(logs: Array<Record<string, unknown>>, marker: string) {
   const emailLog = logs.find(
     (entry) => entry.message === 'email.skipped' && typeof entry.preview === 'string' && String(entry.preview).includes(marker),
@@ -105,7 +119,7 @@ function extractUrlFromPreview(logs: Array<Record<string, unknown>>, marker: str
 
 if (process.env.AUTHEND_INTEGRATION_SUBPROCESS !== '1') {
   test('Phase 0A integration hardening (subprocess)', () => {
-    const command = spawnSync('bun', ['test', import.meta.path], {
+    const command = spawnSync(bunExecutable, ['test', import.meta.path], {
       cwd: resolve(import.meta.dir, '../../../../..'),
       env: {
         ...process.env,
@@ -149,10 +163,19 @@ if (process.env.AUTHEND_INTEGRATION_SUBPROCESS !== '1') {
       process.env.DATABASE_URL = databaseUrl.toString();
       // Prevent tests from writing into apps/api/generated/*
       process.env.AUTHEND_GENERATED_SCHEMA_FILE = resolve(
-        import.meta.dir,
-        `../generated/${testDatabaseName}/schema/generated.ts`,
+        generatedTestRoot,
+        'schema/generated.ts',
       );
-      process.env.AUTHEND_GENERATED_MIGRATIONS_DIR = resolve(import.meta.dir, `../generated/${testDatabaseName}/migrations`);
+      process.env.AUTHEND_GENERATED_MIGRATIONS_DIR = resolve(generatedTestRoot, 'migrations');
+      process.env.AUTHEND_GENERATED_PLUGIN_DEFAULTS_FILE = resolve(
+        generatedTestRoot,
+        'plugin-defaults.generated.ts',
+      );
+      await cp(
+        resolve(import.meta.dir, '../../../../generated/migrations'),
+        process.env.AUTHEND_GENERATED_MIGRATIONS_DIR,
+        { recursive: true, force: true },
+      );
       process.env.BETTER_AUTH_SECRET = 'phase0a-super-secret-value-123456';
       process.env.SUPERADMIN_EMAIL = 'admin@authend.test';
       process.env.SUPERADMIN_PASSWORD = 'ChangeMe123!';
@@ -185,6 +208,10 @@ if (process.env.AUTHEND_INTEGRATION_SUBPROCESS !== '1') {
       await migrationModule.ensureCoreSchema();
       await pluginModule.seedPluginConfigs();
       await pluginModule.ensureEnabledPluginsProvisioned();
+      await settingsStoreModule.writeSettingsSection('storage', {
+        ...(await settingsStoreModule.readSettingsSection('storage')).config,
+        rootPath: resolve(generatedTestRoot, 'storage'),
+      });
       await pluginModule.enablePlugin('apiKey');
       await bootstrapModule.seedSuperAdmin();
 
@@ -700,6 +727,7 @@ if (process.env.AUTHEND_INTEGRATION_SUBPROCESS !== '1') {
       await dbModule.sql.end({ timeout: 0 });
       await adminSql.unsafe(`drop database if exists "${testDatabaseName}" with (force)`);
       await adminSql.end({ timeout: 0 });
+      await rm(generatedTestRoot, { recursive: true, force: true });
     });
 
     beforeEach(() => {
@@ -927,11 +955,11 @@ if (process.env.AUTHEND_INTEGRATION_SUBPROCESS !== '1') {
       const firstKey = `9100_partial_apply_ok_${Date.now()}`;
       const secondKey = `9101_partial_apply_fail_${Date.now()}`;
 
-      await migrationModule.writeGeneratedMigration(
+      await writeGeneratedMigrationFixture(
         firstKey,
         `create table if not exists "${firstKey}" ("id" uuid primary key default gen_random_uuid());`,
       );
-      await migrationModule.writeGeneratedMigration(
+      await writeGeneratedMigrationFixture(
         secondKey,
         `alter table "${firstKey}" add column ;`,
       );

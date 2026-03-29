@@ -7,29 +7,31 @@ import { env } from "../config/env";
 import { db, sql } from "../db/client";
 import { writeAuditLog } from "./audit-service";
 
-const defaultSettings = {
-  general: settingsSectionSchemas.general.parse({
-    appUrl: env.APP_URL,
-    adminUrl: env.ADMIN_URL ?? env.ADMIN_DEV_URL,
-  }),
-  authentication: settingsSectionSchemas.authentication.parse({}),
-  sessionsSecurity: settingsSectionSchemas.sessionsSecurity.parse({}),
-  email: settingsSectionSchemas.email.parse({}),
-  domainsOrigins: settingsSectionSchemas.domainsOrigins.parse({}),
-  api: settingsSectionSchemas.api.parse({}),
-  storage: settingsSectionSchemas.storage.parse({}),
-  backups: settingsSectionSchemas.backups.parse({}),
-  crons: settingsSectionSchemas.crons.parse({}),
-  aiAssistant: settingsSectionSchemas.aiAssistant.parse({}),
-  adminAccess: settingsSectionSchemas.adminAccess.parse({}),
-  environmentsSecrets: settingsSectionSchemas.environmentsSecrets.parse({}),
-  observability: settingsSectionSchemas.observability.parse({}),
-  dangerZone: settingsSectionSchemas.dangerZone.parse({}),
-  webhooks: settingsSectionSchemas.webhooks.parse({}),
-} satisfies SettingsSectionConfigMap;
+function buildDefaultSettings() {
+  return {
+    general: settingsSectionSchemas.general.parse({
+      appUrl: process.env.APP_URL ?? env.APP_URL,
+      adminUrl: process.env.ADMIN_URL ?? env.ADMIN_URL ?? process.env.ADMIN_DEV_URL ?? env.ADMIN_DEV_URL,
+    }),
+    authentication: settingsSectionSchemas.authentication.parse({}),
+    sessionsSecurity: settingsSectionSchemas.sessionsSecurity.parse({}),
+    email: settingsSectionSchemas.email.parse({}),
+    domainsOrigins: settingsSectionSchemas.domainsOrigins.parse({}),
+    api: settingsSectionSchemas.api.parse({}),
+    storage: settingsSectionSchemas.storage.parse({}),
+    backups: settingsSectionSchemas.backups.parse({}),
+    crons: settingsSectionSchemas.crons.parse({}),
+    aiAssistant: settingsSectionSchemas.aiAssistant.parse({}),
+    adminAccess: settingsSectionSchemas.adminAccess.parse({}),
+    environmentsSecrets: settingsSectionSchemas.environmentsSecrets.parse({}),
+    observability: settingsSectionSchemas.observability.parse({}),
+    dangerZone: settingsSectionSchemas.dangerZone.parse({}),
+    webhooks: settingsSectionSchemas.webhooks.parse({}),
+  } satisfies SettingsSectionConfigMap;
+}
 
 export function defaultSettingsForSection<TSection extends SettingsSectionId>(section: TSection) {
-  return defaultSettings[section];
+  return buildDefaultSettings()[section];
 }
 
 function parseSettingsSection<TSection extends SettingsSectionId>(section: TSection, value: unknown) {
