@@ -195,6 +195,15 @@ Generated application tables can also carry table-level record hooks in schema m
 - `blocking` hooks must succeed for the request to continue
 - `after*` hooks run after the row mutation has happened, so blocking there delays completion but does not roll back the already-written row
 
+Backend service code can also perform narrow trusted mutations through the CRUD service without using `superadmin` or raw SQL.
+
+- this path is internal-only and is not reachable from HTTP auth
+- it uses `access: { actorKind: 'system' }` together with `trustedMutation`
+- `trustedMutation` must carry an explicit `reason` and explicit audit metadata
+- `createRecord` and `updateRecord` require explicit `allowedFields`; `updateRecord` and `deleteRecord` require explicit row predicates in `where`
+- the trusted path still runs the normal mutation pipeline: table hooks, mutation subscribers, and outbound webhook dispatch
+- the current implementation is intentionally narrow: it is for backend service code mutating generated application tables after separate domain verification has already succeeded
+
 ### 6.4 Admin Dashboard
 
 The admin app is a React frontend.

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { dirname, delimiter, resolve } from "node:path";
 import postgres from "postgres";
 
 const sourceDatabaseUrl =
@@ -9,6 +9,7 @@ const sourceDatabaseUrl =
   "postgres://postgres:postgres@localhost:5432/authend";
 
 const bunExecutable = process.execPath;
+const bunBinDir = dirname(bunExecutable);
 const rootDir = resolve(import.meta.dir, "../../../.."); // monorepo root (matches previous `src/` depth)
 const adminDatabaseUrl = new URL(sourceDatabaseUrl);
 adminDatabaseUrl.pathname = "/postgres";
@@ -16,6 +17,7 @@ adminDatabaseUrl.pathname = "/postgres";
 function createBootstrapEnv(databaseUrl: string, overrides: Record<string, string | undefined> = {}) {
   return {
     ...process.env,
+    PATH: [bunBinDir, process.env.PATH ?? ""].filter(Boolean).join(delimiter),
     TEST_DATABASE_URL: "",
     NODE_ENV: "test",
     APP_URL: "http://localhost:7002",

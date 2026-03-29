@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { dirname, delimiter, resolve } from "node:path";
 
 const sourceDatabaseUrl =
   process.env.TEST_DATABASE_URL ??
@@ -8,11 +8,13 @@ const sourceDatabaseUrl =
   "postgres://postgres:postgres@localhost:5432/authend";
 
 const bunExecutable = process.execPath;
+const bunBinDir = dirname(bunExecutable);
 const apiDir = resolve(import.meta.dir, "../..");
 
 function createValidateEnv(overrides: Record<string, string | undefined> = {}) {
   return {
     ...process.env,
+    PATH: [bunBinDir, process.env.PATH ?? ""].filter(Boolean).join(delimiter),
     NODE_ENV: "production",
     APP_URL: "https://api.authend.test",
     ADMIN_URL: "https://admin.authend.test",

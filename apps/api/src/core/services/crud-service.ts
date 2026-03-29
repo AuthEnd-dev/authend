@@ -16,6 +16,7 @@ import { sql } from '../db/client';
 import { listPluginCapabilityManifests } from './plugin-service';
 import { dispatchWebhookEvent } from './webhook-service';
 import { executeAutomationRecipe } from './automation-service';
+import { writeAuditLog } from './audit-service';
 import crypto from 'crypto';
 
 export type DataMutationPayload =
@@ -24,6 +25,7 @@ export type DataMutationPayload =
   | { kind: 'deleted'; table: string; id: string; rawRecord: Record<string, unknown> };
 
 type DataRecord = Record<string, unknown>;
+type CrudAccessActor = ApiAccessActor | 'system';
 
 let dataMutationSubscriber: ((payload: DataMutationPayload) => void) | null = null;
 
@@ -494,9 +496,13 @@ function selectColumnsSql(descriptor: TableDescriptor) {
   return descriptor.fields.map((field) => quoteIdentifier(field.name)).join(', ');
 }
 
-function fieldRuleAllowsActor(ruleActors: ApiAccessActor[] | undefined, actorKind: ApiAccessActor) {
+function fieldRuleAllowsActor(ruleActors: ApiAccessActor[] | undefined, actorKind: CrudAccessActor) {
   if (actorKind === 'superadmin') {
     return true;
+  }
+
+  if (actorKind === 'system') {
+    return false;
   }
 
   if (!ruleActors) {
@@ -509,12 +515,16 @@ function fieldRuleAllowsActor(ruleActors: ApiAccessActor[] | undefined, actorKin
 function hiddenFieldSetForActor(
   descriptor: TableDescriptor,
   config?: TableApiConfig | null,
-  actorKind: ApiAccessActor = 'public',
+  actorKind: CrudAccessActor = 'public',
 ) {
   const hiddenFields = new Set([
     ...(config?.hiddenFields ?? []),
     ...(descriptor.source === 'builtin' ? builtinTableExposurePolicy(descriptor.table).redactedFields : []),
   ]);
+
+  if (actorKind === 'superadmin' || actorKind === 'system') {
+    return hiddenFields;
+  }
 
   for (const field of descriptor.fields) {
     if (!fieldRuleAllowsActor(config?.fieldVisibility?.[field.name]?.read, actorKind)) {
@@ -525,8 +535,22 @@ function hiddenFieldSetForActor(
   return hiddenFields;
 }
 
-function assertWritableDescriptor(descriptor: TableDescriptor, access?: RecordAccessContext) {
+function assertWritableDescriptor(
+  descriptor: TableDescriptor,
+  access?: RecordAccessContext,
+  trustedMutation?: ResolvedTrustedMutation | null,
+) {
   if (access?.actorKind === 'superadmin') {
+    return;
+  }
+
+  if (access?.actorKind === 'system') {
+    if (!trustedMutation) {
+      throw new HttpError(403, 'System access requires trustedMutation');
+    }
+    if (descriptor.source !== 'generated') {
+      throw new HttpError(403, `Table ${descriptor.table} is read-only`);
+    }
     return;
   }
 
@@ -876,11 +900,25 @@ type IncludeRelation = {
 };
 
 export type RecordAccessContext = {
-  actorKind?: ApiAccessActor;
+  actorKind?: CrudAccessActor;
   ownershipField?: string | null;
   subjectId?: string | null;
   bypassOwnership?: boolean;
   permissions?: ReadonlySet<string>;
+};
+
+export type TrustedMutationAudit = {
+  action: string;
+  actorUserId?: string | null;
+  target: string;
+  payload?: Record<string, unknown>;
+};
+
+export type TrustedMutationOptions = {
+  allowedFields?: string[];
+  where?: Record<string, unknown>;
+  audit: TrustedMutationAudit;
+  reason: string;
 };
 
 export type ListRecordsOptions = {
@@ -893,17 +931,157 @@ export type ListRecordsOptions = {
 
 export type MutationRecordOptions = {
   access?: RecordAccessContext;
+  trustedMutation?: TrustedMutationOptions;
 };
+
+type ResolvedTrustedMutation = {
+  allowedFields: Set<string>;
+  whereEntries: Array<[string, unknown]>;
+  audit: TrustedMutationAudit;
+  reason: string;
+};
+
+function describeFields(fields: string[]) {
+  return fields.join(', ');
+}
+
+function resolveTrustedMutation(
+  operation: 'create' | 'update' | 'delete',
+  descriptor: TableDescriptor,
+  options: MutationRecordOptions,
+): ResolvedTrustedMutation | null {
+  const actorKind = options.access?.actorKind;
+  const trustedMutation = options.trustedMutation;
+
+  if (actorKind !== 'system') {
+    if (trustedMutation) {
+      throw new HttpError(400, 'trustedMutation requires access.actorKind = system');
+    }
+    return null;
+  }
+
+  if (!trustedMutation) {
+    throw new HttpError(403, 'System access requires trustedMutation');
+  }
+
+  const reason = trustedMutation.reason.trim();
+  if (!reason) {
+    throw new HttpError(400, 'trustedMutation.reason is required');
+  }
+
+  const action = trustedMutation.audit.action.trim();
+  const target = trustedMutation.audit.target.trim();
+  if (!action || !target) {
+    throw new HttpError(400, 'trustedMutation.audit.action and trustedMutation.audit.target are required');
+  }
+
+  const allowedFields = Array.from(new Set(trustedMutation.allowedFields ?? []));
+  if (operation !== 'delete' && allowedFields.length === 0) {
+    throw new HttpError(400, `trustedMutation.allowedFields is required for system ${operation}`);
+  }
+
+  const unknownAllowedFields = allowedFields.filter(
+    (field) => field !== descriptor.primaryKey && !descriptor.fields.some((entry) => entry.name === field),
+  );
+  if (unknownAllowedFields.length > 0) {
+    throw new HttpError(400, `Unknown trustedMutation.allowedFields ${describeFields(unknownAllowedFields)}`);
+  }
+
+  const whereEntries = Object.entries(trustedMutation.where ?? {});
+  if ((operation === 'update' || operation === 'delete') && whereEntries.length === 0) {
+    throw new HttpError(400, `trustedMutation.where is required for system ${operation}`);
+  }
+
+  const unknownWhereFields = whereEntries
+    .map(([field]) => field)
+    .filter((field) => !descriptor.fields.some((entry) => entry.name === field));
+  if (unknownWhereFields.length > 0) {
+    throw new HttpError(
+      400,
+      `Unknown trustedMutation.where field${unknownWhereFields.length === 1 ? '' : 's'} ${describeFields(unknownWhereFields)}`,
+    );
+  }
+
+  return {
+    allowedFields: new Set(allowedFields),
+    whereEntries,
+    audit: {
+      ...trustedMutation.audit,
+      action,
+      target,
+    },
+    reason,
+  };
+}
+
+function applyTrustedMutationWhere(
+  descriptor: TableDescriptor,
+  whereClauses: string[],
+  values: unknown[],
+  trustedMutation: ResolvedTrustedMutation | null,
+) {
+  if (!trustedMutation) {
+    return;
+  }
+
+  for (const [fieldName, rawValue] of trustedMutation.whereEntries) {
+    const field = descriptor.fields.find((entry) => entry.name === fieldName);
+    if (!field) {
+      throw new HttpError(400, `Unknown trustedMutation.where field ${fieldName}`);
+    }
+
+    if (rawValue === null || rawValue === undefined) {
+      whereClauses.push(`${quoteIdentifier(fieldName)} is null`);
+      continue;
+    }
+
+    values.push(serialiseValue(rawValue));
+    whereClauses.push(`${quoteIdentifier(fieldName)} = ${placeholderForField(field, values.length)}`);
+  }
+}
+
+async function writeTrustedMutationAudit(
+  operation: 'create' | 'update' | 'delete',
+  table: string,
+  recordId: string,
+  trustedMutation: ResolvedTrustedMutation | null,
+) {
+  if (!trustedMutation) {
+    return;
+  }
+
+  await writeAuditLog({
+    action: trustedMutation.audit.action,
+    actorUserId: trustedMutation.audit.actorUserId ?? null,
+    target: trustedMutation.audit.target,
+    payload: {
+      ...(trustedMutation.audit.payload ?? {}),
+      trustedMutation: {
+        actorKind: 'system',
+        operation,
+        table,
+        recordId,
+        reason: trustedMutation.reason,
+        allowedFields: Array.from(trustedMutation.allowedFields),
+        whereFields: trustedMutation.whereEntries.map(([field]) => field),
+      },
+    },
+  });
+}
 
 function fieldIsWritable(
   fieldName: string,
   descriptor: TableDescriptor,
   config: TableApiConfig | null | undefined,
   operation: 'create' | 'update',
-  actorKind: ApiAccessActor = 'public',
+  actorKind: CrudAccessActor = 'public',
 ) {
   if (actorKind === 'superadmin') {
     return true;
+  }
+
+  if (actorKind === 'system') {
+    return false;
   }
 
   if (!descriptor.fields.some((field) => field.name === fieldName)) {
@@ -974,6 +1152,23 @@ function canAccessResourceOperation(
         bypassOwnership: true,
         permissions: access?.permissions,
       },
+    } as const;
+  }
+
+  if (actorKind === 'system') {
+    const allowed = resource.descriptor.source === 'generated' && isOperationEnabled(resource, operation);
+    return {
+      allowed,
+      reason: allowed ? 'allowed' : 'forbidden',
+      access: allowed
+        ? {
+            actorKind,
+            ownershipField: null,
+            subjectId: access?.subjectId ?? null,
+            bypassOwnership: true,
+            permissions: access?.permissions,
+          }
+        : null,
     } as const;
   }
 
@@ -1239,7 +1434,8 @@ export async function listRecords(table: string, query: URLSearchParams, options
         const relatedDescriptor = relatedResource.descriptor;
         const relatedWhereClauses = [`${quoteIdentifier(relation.targetField)} = $1`];
         const relatedValues: unknown[] = [foreignId];
-        applyOwnershipFilter(relatedDescriptor, relatedWhereClauses, relatedValues, relatedReadAccess.access);
+        const relatedAccess = relatedReadAccess.access ?? undefined;
+        applyOwnershipFilter(relatedDescriptor, relatedWhereClauses, relatedValues, relatedAccess);
         const [related] = await sql.unsafe<Record<string, unknown>[]>(
           `select ${selectColumnsSql(relatedDescriptor)} from ${quoteIdentifier(relation.targetTable)}
            where ${relatedWhereClauses.join(' and ')}
@@ -1253,7 +1449,7 @@ export async function listRecords(table: string, query: URLSearchParams, options
         }
 
         sanitisedItem[relation.resultKey] = related
-          ? await sanitiseRecordForTable(relation.targetTable, related, relatedReadAccess.access, hiddenFieldCache)
+          ? await sanitiseRecordForTable(relation.targetTable, related, relatedAccess, hiddenFieldCache)
           : null;
       }
 
@@ -1306,7 +1502,8 @@ export async function getRecord(table: string, id: string, options: MutationReco
 export async function createRecord(table: string, payload: Record<string, unknown>, options: MutationRecordOptions = {}) {
   const resource = await resolveTableResource(table);
   assertDataApiReadable(resource);
-  assertWritableDescriptor(resource.descriptor, options.access);
+  const trustedMutation = resolveTrustedMutation('create', resource.descriptor, options);
+  assertWritableDescriptor(resource.descriptor, options.access, trustedMutation);
 
   // Execute before hooks
   await executeTableHooks(resource.descriptor.hooks, 'beforeCreate', table, payload);
@@ -1330,11 +1527,29 @@ export async function createRecord(table: string, payload: Record<string, unknow
   }
 
   const actorKind = options.access?.actorKind ?? 'public';
-  const columns = Object.keys(nextPayload).filter((column) => descriptor.fields.some((field) => field.name === column));
-  const blockedColumns = columns.filter((column) => !fieldIsWritable(column, descriptor, resource.config, 'create', actorKind));
+  const requestedColumns = Object.keys(nextPayload);
+  if (trustedMutation) {
+    const unknownColumns = requestedColumns.filter((column) => !descriptor.fields.some((field) => field.name === column));
+    if (unknownColumns.length > 0) {
+      throw new HttpError(400, `Unknown field${unknownColumns.length === 1 ? '' : 's'} ${describeFields(unknownColumns)}`);
+    }
+  }
+  const columns = requestedColumns.filter((column) => descriptor.fields.some((field) => field.name === column));
+  const blockedColumns = columns.filter((column) =>
+    column === descriptor.primaryKey
+      ? false
+      : trustedMutation
+        ? !trustedMutation.allowedFields.has(column)
+        : !fieldIsWritable(column, descriptor, resource.config, 'create', actorKind),
+  );
 
   if (blockedColumns.length > 0) {
-    throw new HttpError(403, `Cannot set protected field${blockedColumns.length === 1 ? '' : 's'} ${blockedColumns.join(', ')}`);
+    throw new HttpError(
+      403,
+      trustedMutation
+        ? `trustedMutation cannot set field${blockedColumns.length === 1 ? '' : 's'} ${describeFields(blockedColumns)}`
+        : `Cannot set protected field${blockedColumns.length === 1 ? '' : 's'} ${describeFields(blockedColumns)}`,
+    );
   }
 
   if (columns.length === 0) {
@@ -1360,6 +1575,8 @@ export async function createRecord(table: string, payload: Record<string, unknow
     throw new HttpError(500, 'Failed to create record');
   }
 
+  await writeTrustedMutationAudit('create', descriptor.table, String(record[descriptor.primaryKey]), trustedMutation);
+
   emitDataMutationIfConfigured({
     kind: 'created',
     table,
@@ -1379,7 +1596,8 @@ export async function updateRecord(
 ) {
   const resource = await resolveTableResource(table);
   assertDataApiReadable(resource);
-  assertWritableDescriptor(resource.descriptor, options.access);
+  const trustedMutation = resolveTrustedMutation('update', resource.descriptor, options);
+  assertWritableDescriptor(resource.descriptor, options.access, trustedMutation);
 
   // Execute before hooks
   await executeTableHooks(resource.descriptor.hooks, 'beforeUpdate', table, { id, data: payload });
@@ -1391,19 +1609,33 @@ export async function updateRecord(
   }
 
   const actorKind = options.access?.actorKind ?? 'public';
-  const columns = Object.keys(nextPayload).filter(
-    (column) => column !== descriptor.primaryKey && descriptor.fields.some((field) => field.name === column),
+  const requestedColumns = Object.keys(nextPayload).filter((column) => column !== descriptor.primaryKey);
+  if (trustedMutation) {
+    const unknownColumns = requestedColumns.filter((column) => !descriptor.fields.some((field) => field.name === column));
+    if (unknownColumns.length > 0) {
+      throw new HttpError(400, `Unknown field${unknownColumns.length === 1 ? '' : 's'} ${describeFields(unknownColumns)}`);
+    }
+  }
+  const columns = requestedColumns.filter((column) => descriptor.fields.some((field) => field.name === column));
+  const blockedColumns = columns.filter((column) =>
+    trustedMutation
+      ? !trustedMutation.allowedFields.has(column)
+      : !fieldIsWritable(column, descriptor, resource.config, 'update', actorKind),
   );
-  const blockedColumns = columns.filter((column) => !fieldIsWritable(column, descriptor, resource.config, 'update', actorKind));
 
   if (blockedColumns.length > 0) {
     throw new HttpError(
       403,
-      `Cannot update protected field${blockedColumns.length === 1 ? '' : 's'} ${blockedColumns.join(', ')}`,
+      trustedMutation
+        ? `trustedMutation cannot update field${blockedColumns.length === 1 ? '' : 's'} ${describeFields(blockedColumns)}`
+        : `Cannot update protected field${blockedColumns.length === 1 ? '' : 's'} ${describeFields(blockedColumns)}`,
     );
   }
 
   if (columns.length === 0) {
+    if (trustedMutation) {
+      throw new HttpError(400, 'trustedMutation requires at least one allowed payload field');
+    }
     const existing = await getRecord(table, id, options);
     return existing;
   }
@@ -1419,6 +1651,7 @@ export async function updateRecord(
   values.push(id);
   const whereClauses = [`${quoteIdentifier(descriptor.primaryKey)} = $${values.length}`];
   applyOwnershipFilter(descriptor, whereClauses, values, options.access);
+  applyTrustedMutationWhere(descriptor, whereClauses, values, trustedMutation);
 
   const [record] = await sql.unsafe<DataRecord[]>(
     `update ${quoteIdentifier(descriptor.table)}
@@ -1431,6 +1664,8 @@ export async function updateRecord(
   if (!record) {
     throw new HttpError(404, 'Record not found');
   }
+
+  await writeTrustedMutationAudit('update', descriptor.table, String(record[descriptor.primaryKey]), trustedMutation);
 
   emitDataMutationIfConfigured({
     kind: 'updated',
@@ -1446,7 +1681,8 @@ export async function updateRecord(
 export async function deleteRecord(table: string, id: string, options: MutationRecordOptions = {}) {
   const resource = await resolveTableResource(table);
   assertDataApiReadable(resource);
-  assertWritableDescriptor(resource.descriptor, options.access);
+  const trustedMutation = resolveTrustedMutation('delete', resource.descriptor, options);
+  assertWritableDescriptor(resource.descriptor, options.access, trustedMutation);
 
   // Execute before hooks
   await executeTableHooks(resource.descriptor.hooks, 'beforeDelete', table, { id });
@@ -1455,6 +1691,7 @@ export async function deleteRecord(table: string, id: string, options: MutationR
   const values: unknown[] = [id];
   const whereClauses = [`${quoteIdentifier(descriptor.primaryKey)} = $1`];
   applyOwnershipFilter(descriptor, whereClauses, values, options.access);
+  applyTrustedMutationWhere(descriptor, whereClauses, values, trustedMutation);
 
   const [record] = await sql.unsafe<DataRecord[]>(
     `delete from ${quoteIdentifier(descriptor.table)}
@@ -1466,6 +1703,8 @@ export async function deleteRecord(table: string, id: string, options: MutationR
   if (!record) {
     throw new HttpError(404, 'Record not found');
   }
+
+  await writeTrustedMutationAudit('delete', descriptor.table, String(record[descriptor.primaryKey]), trustedMutation);
 
   emitDataMutationIfConfigured({
     kind: 'deleted',

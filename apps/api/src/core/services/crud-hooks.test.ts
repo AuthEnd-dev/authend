@@ -62,6 +62,48 @@ function adminOnlyApiConfig(): TableBlueprint['api'] {
   };
 }
 
+function sessionOwnedApiConfig(fieldVisibility: NonNullable<TableBlueprint['api']>['fieldVisibility'] = {}): TableBlueprint['api'] {
+  return {
+    authMode: 'session' as const,
+    access: {
+      ownershipField: 'owner_user_id',
+      list: { actors: ['session', 'superadmin'], scope: 'own' as const },
+      get: { actors: ['session', 'superadmin'], scope: 'own' as const },
+      create: { actors: ['session', 'superadmin'], scope: 'own' as const },
+      update: { actors: ['session', 'superadmin'], scope: 'own' as const },
+      delete: { actors: ['session', 'superadmin'], scope: 'own' as const },
+    },
+    operations: {
+      list: true,
+      get: true,
+      create: true,
+      update: true,
+      delete: true,
+    },
+    pagination: {
+      enabled: true,
+      defaultPageSize: 20,
+      maxPageSize: 100,
+    },
+    filtering: {
+      enabled: true,
+      fields: ['owner_user_id', 'status'],
+    },
+    sorting: {
+      enabled: true,
+      fields: ['id', 'status'],
+      defaultField: 'id',
+      defaultOrder: 'desc' as const,
+    },
+    includes: {
+      enabled: false,
+      fields: [],
+    },
+    hiddenFields: [],
+    fieldVisibility,
+  };
+}
+
 function createTableBlueprint(name: string, hooks: SchemaDraft['tables'][number]['hooks']): TableBlueprint {
   return {
     name,
@@ -252,6 +294,61 @@ if (process.env.AUTHEND_CRUD_HOOKS_SUBPROCESS !== '1') {
               config: {},
             },
           ]),
+          {
+            name: 'trusted_mutation_events',
+            displayName: 'trusted mutation events',
+            primaryKey: 'id',
+            fields: [
+              {
+                name: 'id',
+                type: 'uuid',
+                nullable: false,
+                unique: true,
+                indexed: true,
+                default: 'gen_random_uuid()',
+              },
+              {
+                name: 'owner_user_id',
+                type: 'text',
+                nullable: false,
+                unique: false,
+                indexed: true,
+              },
+              {
+                name: 'status',
+                type: 'text',
+                nullable: false,
+                unique: false,
+                indexed: true,
+              },
+              {
+                name: 'protected_note',
+                type: 'text',
+                nullable: true,
+                unique: false,
+                indexed: false,
+              },
+            ],
+            indexes: [],
+            api: sessionOwnedApiConfig({
+              protected_note: {
+                read: ['session', 'superadmin'],
+                create: ['superadmin'],
+                update: ['superadmin'],
+              },
+            }),
+            hooks: [
+              {
+                id: 'trusted-after-update',
+                eventType: 'afterUpdate',
+                type: 'webhook',
+                url: 'https://hooks.test/trusted-after-update',
+                blocking: true,
+                enabled: true,
+                config: {},
+              },
+            ],
+          },
         ],
         relations: [],
       };
@@ -269,6 +366,16 @@ if (process.env.AUTHEND_CRUD_HOOKS_SUBPROCESS !== '1') {
     async function countRows(table: string) {
       const [row] = await dbModule.sql.unsafe<{ count: string }[]>(`select count(*)::text as count from "${table}"`);
       return Number(row?.count ?? 0);
+    }
+
+    async function auditEntries(action: string) {
+      return dbModule.sql.unsafe<Array<{ actorUserId: string | null; target: string; payload: Record<string, unknown> }>>(
+        `select actor_user_id as "actorUserId", target, payload
+         from "_audit_logs"
+         where action = $1
+         order by created_at asc`,
+        [action] as never[],
+      );
     }
 
     test('fires before and after hooks for create, update, and delete', async () => {
@@ -400,6 +507,224 @@ if (process.env.AUTHEND_CRUD_HOOKS_SUBPROCESS !== '1') {
 
       expect(backgroundStarted).toBe(true);
       callRelease(releaseBackground, 'Expected background hook to start');
+    });
+
+    test('system trusted mutations stay narrow, audited, and keep mutation side effects', async () => {
+      const fetchCalls: Array<{ url: string; payload: Record<string, unknown> }> = [];
+      const subscriberCalls: Array<{ kind: string; table: string; id: string }> = [];
+
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        fetchCalls.push({
+          url: String(input),
+          payload: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>,
+        });
+        return new Response('ok', { status: 200 });
+      }) as typeof fetch;
+
+      crudModule.setDataMutationSubscriber((payload) => {
+        subscriberCalls.push({
+          kind: payload.kind,
+          table: payload.table,
+          id: payload.id,
+        });
+      });
+
+      await dbModule.sql.unsafe(
+        `insert into "_webhooks" ("id", "url", "description", "secret", "events", "enabled", "created_at", "updated_at")
+         values ($1, $2, $3, $4, $5::jsonb, true, now(), now())`,
+        ['trusted-system-webhook', 'https://hooks.test/data-records', 'trusted mutation events', 'secret', JSON.stringify([
+          'data.record.created',
+          'data.record.updated',
+          'data.record.deleted',
+        ])] as never[],
+      );
+
+      const created = await crudModule.createRecord(
+        'trusted_mutation_events',
+        {
+          owner_user_id: 'user-1',
+          status: 'pending',
+          protected_note: 'device-verification-created',
+        },
+        {
+          access: {
+            actorKind: 'system',
+          },
+          trustedMutation: {
+            allowedFields: ['owner_user_id', 'status', 'protected_note'],
+            audit: {
+              action: 'trusted.mutation.created',
+              actorUserId: 'user-1',
+              target: 'approval-1',
+              payload: {
+                challengeId: 'challenge-1',
+              },
+            },
+            reason: 'seed verified approval request',
+          },
+        },
+      );
+
+      await expect(
+        crudModule.updateRecord(
+          'trusted_mutation_events',
+          String(created.id),
+          {
+            status: 'approved',
+            protected_note: 'session-should-not-write-this',
+          },
+          {
+            access: {
+              actorKind: 'session',
+              subjectId: 'user-1',
+              ownershipField: 'owner_user_id',
+              bypassOwnership: false,
+            },
+          },
+        ),
+      ).rejects.toThrow('Cannot update protected field protected_note');
+
+      const updated = await crudModule.updateRecord(
+        'trusted_mutation_events',
+        String(created.id),
+        {
+          status: 'approved',
+          protected_note: 'device-approved',
+        },
+        {
+          access: {
+            actorKind: 'system',
+          },
+          trustedMutation: {
+            allowedFields: ['status', 'protected_note'],
+            where: {
+              owner_user_id: 'user-1',
+              status: 'pending',
+            },
+            audit: {
+              action: 'trusted.mutation.updated',
+              actorUserId: 'user-1',
+              target: 'approval-1',
+              payload: {
+                challengeId: 'challenge-1',
+                deviceId: 'device-1',
+              },
+            },
+            reason: 'verified device approval decision',
+          },
+        },
+      );
+
+      expect(updated).toMatchObject({
+        id: created.id,
+        owner_user_id: 'user-1',
+        status: 'approved',
+        protected_note: 'device-approved',
+      });
+
+      await expect(
+        crudModule.updateRecord(
+          'trusted_mutation_events',
+          String(created.id),
+          {
+            status: 'replayed',
+          },
+          {
+            access: {
+              actorKind: 'system',
+            },
+            trustedMutation: {
+              allowedFields: ['status'],
+              where: {
+                owner_user_id: 'user-1',
+                status: 'pending',
+              },
+              audit: {
+                action: 'trusted.mutation.replayed',
+                actorUserId: 'user-1',
+                target: 'approval-1',
+              },
+              reason: 'replay should be rejected',
+            },
+          },
+        ),
+      ).rejects.toThrow('Record not found');
+
+      await crudModule.deleteRecord('trusted_mutation_events', String(created.id), {
+        access: {
+          actorKind: 'system',
+        },
+        trustedMutation: {
+          where: {
+            owner_user_id: 'user-1',
+            status: 'approved',
+          },
+          audit: {
+            action: 'trusted.mutation.deleted',
+            actorUserId: 'user-1',
+            target: 'approval-1',
+          },
+          reason: 'cleanup approved request',
+        },
+      });
+
+      await Bun.sleep(50);
+
+      expect(subscriberCalls).toEqual([
+        { kind: 'created', table: 'trusted_mutation_events', id: String(created.id) },
+        { kind: 'updated', table: 'trusted_mutation_events', id: String(created.id) },
+        { kind: 'deleted', table: 'trusted_mutation_events', id: String(created.id) },
+      ]);
+
+      expect(fetchCalls.some((call) => call.url === 'https://hooks.test/trusted-after-update')).toBe(true);
+      expect(fetchCalls.filter((call) => call.url === 'https://hooks.test/data-records')).toHaveLength(3);
+
+      const createAudit = await auditEntries('trusted.mutation.created');
+      const updateAudit = await auditEntries('trusted.mutation.updated');
+      const deleteAudit = await auditEntries('trusted.mutation.deleted');
+
+      expect(createAudit[0]).toMatchObject({
+        actorUserId: 'user-1',
+        target: 'approval-1',
+      });
+      expect(createAudit[0]?.payload).toMatchObject({
+        challengeId: 'challenge-1',
+        trustedMutation: {
+          actorKind: 'system',
+          operation: 'create',
+          table: 'trusted_mutation_events',
+          reason: 'seed verified approval request',
+          allowedFields: ['owner_user_id', 'status', 'protected_note'],
+          whereFields: [],
+        },
+      });
+
+      expect(updateAudit[0]?.payload).toMatchObject({
+        challengeId: 'challenge-1',
+        deviceId: 'device-1',
+        trustedMutation: {
+          actorKind: 'system',
+          operation: 'update',
+          table: 'trusted_mutation_events',
+          reason: 'verified device approval decision',
+          allowedFields: ['status', 'protected_note'],
+          whereFields: ['owner_user_id', 'status'],
+        },
+      });
+
+      expect(deleteAudit[0]?.payload).toMatchObject({
+        trustedMutation: {
+          actorKind: 'system',
+          operation: 'delete',
+          table: 'trusted_mutation_events',
+          reason: 'cleanup approved request',
+          allowedFields: [],
+          whereFields: ['owner_user_id', 'status'],
+        },
+      });
+
+      expect(await countRows('trusted_mutation_events')).toBe(0);
+      crudModule.setDataMutationSubscriber(null);
     });
   });
 }
