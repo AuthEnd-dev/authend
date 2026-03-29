@@ -8,22 +8,13 @@ import type { ExtensionPluginDefaults } from '../core/plugins/types';
  *
  * This file is declarative only. Do not perform writes or side effects here.
  */
-export const handwrittenPluginDefaults: ExtensionPluginDefaults[] = [];
-
-/**
- * Handwritten extension surface for built-in plugin defaults.
- *
- * Kept as `extensionPluginDefaults` for compatibility with existing callers and
- * tests that mutate this registry directly.
- */
-export const extensionPluginDefaults: ExtensionPluginDefaults[] = handwrittenPluginDefaults;
-
+export const pluginDefaults: ExtensionPluginDefaults[] = [];
 /*
 Example: enable the built-in social auth plugin for Google when env vars exist.
 
 Uncomment and adapt this for your fork:
 
-export const handwrittenPluginDefaults: ExtensionPluginDefaults[] = [
+export const pluginDefaults: ExtensionPluginDefaults[] = [
   {
     pluginId: "socialAuth",
     when: () => Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),

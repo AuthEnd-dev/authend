@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { PluginCapabilityState, PluginConfig, PluginExtensionBindings } from "@authend/shared";
 import type { PluginDefinition } from "../plugins/types";
-import { extensionPluginDefaults } from "../../extensions/plugin-defaults";
+import { pluginDefaults } from "../../extensions/plugin-defaults";
 
 function socialAuthDefinition(): PluginDefinition {
   return {
@@ -68,10 +68,10 @@ function seedState(input?: {
   };
 }
 
-const originalDefaults = [...extensionPluginDefaults];
+const originalDefaults = [...pluginDefaults];
 
 afterEach(() => {
-  extensionPluginDefaults.splice(0, extensionPluginDefaults.length, ...originalDefaults);
+  pluginDefaults.splice(0, pluginDefaults.length, ...originalDefaults);
   delete process.env.GOOGLE_CLIENT_ID;
 });
 
@@ -95,7 +95,7 @@ describe("plugin-orchestrator extension defaults", () => {
     process.env.SUPERADMIN_PASSWORD ??= "password123";
     process.env.GOOGLE_CLIENT_ID = "google-client-id";
 
-    extensionPluginDefaults.splice(0, extensionPluginDefaults.length, {
+    pluginDefaults.splice(0, pluginDefaults.length, {
       pluginId: "socialAuth",
       when: () => Boolean(process.env.GOOGLE_CLIENT_ID),
       enabled: true,
@@ -124,7 +124,7 @@ describe("plugin-orchestrator extension defaults", () => {
     process.env.SUPERADMIN_EMAIL ??= "admin@example.com";
     process.env.SUPERADMIN_PASSWORD ??= "password123";
 
-    extensionPluginDefaults.splice(0, extensionPluginDefaults.length, {
+    pluginDefaults.splice(0, pluginDefaults.length, {
       pluginId: "socialAuth",
       enabled: false,
       configPatch: {
@@ -133,7 +133,7 @@ describe("plugin-orchestrator extension defaults", () => {
     });
 
     const { pluginOrchestratorTestUtils } = await import("./plugin-orchestrator");
-    extensionPluginDefaults.push({
+    pluginDefaults.push({
       pluginId: "socialAuth",
       enabled: true,
       configPatch: {
@@ -153,7 +153,7 @@ describe("plugin-orchestrator extension defaults", () => {
     process.env.SUPERADMIN_EMAIL ??= "admin@example.com";
     process.env.SUPERADMIN_PASSWORD ??= "password123";
 
-    extensionPluginDefaults.splice(0, extensionPluginDefaults.length, {
+    pluginDefaults.splice(0, pluginDefaults.length, {
       pluginId: "socialAuth",
       enabled: true,
       configPatch: {
@@ -180,7 +180,7 @@ describe("plugin-orchestrator extension defaults", () => {
     process.env.SUPERADMIN_EMAIL ??= "admin@example.com";
     process.env.SUPERADMIN_PASSWORD ??= "password123";
 
-    extensionPluginDefaults.splice(0, extensionPluginDefaults.length, {
+    pluginDefaults.splice(0, pluginDefaults.length, {
       pluginId: "socialAuthx" as PluginDefinition["id"],
       enabled: true,
     });

@@ -13,7 +13,7 @@ import {
 } from "../core/services/schema-helpers";
 import { forkAuthContributions } from "./auth";
 import { forkBootstrapTasks, forkRuntimeServices } from "./lifecycle";
-import { extensionPluginDefaults } from "./plugin-defaults";
+import { pluginDefaults } from "./plugin-defaults";
 import { extensionPluginDefinitions } from "./plugins";
 import { registerExtensionRoutes } from "./routes";
 import { getExtensionSchemaDraft } from "./schema";
@@ -103,7 +103,7 @@ describe("extensions entrypoints", () => {
   });
 
   test("plugin defaults registry defaults to an array", () => {
-    expect(Array.isArray(extensionPluginDefaults)).toBe(true);
+    expect(Array.isArray(pluginDefaults)).toBe(true);
   });
 
   test("lifecycle registries default to arrays", () => {

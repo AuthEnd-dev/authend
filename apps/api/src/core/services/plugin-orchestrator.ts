@@ -22,7 +22,7 @@ import { HttpError } from "../lib/http";
 import { fileExists, writeTextFile } from "../lib/fs";
 import { resolveGeneratedPluginDefaultsFile } from "../lib/generated-artifacts";
 import { extensionHandlers, getExtensionHandlerDefinition } from "../plugins/extension-registry";
-import { extensionPluginDefaults, handwrittenPluginDefaults } from "../../extensions/plugin-defaults";
+import { pluginDefaults } from "../../extensions/plugin-defaults";
 import {
   ORGANIZATION_INVITATION_HOOK_KEYS,
   ORGANIZATION_TEAM_HOOK_KEYS,
@@ -80,7 +80,7 @@ function applyExtensionDefaultsToSeedState(
     capabilityState: PluginCapabilityState;
     extensionBindings: PluginExtensionBindings;
   },
-  defaults: ExtensionPluginDefaults[] = extensionPluginDefaults,
+  defaults: ExtensionPluginDefaults[] = pluginDefaults,
 ) {
   let next = {
     enabled: seed.enabled,
@@ -108,7 +108,7 @@ function applyExtensionDefaultsToSeedState(
   return next;
 }
 
-function validateExtensionPluginDefaults(defaults: ExtensionPluginDefaults[] = extensionPluginDefaults) {
+function validateExtensionPluginDefaults(defaults: ExtensionPluginDefaults[] = pluginDefaults) {
   const definitionIds = new Set(pluginRegistry.map((entry) => entry.id));
 
   for (const entry of defaults) {
@@ -162,7 +162,7 @@ export async function writeGeneratedPluginDefaultsSnapshot() {
           capabilityState: normalizeCapabilityState(definition, {}),
           extensionBindings: normalizeExtensionBindings(definition, {}),
         },
-        handwrittenPluginDefaults,
+        pluginDefaults,
       );
 
       const entry: PersistedPluginDefaultsEntry = {
@@ -380,7 +380,7 @@ alter table "_plugin_configs" add column if not exists "extension_bindings" json
 
 export async function seedPluginInstallStates() {
   await ensurePluginConfigStateSchema();
-  const defaults = [...extensionPluginDefaults, ...(await loadGeneratedExtensionPluginDefaults())];
+  const defaults = [...pluginDefaults, ...(await loadGeneratedExtensionPluginDefaults())];
   validateExtensionPluginDefaults(defaults);
 
   for (const definition of pluginRegistry) {
