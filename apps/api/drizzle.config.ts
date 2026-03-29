@@ -11,7 +11,7 @@ export default defineConfig({
   out: process.env.AUTHEND_DRIZZLE_MIGRATIONS_DIR ?? "./generated/migrations",
   dialect: "postgresql",
   migrations: {
-    prefix: "none",
+    prefix: "index",
   },
   dbCredentials: {
     url: process.env.DATABASE_URL ?? "",

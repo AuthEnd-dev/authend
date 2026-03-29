@@ -208,6 +208,9 @@ async function runDrizzleGenerate(input: {
   custom?: boolean;
 }) {
   const { tempRoot } = await createTempDrizzleWorkspace();
+  const apiRoot = resolve(import.meta.dir, "../../..");
+  const relativeOutDir = relative(apiRoot, input.outDir).replaceAll("\\", "/");
+  const configOutDir = relativeOutDir.startsWith(".") ? relativeOutDir : `./${relativeOutDir}`;
 
   try {
     const drizzleEnv = { ...process.env } as Record<string, string | undefined>;
@@ -239,9 +242,9 @@ async function runDrizzleGenerate(input: {
 export default defineConfig({
   dialect: "postgresql",
   schema: ${JSON.stringify(input.schemaPaths)},
-  out: ${JSON.stringify(input.outDir)},
+  out: ${JSON.stringify(configOutDir)},
   migrations: {
-    prefix: "none",
+    prefix: "index",
   },
 });
 `,
@@ -257,7 +260,7 @@ export default defineConfig({
       .join(" ");
 
     const subprocess = spawnSync("/bin/zsh", ["-lc", command], {
-      cwd: resolve(import.meta.dir, "../../.."),
+      cwd: apiRoot,
       env: {
         PATH: drizzleEnv.PATH,
         HOME: drizzleEnv.HOME,
