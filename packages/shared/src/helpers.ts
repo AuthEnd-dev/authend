@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { schemaDraftSchema } from "./contracts";
+import { schemaDraftSchema, tableBlueprintSchema } from "./contracts";
 import type {
   ApiAccessActor,
   ApiAccessScope,
@@ -11,6 +11,7 @@ import type {
   TableApiAccess,
   TableApiPolicyPreset,
   TableBlueprint,
+  TableBlueprintInput,
 } from "./contracts";
 
 /** Tables exposed as builtin data resources; relation targets may point here without being in the draft. */
@@ -563,13 +564,15 @@ export function defaultIdField(): FieldBlueprint {
   };
 }
 
-export function withDefaultId(table: TableBlueprint): TableBlueprint {
-  if (table.fields.some((field) => field.name === table.primaryKey)) {
-    return table;
-  }
+export function withDefaultId(table: TableBlueprintInput): TableBlueprint {
+  const primaryKey = table.primaryKey ?? "id";
+  const fields = table.fields.some((field) => field.name === primaryKey)
+    ? table.fields
+    : [defaultIdField(), ...table.fields];
 
-  return {
+  return tableBlueprintSchema.parse({
     ...table,
-    fields: [defaultIdField(), ...table.fields],
-  };
+    primaryKey,
+    fields,
+  });
 }

@@ -270,4 +270,109 @@ describe('schema-service', () => {
     expect(first).toEndWith('_schema_apply');
     expect(different).not.toBe(first);
   });
+
+  test('orders newly created tables so inline foreign keys reference tables created earlier', async () => {
+    process.env.APP_URL ??= 'http://localhost:7002';
+    process.env.DATABASE_URL ??= 'postgres://postgres:postgres@localhost:5432/authend';
+    process.env.BETTER_AUTH_SECRET ??= 'test-secret-value-with-24-chars';
+    process.env.SUPERADMIN_EMAIL ??= 'admin@example.com';
+    process.env.SUPERADMIN_PASSWORD ??= 'password123';
+
+    const { schemaServiceTestUtils } = await import('./schema-service');
+
+    const draft: SchemaDraftInput = {
+      tables: [
+        {
+          name: 'pulse_approval_requests',
+          displayName: 'Pulse Approval Requests',
+          primaryKey: 'id',
+          fields: [
+            { name: 'id', type: 'text', nullable: false, unique: true, indexed: true },
+            {
+              name: 'approved_by_device_id',
+              type: 'text',
+              nullable: true,
+              unique: false,
+              indexed: true,
+              references: {
+                table: 'pulse_devices',
+                column: 'id',
+                onDelete: 'set null',
+                onUpdate: 'cascade',
+              },
+            },
+          ],
+          indexes: [],
+          api: {
+            authMode: 'superadmin',
+            access: {
+              ownershipField: null,
+              list: { actors: ['superadmin'], scope: 'all' },
+              get: { actors: ['superadmin'], scope: 'all' },
+              create: { actors: ['superadmin'], scope: 'all' },
+              update: { actors: ['superadmin'], scope: 'all' },
+              delete: { actors: ['superadmin'], scope: 'all' },
+            },
+            operations: { list: true, get: true, create: true, update: true, delete: true },
+            pagination: { enabled: true, defaultPageSize: 20, maxPageSize: 100 },
+            filtering: { enabled: true, fields: [] },
+            sorting: { enabled: true, fields: [], defaultOrder: 'desc' },
+            includes: { enabled: true, fields: [] },
+            hiddenFields: [],
+            fieldVisibility: {},
+          },
+          hooks: [],
+        },
+        {
+          name: 'pulse_devices',
+          displayName: 'Pulse Devices',
+          primaryKey: 'id',
+          fields: [
+            { name: 'id', type: 'text', nullable: false, unique: true, indexed: true },
+            { name: 'user_id', type: 'text', nullable: false, unique: false, indexed: true },
+          ],
+          indexes: [],
+          api: {
+            authMode: 'superadmin',
+            access: {
+              ownershipField: null,
+              list: { actors: ['superadmin'], scope: 'all' },
+              get: { actors: ['superadmin'], scope: 'all' },
+              create: { actors: ['superadmin'], scope: 'all' },
+              update: { actors: ['superadmin'], scope: 'all' },
+              delete: { actors: ['superadmin'], scope: 'all' },
+            },
+            operations: { list: true, get: true, create: true, update: true, delete: true },
+            pagination: { enabled: true, defaultPageSize: 20, maxPageSize: 100 },
+            filtering: { enabled: true, fields: [] },
+            sorting: { enabled: true, fields: [], defaultOrder: 'desc' },
+            includes: { enabled: true, fields: [] },
+            hiddenFields: [],
+            fieldVisibility: {},
+          },
+          hooks: [],
+        },
+      ],
+      relations: [],
+    };
+
+    const planned = schemaServiceTestUtils.buildPreviewStatements({
+      current: { tables: [], relations: [] },
+      draft,
+      columns: [],
+      indexes: [],
+      foreignKeys: [],
+    });
+
+    const createDevicesIndex = planned.statements.findIndex((statement) =>
+      statement.includes('create table if not exists "pulse_devices"'),
+    );
+    const createApprovalsIndex = planned.statements.findIndex((statement) =>
+      statement.includes('create table if not exists "pulse_approval_requests"'),
+    );
+
+    expect(createDevicesIndex).toBeGreaterThanOrEqual(0);
+    expect(createApprovalsIndex).toBeGreaterThanOrEqual(0);
+    expect(createDevicesIndex).toBeLessThan(createApprovalsIndex);
+  });
 });

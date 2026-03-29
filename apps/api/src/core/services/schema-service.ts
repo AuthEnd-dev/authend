@@ -346,6 +346,7 @@ export const schemaServiceTestUtils = {
   renderSchemaModule,
   buildPreviewStatements,
   migrationSqlKey,
+  sortNewTablesForCreation,
 };
 
 function migrationChecksum(sqlText: string) {
@@ -372,6 +373,65 @@ function migrationSqlKey(prefix: string, sqlText?: string) {
 
 function relationSignature(relation: SchemaDraft["relations"][number]) {
   return `${relation.sourceTable}|${relation.sourceField}|${relation.targetTable}|${relation.targetField}|${relation.onDelete}|${relation.onUpdate}`;
+}
+
+function sortNewTablesForCreation(tables: TableBlueprint[]) {
+  const tablesByName = new Map(tables.map((table) => [table.name, withDefaultId(table)]));
+  const remainingDependencies = new Map<string, Set<string>>();
+  const dependents = new Map<string, Set<string>>();
+
+  for (const table of tablesByName.values()) {
+    const deps = new Set(
+      table.fields
+        .map(ensureFieldDefaults)
+        .map((field) => field.references?.table)
+        .filter((name): name is string => typeof name === "string" && tablesByName.has(name) && name !== table.name),
+    );
+    remainingDependencies.set(table.name, deps);
+
+    for (const dep of deps) {
+      dependents.set(dep, new Set([...(dependents.get(dep) ?? []), table.name]));
+    }
+  }
+
+  const ready = tables
+    .map((table) => table.name)
+    .filter((name) => (remainingDependencies.get(name)?.size ?? 0) === 0);
+  const ordered: TableBlueprint[] = [];
+  const visited = new Set<string>();
+
+  while (ready.length > 0) {
+    const nextName = ready.shift()!;
+    if (visited.has(nextName)) {
+      continue;
+    }
+
+    visited.add(nextName);
+    ordered.push(tablesByName.get(nextName)!);
+
+    for (const dependentName of dependents.get(nextName) ?? []) {
+      const deps = remainingDependencies.get(dependentName);
+      if (!deps) {
+        continue;
+      }
+      deps.delete(nextName);
+      if (deps.size === 0) {
+        ready.push(dependentName);
+      }
+    }
+  }
+
+  if (ordered.length === tables.length) {
+    return ordered;
+  }
+
+  for (const table of tables) {
+    if (!visited.has(table.name)) {
+      ordered.push(tablesByName.get(table.name)!);
+    }
+  }
+
+  return ordered;
 }
 
 function mergeDraftWithExtensions(base: SchemaDraft): SchemaDraft {
@@ -593,8 +653,11 @@ function buildPreviewStatements(input: {
   indexes: LiveIndex[];
   foreignKeys: LiveForeignKey[];
 }) {
-  const currentByName = new Map(input.current.tables.map((table) => [table.name, withDefaultId(table)]));
-  const nextByName = new Map(input.draft.tables.map((table) => [table.name, withDefaultId(table)]));
+  const currentTables = input.current.tables.map(withDefaultId);
+  const nextTables = input.draft.tables.map(withDefaultId);
+  const nextRelations = input.draft.relations ?? [];
+  const currentByName = new Map(currentTables.map((table) => [table.name, table]));
+  const nextByName = new Map(nextTables.map((table) => [table.name, table]));
   const statements: string[] = [];
   const warnings: string[] = [];
 
@@ -604,46 +667,45 @@ function buildPreviewStatements(input: {
   );
   const existingIndexes = new Set(input.indexes.map((index) => index.indexName));
 
-  for (const table of input.current.tables) {
+  for (const table of currentTables) {
     if (!nextByName.has(table.name)) {
       statements.push(`drop table if exists "${table.name}" cascade;`);
     }
   }
 
-  const nextTables = input.draft.tables.map(withDefaultId);
+  const newTables = sortNewTablesForCreation(nextTables.filter((table) => !currentByName.has(table.name)));
 
-  for (const table of nextTables) {
-    if (!currentByName.has(table.name)) {
-      if (existingLiveTables.has(table.name)) {
-        const liveCols = input.columns.filter((column) => column.tableName === table.name);
-        const liveColNames = new Set(liveCols.map((column) => column.columnName));
-        for (const field of table.fields) {
-          if (!liveColNames.has(field.name)) {
-            statements.push(
-              `alter table "${table.name}" add column if not exists ${columnSql(table.name, field, table.primaryKey)};`,
-            );
-          }
+  for (const table of newTables) {
+    if (existingLiveTables.has(table.name)) {
+      const liveCols = input.columns.filter((column) => column.tableName === table.name);
+      const liveColNames = new Set(liveCols.map((column) => column.columnName));
+      for (const field of table.fields) {
+        if (!liveColNames.has(field.name)) {
+          statements.push(
+            `alter table "${table.name}" add column if not exists ${columnSql(table.name, field, table.primaryKey)};`,
+          );
         }
-        for (const field of table.fields) {
-          if (field.indexed && !field.unique && field.name !== table.primaryKey) {
-            const indexName = `${table.name}_${field.name}_idx`;
-            if (!existingIndexes.has(indexName)) {
-              statements.push(`create index if not exists "${indexName}" on "${table.name}" ("${field.name}");`);
-            }
-          }
-        }
-        for (const compound of table.indexes) {
-          const indexName = `${table.name}_${compound.join("_")}_idx`;
-          if (!existingIndexes.has(indexName)) {
-            statements.push(
-              `create index if not exists "${indexName}" on "${table.name}" (${compound.map((column) => `"${column}"`).join(", ")});`,
-            );
-          }
-        }
-        continue;
       }
-      statements.push(...buildCreateTableSql(table));
+      for (const field of table.fields) {
+        if (field.indexed && !field.unique && field.name !== table.primaryKey) {
+          const indexName = `${table.name}_${field.name}_idx`;
+          if (!existingIndexes.has(indexName)) {
+            statements.push(`create index if not exists "${indexName}" on "${table.name}" ("${field.name}");`);
+          }
+        }
+      }
+      for (const compound of table.indexes) {
+        const indexName = `${table.name}_${compound.join("_")}_idx`;
+        if (!existingIndexes.has(indexName)) {
+          statements.push(
+            `create index if not exists "${indexName}" on "${table.name}" (${compound.map((column) => `"${column}"`).join(", ")});`,
+          );
+        }
+      }
+      continue;
     }
+
+    statements.push(...buildCreateTableSql(table));
   }
 
   for (const table of nextTables) {
@@ -656,7 +718,7 @@ function buildPreviewStatements(input: {
     warnings.push(...alteration.warnings);
   }
 
-  for (const relation of input.draft.relations) {
+  for (const relation of nextRelations) {
     assertSafeIdentifier(relation.sourceTable);
     assertSqlIdentifier(relation.sourceField);
     assertSqlIdentifier(relation.targetTable);
