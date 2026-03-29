@@ -1,5 +1,5 @@
-import { eq } from "drizzle-orm";
-import { pathToFileURL } from "node:url";
+import { eq } from 'drizzle-orm';
+import { pathToFileURL } from 'node:url';
 import type {
   PluginCapability,
   PluginCapabilityState,
@@ -14,26 +14,23 @@ import type {
   PluginInstallState,
   PluginManifest,
   PluginModel,
-} from "@authend/shared";
-import { db, sql } from "../db/client";
-import { pluginConfigs } from "../db/schema/system";
-import { env } from "../config/env";
-import { HttpError } from "../lib/http";
-import { fileExists, writeTextFile } from "../lib/fs";
-import { resolveGeneratedPluginDefaultsFile } from "../lib/generated-artifacts";
-import { extensionHandlers, getExtensionHandlerDefinition } from "../plugins/extension-registry";
-import { pluginDefaults } from "../../extensions/plugin-defaults";
-import {
-  ORGANIZATION_INVITATION_HOOK_KEYS,
-  ORGANIZATION_TEAM_HOOK_KEYS,
-} from "../plugins/organization/manifest";
-import { getPluginDefinition, pluginRegistry } from "../plugins/registry";
-import type { ExtensionPluginDefaults, PluginContextRow, PluginDefinition, RuntimePluginContext } from "../plugins/types";
+} from '@authend/shared';
+import { db, sql } from '../db/client';
+import { pluginConfigs } from '../db/schema/system';
+import { env } from '../config/env';
+import { HttpError } from '../lib/http';
+import { fileExists, writeTextFile } from '../lib/fs';
+import { resolveGeneratedPluginDefaultsFile } from '../lib/generated-artifacts';
+import { extensionHandlers, getExtensionHandlerDefinition } from '../plugins/extension-registry';
+import { pluginDefaults } from '../../extensions/plugin-defaults';
+import { ORGANIZATION_INVITATION_HOOK_KEYS, ORGANIZATION_TEAM_HOOK_KEYS } from '../plugins/organization/manifest';
+import { getPluginDefinition, pluginRegistry } from '../plugins/registry';
+import type { ExtensionPluginDefaults, PluginContextRow, PluginDefinition, RuntimePluginContext } from '../plugins/types';
 
 const generatedPluginDefaultsFile = resolveGeneratedPluginDefaultsFile();
 
 function asObject(value: unknown) {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function mergeConfigDefaults(definition: PluginDefinition, config: PluginConfig): PluginConfig {
@@ -45,12 +42,12 @@ function mergeConfigDefaults(definition: PluginDefinition, config: PluginConfig)
 
 function mergePluginDefaults<T extends Record<string, unknown> | undefined>(base: T, patch: T) {
   return {
-    ...(base ?? {}),
-    ...(patch ?? {}),
+    ...base,
+    ...patch,
   } as T extends undefined ? Record<string, unknown> : T;
 }
 
-type PersistedPluginDefaultsEntry = Omit<ExtensionPluginDefaults, "when">;
+type PersistedPluginDefaultsEntry = Omit<ExtensionPluginDefaults, 'when'>;
 
 async function loadGeneratedExtensionPluginDefaults(): Promise<ExtensionPluginDefaults[]> {
   if (!(await fileExists(generatedPluginDefaultsFile))) {
@@ -97,7 +94,10 @@ function applyExtensionDefaultsToSeedState(
     next = {
       enabled: entry.enabled ?? next.enabled,
       config: mergeConfigDefaults(definition, mergePluginDefaults(next.config, entry.configPatch)),
-      capabilityState: normalizeCapabilityState(definition, mergePluginDefaults(next.capabilityState, entry.capabilityStatePatch)),
+      capabilityState: normalizeCapabilityState(
+        definition,
+        mergePluginDefaults(next.capabilityState, entry.capabilityStatePatch),
+      ),
       extensionBindings: normalizeExtensionBindings(
         definition,
         mergePluginDefaults(next.extensionBindings, entry.extensionBindingsPatch),
@@ -199,12 +199,12 @@ export const pluginOrchestratorTestUtils = {
 
 function isEnvConfigured(key: string) {
   const processValue = process.env[key];
-  if (typeof processValue === "string") {
+  if (typeof processValue === 'string') {
     return processValue.length > 0;
   }
 
   const envValue = (env as Record<string, unknown>)[key];
-  if (typeof envValue === "string") {
+  if (typeof envValue === 'string') {
     return envValue.length > 0;
   }
 
@@ -222,7 +222,7 @@ function normalizeCapabilityState(definition: PluginDefinition, input: Record<st
 
   for (const capability of definition.capabilities) {
     const value = input[capability.key];
-    if (typeof value === "boolean") {
+    if (typeof value === 'boolean') {
       merged[capability.key] = value;
       continue;
     }
@@ -241,7 +241,7 @@ function normalizeExtensionBindings(definition: PluginDefinition, input: Record<
 
   for (const slot of definition.extensionSlots) {
     const raw = input[slot.key];
-    if (typeof raw === "string" && raw.length > 0) {
+    if (typeof raw === 'string' && raw.length > 0) {
       merged[slot.key] = raw;
     } else if (slot.defaultHandlerId && !merged[slot.key]) {
       merged[slot.key] = slot.defaultHandlerId;
@@ -261,19 +261,19 @@ function validatePluginConfig(definition: PluginDefinition, config: PluginConfig
 
   for (const field of definition.configSchema) {
     const value = config[field.key];
-    if (field.required && (value === undefined || value === null || value === "")) {
+    if (field.required && (value === undefined || value === null || value === '')) {
       return `${field.label} is required`;
     }
     if (value === undefined || value === null) {
       continue;
     }
-    if (field.type === "boolean" && typeof value !== "boolean") {
+    if (field.type === 'boolean' && typeof value !== 'boolean') {
       return `${field.label} must be a boolean`;
     }
-    if (field.type === "number" && typeof value !== "number") {
+    if (field.type === 'number' && typeof value !== 'number') {
       return `${field.label} must be a number`;
     }
-    if ((field.type === "string" || field.type === "password" || field.type === "url") && typeof value !== "string") {
+    if ((field.type === 'string' || field.type === 'password' || field.type === 'url') && typeof value !== 'string') {
       return `${field.label} must be a string`;
     }
   }
@@ -288,23 +288,23 @@ function validatePluginConfig(definition: PluginDefinition, config: PluginConfig
 
 function capabilityMissingRequirements(
   capabilityState: Record<string, boolean>,
-  capability: PluginDefinition["capabilities"][number],
+  capability: PluginDefinition['capabilities'][number],
 ) {
   return capability.requires.filter((key) => capabilityState[key] !== true);
 }
 
 function isSlotEnabled(slotKey: string, capabilityState: Record<string, boolean>) {
-  if (slotKey === "ac") {
+  if (slotKey === 'ac') {
     return capabilityState.dynamicAccessControl === true;
   }
-  if (slotKey === "sendInvitationEmail") {
+  if (slotKey === 'sendInvitationEmail') {
     return capabilityState.invitations === true;
   }
-  if (slotKey === "teams.defaultTeam.customCreateDefaultTeam") {
+  if (slotKey === 'teams.defaultTeam.customCreateDefaultTeam') {
     return capabilityState.teams === true;
   }
-  if (slotKey.startsWith("organizationHooks.")) {
-    const hookKey = slotKey.replace("organizationHooks.", "");
+  if (slotKey.startsWith('organizationHooks.')) {
+    const hookKey = slotKey.replace('organizationHooks.', '');
     if (ORGANIZATION_INVITATION_HOOK_KEYS.includes(hookKey)) {
       return capabilityState.invitations === true;
     }
@@ -315,20 +315,14 @@ function isSlotEnabled(slotKey: string, capabilityState: Record<string, boolean>
   return capabilityState.core === true;
 }
 
-function isSlotRequired(
-  slot: PluginDefinition["extensionSlots"][number],
-  capabilityState: Record<string, boolean>,
-) {
+function isSlotRequired(slot: PluginDefinition['extensionSlots'][number], capabilityState: Record<string, boolean>) {
   if (!slot.required) {
     return false;
   }
   return isSlotEnabled(slot.key, capabilityState);
 }
 
-function buildDependencyState(
-  definition: PluginDefinition,
-  rowsById: Map<PluginId, PluginContextRow>,
-): PluginDependencyState[] {
+function buildDependencyState(definition: PluginDefinition, rowsById: Map<PluginId, PluginContextRow>): PluginDependencyState[] {
   return definition.dependencies.map((pluginId) => {
     const dependency = rowsById.get(pluginId);
     return {
@@ -339,7 +333,11 @@ function buildDependencyState(
   });
 }
 
-function buildHealth(missingEnvKeys: string[], dependencyState: PluginDependencyState[], capabilityIssues: string[]): PluginHealth {
+function buildHealth(
+  missingEnvKeys: string[],
+  dependencyState: PluginDependencyState[],
+  capabilityIssues: string[],
+): PluginHealth {
   const issues = [
     ...missingEnvKeys.map((key) => `Missing env: ${key}`),
     ...dependencyState.filter((entry) => !entry.satisfied).map((entry) => entry.reason ?? `${entry.pluginId} not enabled`),
@@ -347,11 +345,11 @@ function buildHealth(missingEnvKeys: string[], dependencyState: PluginDependency
   ];
 
   if (issues.length === 0) {
-    return { status: "healthy", issues: [] };
+    return { status: 'healthy', issues: [] };
   }
 
   return {
-    status: missingEnvKeys.length > 0 ? "error" : "degraded",
+    status: missingEnvKeys.length > 0 ? 'error' : 'degraded',
     issues,
   };
 }
@@ -368,14 +366,38 @@ async function listExistingDatabaseTables() {
 }
 
 export async function ensurePluginConfigStateSchema() {
-  await sql.unsafe(`
-alter table "_plugin_configs" add column if not exists "version" text not null default '1.0.0';
-alter table "_plugin_configs" add column if not exists "capability_state" jsonb not null default '{}'::jsonb;
-alter table "_plugin_configs" add column if not exists "dependency_state" jsonb not null default '[]'::jsonb;
-alter table "_plugin_configs" add column if not exists "health" jsonb not null default '{}'::jsonb;
-alter table "_plugin_configs" add column if not exists "provisioning_state" jsonb not null default '{}'::jsonb;
-alter table "_plugin_configs" add column if not exists "extension_bindings" jsonb not null default '{}'::jsonb;
-  `);
+  const rows = await sql<{ column_name: string }[]>`
+    select column_name
+    from information_schema.columns
+    where table_schema = current_schema()
+      and table_name = '_plugin_configs'
+  `;
+
+  const existingColumns = new Set(rows.map((row) => row.column_name));
+  const statements: string[] = [];
+
+  if (!existingColumns.has('version')) {
+    statements.push(`alter table "_plugin_configs" add column "version" text not null default '1.0.0';`);
+  }
+  if (!existingColumns.has('capability_state')) {
+    statements.push(`alter table "_plugin_configs" add column "capability_state" jsonb not null default '{}'::jsonb;`);
+  }
+  if (!existingColumns.has('dependency_state')) {
+    statements.push(`alter table "_plugin_configs" add column "dependency_state" jsonb not null default '[]'::jsonb;`);
+  }
+  if (!existingColumns.has('health')) {
+    statements.push(`alter table "_plugin_configs" add column "health" jsonb not null default '{}'::jsonb;`);
+  }
+  if (!existingColumns.has('provisioning_state')) {
+    statements.push(`alter table "_plugin_configs" add column "provisioning_state" jsonb not null default '{}'::jsonb;`);
+  }
+  if (!existingColumns.has('extension_bindings')) {
+    statements.push(`alter table "_plugin_configs" add column "extension_bindings" jsonb not null default '{}'::jsonb;`);
+  }
+
+  if (statements.length > 0) {
+    await sql.unsafe(statements.join('\n'));
+  }
 }
 
 export async function seedPluginInstallStates() {
@@ -402,12 +424,16 @@ export async function seedPluginInstallStates() {
       continue;
     }
 
-    const seedState = applyExtensionDefaultsToSeedState(definition, {
-      enabled: definition.defaultEnabled === true,
-      config: mergeConfigDefaults(definition, {}),
-      capabilityState: normalizeCapabilityState(definition, {}),
-      extensionBindings: normalizeExtensionBindings(definition, {}),
-    }, defaults);
+    const seedState = applyExtensionDefaultsToSeedState(
+      definition,
+      {
+        enabled: definition.defaultEnabled === true,
+        config: mergeConfigDefaults(definition, {}),
+        capabilityState: normalizeCapabilityState(definition, {}),
+        extensionBindings: normalizeExtensionBindings(definition, {}),
+      },
+      defaults,
+    );
 
     await db.insert(pluginConfigs).values({
       id: crypto.randomUUID(),
@@ -417,8 +443,8 @@ export async function seedPluginInstallStates() {
       config: seedState.config,
       capabilityState: seedState.capabilityState,
       dependencyState: [],
-      health: { status: "unknown", issues: [] },
-      provisioningState: { status: "not-required", appliedMigrationKeys: [], rollbackMigrationKeys: [], details: [] },
+      health: { status: 'unknown', issues: [] },
+      provisioningState: { status: 'not-required', appliedMigrationKeys: [], rollbackMigrationKeys: [], details: [] },
       extensionBindings: seedState.extensionBindings,
     });
   }
@@ -427,40 +453,44 @@ export async function seedPluginInstallStates() {
 export async function loadPluginRows() {
   await ensurePluginConfigStateSchema();
   const rows = await db.select().from(pluginConfigs);
-  return rows.map((row) => {
-    const definition = getPluginDefinition(row.pluginId);
-    if (!definition) {
-      return null;
-    }
+  return rows
+    .map((row) => {
+      const definition = getPluginDefinition(row.pluginId);
+      if (!definition) {
+        return null;
+      }
 
-    return {
-      pluginId: definition.id,
-      enabled: row.enabled,
-      version: row.version ?? definition.version,
-      config: mergeConfigDefaults(definition, asObject(row.config) as PluginConfig),
-      capabilityState: normalizeCapabilityState(definition, asObject(row.capabilityState)),
-      dependencyState: Array.isArray(row.dependencyState) ? (row.dependencyState as PluginDependencyState[]) : [],
-      health: (asObject(row.health) as PluginHealth) ?? { status: "unknown", issues: [] },
-      provisioningState: {
-        status:
-          typeof asObject(row.provisioningState).status === "string"
-            ? (asObject(row.provisioningState).status as PluginInstallState["provisioningState"]["status"])
-            : definition.getProvisionPlan
-              ? row.enabled
-                ? "pending"
-                : "not-required"
-              : "not-required",
-        appliedMigrationKeys: Array.isArray(asObject(row.provisioningState).appliedMigrationKeys)
-          ? (asObject(row.provisioningState).appliedMigrationKeys as string[])
-          : [],
-        rollbackMigrationKeys: Array.isArray(asObject(row.provisioningState).rollbackMigrationKeys)
-          ? (asObject(row.provisioningState).rollbackMigrationKeys as string[])
-          : [],
-        details: Array.isArray(asObject(row.provisioningState).details) ? (asObject(row.provisioningState).details as string[]) : [],
-      },
-      extensionBindings: normalizeExtensionBindings(definition, asObject(row.extensionBindings)),
-    } satisfies PluginContextRow;
-  }).filter((row): row is PluginContextRow => row !== null);
+      return {
+        pluginId: definition.id,
+        enabled: row.enabled,
+        version: row.version ?? definition.version,
+        config: mergeConfigDefaults(definition, asObject(row.config) as PluginConfig),
+        capabilityState: normalizeCapabilityState(definition, asObject(row.capabilityState)),
+        dependencyState: Array.isArray(row.dependencyState) ? (row.dependencyState as PluginDependencyState[]) : [],
+        health: (asObject(row.health) as PluginHealth) ?? { status: 'unknown', issues: [] },
+        provisioningState: {
+          status:
+            typeof asObject(row.provisioningState).status === 'string'
+              ? (asObject(row.provisioningState).status as PluginInstallState['provisioningState']['status'])
+              : definition.getProvisionPlan
+                ? row.enabled
+                  ? 'pending'
+                  : 'not-required'
+                : 'not-required',
+          appliedMigrationKeys: Array.isArray(asObject(row.provisioningState).appliedMigrationKeys)
+            ? (asObject(row.provisioningState).appliedMigrationKeys as string[])
+            : [],
+          rollbackMigrationKeys: Array.isArray(asObject(row.provisioningState).rollbackMigrationKeys)
+            ? (asObject(row.provisioningState).rollbackMigrationKeys as string[])
+            : [],
+          details: Array.isArray(asObject(row.provisioningState).details)
+            ? (asObject(row.provisioningState).details as string[])
+            : [],
+        },
+        extensionBindings: normalizeExtensionBindings(definition, asObject(row.extensionBindings)),
+      } satisfies PluginContextRow;
+    })
+    .filter((row): row is PluginContextRow => row !== null);
 }
 
 function buildInstallState(
@@ -530,13 +560,11 @@ function buildCapabilities(definition: PluginDefinition, state: PluginInstallSta
     ...capability,
     enabled: state.capabilityState[capability.key] === true,
     missingRequirements:
-      state.capabilityState[capability.key] === true
-        ? capabilityMissingRequirements(state.capabilityState, capability)
-        : [],
+      state.capabilityState[capability.key] === true ? capabilityMissingRequirements(state.capabilityState, capability) : [],
   }));
 }
 
-function getSlotHandlerDefinitions(slot: PluginDefinition["extensionSlots"][number]) {
+function getSlotHandlerDefinitions(slot: PluginDefinition['extensionSlots'][number]) {
   if (slot.handlerIds.length > 0) {
     return slot.handlerIds
       .map((handlerId) => getExtensionHandlerDefinition(handlerId))
@@ -551,28 +579,22 @@ function buildExtensionSlots(definition: PluginDefinition, state: PluginInstallS
     ...slot,
     enabled: isSlotEnabled(slot.key, state.capabilityState),
     selectedHandlerId: state.extensionBindings[slot.key] ?? slot.defaultHandlerId ?? null,
-    availableHandlers: getSlotHandlerDefinitions(slot)
-      .map((handler) => ({
-        id: handler.id,
-        label: handler.label,
-        description: handler.description,
-      })),
+    availableHandlers: getSlotHandlerDefinitions(slot).map((handler) => ({
+      id: handler.id,
+      label: handler.label,
+      description: handler.description,
+    })),
   }));
 }
 
 function buildModels(definition: PluginDefinition, state: PluginInstallState, existingTables: Set<string>): PluginModel[] {
   return definition.models.map((model) => ({
     ...model,
-    provisioned:
-      existingTables.has(model.tableName) && model.capabilityKeys.every((key) => state.capabilityState[key] === true),
+    provisioned: existingTables.has(model.tableName) && model.capabilityKeys.every((key) => state.capabilityState[key] === true),
   }));
 }
 
-function buildManifest(
-  definition: PluginDefinition,
-  state: PluginInstallState,
-  existingTables: Set<string>,
-): PluginManifest {
+function buildManifest(definition: PluginDefinition, state: PluginInstallState, existingTables: Set<string>): PluginManifest {
   const capabilities = buildCapabilities(definition, state);
   const extensionSlots = buildExtensionSlots(definition, state);
   const models = buildModels(definition, state, existingTables);
@@ -616,12 +638,12 @@ function manifestToCatalogItem(manifest: PluginManifest): PluginCatalogItem {
     documentationUrl: manifest.documentationUrl,
     defaultEnabled: manifest.defaultEnabled,
     required: manifest.required,
-    status: manifest.missingEnvKeys.length > 0 ? "requires-env" : manifest.installState.enabled ? "enabled" : "disabled",
+    status: manifest.missingEnvKeys.length > 0 ? 'requires-env' : manifest.installState.enabled ? 'enabled' : 'disabled',
     missingEnvKeys: manifest.missingEnvKeys,
     config: manifest.installState.config,
     configSchema: manifest.configSchema,
     requiredEnv: manifest.requiredEnv,
-    migrationStrategy: getPluginDefinition(manifest.id)?.migrationStrategy ?? "none",
+    migrationStrategy: getPluginDefinition(manifest.id)?.migrationStrategy ?? 'none',
     version: manifest.version,
     dependencies: manifest.dependencies,
     capabilities: manifest.capabilities,
@@ -652,8 +674,8 @@ export async function listPluginManifests() {
         config: mergeConfigDefaults(definition, {}),
         capabilityState: normalizeCapabilityState(definition, {}),
         dependencyState: [],
-        health: { status: "unknown", issues: [] },
-        provisioningState: { status: "not-required", appliedMigrationKeys: [], rollbackMigrationKeys: [], details: [] },
+        health: { status: 'unknown', issues: [] },
+        provisioningState: { status: 'not-required', appliedMigrationKeys: [], rollbackMigrationKeys: [], details: [] },
         extensionBindings: normalizeExtensionBindings(definition, {}),
       } satisfies PluginContextRow);
     const state = buildInstallState(definition, row, rowsById);
@@ -728,7 +750,7 @@ export async function validatePluginConfigUpdate(pluginId: PluginId, input: Plug
     }
     const missing = capabilityMissingRequirements(capabilityState, capability);
     if (missing.length > 0) {
-      throw new HttpError(400, `${definition.id}.${capability.key} requires: ${missing.join(", ")}`);
+      throw new HttpError(400, `${definition.id}.${capability.key} requires: ${missing.join(', ')}`);
     }
   }
 
@@ -754,15 +776,15 @@ export async function validatePluginConfigUpdate(pluginId: PluginId, input: Plug
     return dependencyManifest?.installState.enabled !== true;
   });
 
-  if (definition.id === "apiKey" && config.references === "organization") {
-    const organizationManifest = manifests.find((entry) => entry.id === "organization");
+  if (definition.id === 'apiKey' && config.references === 'organization') {
+    const organizationManifest = manifests.find((entry) => entry.id === 'organization');
     if (organizationManifest?.installState.enabled !== true) {
-      throw new HttpError(400, "apiKey references=organization requires the organization plugin to be enabled");
+      throw new HttpError(400, 'apiKey references=organization requires the organization plugin to be enabled');
     }
   }
 
   if (forEnable && dependencyProblems.length > 0) {
-    throw new HttpError(400, `${pluginId} depends on: ${dependencyProblems.join(", ")}`);
+    throw new HttpError(400, `${pluginId} depends on: ${dependencyProblems.join(', ')}`);
   }
 
   return {
