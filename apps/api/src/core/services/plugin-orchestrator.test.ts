@@ -117,6 +117,35 @@ describe("plugin-orchestrator extension defaults", () => {
     expect((next.config.providers as Record<string, { prompt: string }>).google.prompt).toBe("select_account");
   });
 
+  test("later extension defaults override earlier defaults", async () => {
+    process.env.APP_URL ??= "http://localhost:7002";
+    process.env.DATABASE_URL ??= "postgres://postgres:postgres@localhost:5432/authend";
+    process.env.BETTER_AUTH_SECRET ??= "test-secret-value-with-24-chars";
+    process.env.SUPERADMIN_EMAIL ??= "admin@example.com";
+    process.env.SUPERADMIN_PASSWORD ??= "password123";
+
+    extensionPluginDefaults.splice(0, extensionPluginDefaults.length, {
+      pluginId: "socialAuth",
+      enabled: false,
+      configPatch: {
+        enabledProviders: "github",
+      },
+    });
+
+    const { pluginOrchestratorTestUtils } = await import("./plugin-orchestrator");
+    extensionPluginDefaults.push({
+      pluginId: "socialAuth",
+      enabled: true,
+      configPatch: {
+        enabledProviders: "google",
+      },
+    });
+    const next = pluginOrchestratorTestUtils.applyExtensionDefaultsToSeedState(socialAuthDefinition(), seedState());
+
+    expect(next.enabled).toBe(true);
+    expect(next.config.enabledProviders).toBe("google");
+  });
+
   test("persisted state remains authoritative after seed-time defaults", async () => {
     process.env.APP_URL ??= "http://localhost:7002";
     process.env.DATABASE_URL ??= "postgres://postgres:postgres@localhost:5432/authend";
@@ -158,5 +187,31 @@ describe("plugin-orchestrator extension defaults", () => {
 
     const { pluginOrchestratorTestUtils } = await import("./plugin-orchestrator");
     expect(() => pluginOrchestratorTestUtils.validateExtensionPluginDefaults()).toThrow("Unknown plugin default target");
+  });
+
+  test("generated plugin defaults snapshot is stable and commit-friendly", async () => {
+    process.env.APP_URL ??= "http://localhost:7002";
+    process.env.DATABASE_URL ??= "postgres://postgres:postgres@localhost:5432/authend";
+    process.env.BETTER_AUTH_SECRET ??= "test-secret-value-with-24-chars";
+    process.env.SUPERADMIN_EMAIL ??= "admin@example.com";
+    process.env.SUPERADMIN_PASSWORD ??= "password123";
+
+    const { pluginOrchestratorTestUtils } = await import("./plugin-orchestrator");
+    const text = pluginOrchestratorTestUtils.serializeGeneratedPluginDefaults([
+      {
+        pluginId: "socialAuth",
+        enabled: true,
+        configPatch: {
+          enabledProviders: "google",
+        },
+      },
+    ]);
+
+    expect(text).toContain('import type { ExtensionPluginDefaults }');
+    expect(text).toContain("export const generatedPluginDefaults: ExtensionPluginDefaults[] = [");
+    expect(text).toContain('"pluginId": "socialAuth"');
+    expect(text).toContain('"enabled": true');
+    expect(text).toContain('"enabledProviders": "google"');
+    expect(text.endsWith("\n")).toBe(true);
   });
 });

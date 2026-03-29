@@ -1,4 +1,4 @@
-import type { ExtensionPluginDefaults } from "../core/plugins/types";
+import type { ExtensionPluginDefaults } from '../core/plugins/types';
 
 /**
  * Fork-owned defaults for existing built-in AuthEnd plugins.
@@ -8,14 +8,22 @@ import type { ExtensionPluginDefaults } from "../core/plugins/types";
  *
  * This file is declarative only. Do not perform writes or side effects here.
  */
-export const extensionPluginDefaults: ExtensionPluginDefaults[] = [];
+export const handwrittenPluginDefaults: ExtensionPluginDefaults[] = [];
+
+/**
+ * Handwritten extension surface for built-in plugin defaults.
+ *
+ * Kept as `extensionPluginDefaults` for compatibility with existing callers and
+ * tests that mutate this registry directly.
+ */
+export const extensionPluginDefaults: ExtensionPluginDefaults[] = handwrittenPluginDefaults;
 
 /*
 Example: enable the built-in social auth plugin for Google when env vars exist.
 
 Uncomment and adapt this for your fork:
 
-export const extensionPluginDefaults: ExtensionPluginDefaults[] = [
+export const handwrittenPluginDefaults: ExtensionPluginDefaults[] = [
   {
     pluginId: "socialAuth",
     when: () => Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
@@ -36,6 +44,7 @@ Notes:
 
 - `when` gates the default. If it returns `false`, the default is ignored.
 - These defaults are applied during plugin state seeding, not on every boot forever.
+- Admin-generated defaults, when present, live in `extensions/generated/plugin-defaults.generated.ts`.
 - This is the correct place for defaults for existing built-in plugins.
 - Do not move this logic into `extensions/auth.ts` or core bootstrap code.
 */

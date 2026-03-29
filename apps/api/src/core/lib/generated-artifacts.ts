@@ -18,3 +18,9 @@ export function resolveGeneratedMigrationsDir() {
     ? resolve(process.env.AUTHEND_GENERATED_MIGRATIONS_DIR)
     : resolve(generatedRoot(), "migrations");
 }
+
+export function resolveGeneratedPluginDefaultsFile() {
+  return process.env.AUTHEND_GENERATED_PLUGIN_DEFAULTS_FILE
+    ? resolve(process.env.AUTHEND_GENERATED_PLUGIN_DEFAULTS_FILE)
+    : resolve(import.meta.dir, "../../extensions/generated/plugin-defaults.generated.ts");
+}

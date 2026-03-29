@@ -12,6 +12,7 @@ import {
   persistPluginInstallState,
   seedPluginInstallStates,
   validatePluginConfigUpdate,
+  writeGeneratedPluginDefaultsSnapshot,
 } from "./plugin-orchestrator";
 
 export async function seedPluginConfigs() {
@@ -153,6 +154,7 @@ export async function savePluginConfig(pluginId: PluginId, update: PluginConfigU
   }
 
   const manifest = await syncDerivedState(pluginId);
+  await writeGeneratedPluginDefaultsSnapshot();
 
   await writeAuditLog({
     action: "plugin.config.updated",
@@ -192,6 +194,7 @@ export async function enablePlugin(pluginId: PluginId, actorUserId?: string | nu
 
   await provisionPlugin(pluginId, actorUserId);
   const manifest = await syncDerivedState(pluginId);
+  await writeGeneratedPluginDefaultsSnapshot();
 
   await writeAuditLog({
     action: "plugin.enabled",
@@ -224,6 +227,7 @@ export async function disablePlugin(pluginId: PluginId, actorUserId?: string | n
     enabled: false,
   });
   const manifest = await syncDerivedState(pluginId);
+  await writeGeneratedPluginDefaultsSnapshot();
 
   await writeAuditLog({
     action: "plugin.disabled",

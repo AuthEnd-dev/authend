@@ -251,4 +251,23 @@ describe('schema-service', () => {
     expect(alterApprovalIndex).toBeGreaterThanOrEqual(0);
     expect(createIntegratorIndex).toBeLessThan(alterApprovalIndex);
   });
+
+  test('schema apply migration keys are stable for identical SQL content', async () => {
+    process.env.APP_URL ??= 'http://localhost:7002';
+    process.env.DATABASE_URL ??= 'postgres://postgres:postgres@localhost:5432/authend';
+    process.env.BETTER_AUTH_SECRET ??= 'test-secret-value-with-24-chars';
+    process.env.SUPERADMIN_EMAIL ??= 'admin@example.com';
+    process.env.SUPERADMIN_PASSWORD ??= 'password123';
+
+    const { schemaServiceTestUtils } = await import('./schema-service');
+    const sqlText = 'create table if not exists "notes" ("id" text primary key);';
+
+    const first = schemaServiceTestUtils.migrationSqlKey('schema_apply', sqlText);
+    const second = schemaServiceTestUtils.migrationSqlKey('schema_apply', `${sqlText}\n`);
+    const different = schemaServiceTestUtils.migrationSqlKey('schema_apply', 'create table if not exists "tasks" ("id" text primary key);');
+
+    expect(first).toBe(second);
+    expect(first).toEndWith('_schema_apply');
+    expect(different).not.toBe(first);
+  });
 });

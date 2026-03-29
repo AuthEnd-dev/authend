@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { FieldBlueprint, SchemaDraft, SchemaDraftInput, TableBlueprint } from "@authend/shared";
 import {
   assertSafeIdentifier,
@@ -344,9 +345,18 @@ function summarizePolicyChanges(current: SchemaDraft, next: SchemaDraft) {
 export const schemaServiceTestUtils = {
   renderSchemaModule,
   buildPreviewStatements,
+  migrationSqlKey,
 };
 
-function migrationSqlKey(prefix: string) {
+function migrationChecksum(sqlText: string) {
+  return createHash("sha256").update(sqlText.trim()).digest("hex").slice(0, 12);
+}
+
+function migrationSqlKey(prefix: string, sqlText?: string) {
+  if (typeof sqlText === "string" && sqlText.trim().length > 0) {
+    return `${migrationChecksum(sqlText)}_${prefix}`;
+  }
+
   const now = new Date();
   const stamp = [
     now.getUTCFullYear().toString().padStart(4, "0"),
@@ -999,8 +1009,8 @@ export async function applyDraft(rawDraft: SchemaDraft, actorUserId?: string | n
   }
 
   const preview = await previewDraft(draft);
-  const migrationKey = migrationSqlKey("schema_apply");
   const sqlText = preview.sql.join("\n\n");
+  const migrationKey = migrationSqlKey("schema_apply", sqlText);
 
   if (sqlText.trim()) {
     await writeGeneratedMigration(migrationKey, sqlText);
