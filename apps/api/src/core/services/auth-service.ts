@@ -5,6 +5,7 @@ import { env } from "../config/env";
 import { db } from "../db/client";
 import * as schema from "../db/schema";
 import { sendEmail } from "../lib/email";
+import { resolveAdminAuthBaseUrl } from "../lib/auth-url";
 import { forkAuthContributions } from "../../extensions/auth";
 import { createRuntimePluginContext, getEnabledRuntimePlugins } from "./plugin-orchestrator";
 import { readSettingsSection } from "./settings-store";
@@ -69,7 +70,7 @@ async function createAuth(kind: "app" | "admin") {
   ]);
 
   const appBaseUrl = generalSettings.appUrl || env.APP_URL;
-  const adminBaseUrl = generalSettings.adminUrl || env.ADMIN_URL || appBaseUrl;
+  const adminBaseUrl = resolveAdminAuthBaseUrl(generalSettings.adminUrl || env.ADMIN_URL || appBaseUrl);
 
   const trustedOrigins = Array.from(
     new Set(
