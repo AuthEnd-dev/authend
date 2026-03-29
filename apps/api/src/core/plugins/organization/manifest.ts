@@ -526,7 +526,7 @@ export const organizationPluginDefinition: PluginDefinition = {
   description: "Organizations, members, invitations, teams, dynamic access control, and lifecycle hooks for multi-user backends.",
   category: "administration",
   documentationUrl: "https://better-auth.com/docs/plugins/organization",
-  migrationStrategy: "sql",
+  migrationStrategy: "none",
   dependencies: [],
   requiredEnv: [],
   configSchema: [

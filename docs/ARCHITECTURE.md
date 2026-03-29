@@ -299,8 +299,8 @@ The intended flow is:
 
 1. admin toggles a plugin
 2. plugin config is validated
-3. any required SQL changes are applied
-4. plugin state is persisted
+3. plugin state is persisted
+4. schema remains owned by the canonical Drizzle schema, not plugin-specific SQL plans
 5. auth runtime is reloaded
 
 Current persistence exists in:
@@ -319,10 +319,15 @@ The intended flow is:
 2. the draft is validated
 3. SQL statements are generated
 4. SQL is previewed
-5. SQL is written to a migration file
+5. Drizzle Kit writes SQL to a generated migration artifact
 6. migration is executed
 7. schema metadata is replaced
 8. generated Drizzle schema file is updated
+
+The same generated-schema pipeline is also exposed through package scripts:
+
+- `bun run generate:schema`
+- `bun run generate:migration <name>`
 
 Main file:
 

@@ -7,7 +7,7 @@ export const twoFactorPluginDefinition: PluginDefinition = {
   description: "Add TOTP-based two-factor authentication with recovery codes and trusted-device settings.",
   category: "authentication",
   documentationUrl: "https://www.better-auth.com/docs/plugins/2fa",
-  migrationStrategy: "sql",
+  migrationStrategy: "none",
   dependencies: [],
   requiredEnv: [],
   configSchema: [

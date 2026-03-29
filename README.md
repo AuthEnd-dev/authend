@@ -70,7 +70,14 @@ Use it to create tables, relations, API config, records, plugins, and storage ob
 
 ## Generated schema and migrations in Git
 
-The API emits Drizzle schema and SQL migrations under [`apps/api/generated/`](./apps/api/generated/). By default that path is ignored via the `generated` line in [`apps/api/.gitignore`](./apps/api/.gitignore). **Remove that line** (or replace it with narrower rules) if you want to **commit** generated schema and migrations—for example so deploys and teammates share the same migration history.
+The API emits Drizzle schema and Drizzle Kit-managed SQL migrations under [`apps/api/generated/`](./apps/api/generated/). Admin schema changes generate those artifacts automatically when a draft is applied. You can also regenerate them from the repo root:
+
+```bash
+bun run generate:schema
+bun run generate:migration add_projects_table
+```
+
+`generate:schema` rewrites [`apps/api/generated/schema/generated.ts`](./apps/api/generated/schema/generated.ts) from the saved schema draft plus extension schema. `generate:migration` regenerates that schema file first, then runs Drizzle Kit to write a SQL migration into [`apps/api/generated/migrations/`](./apps/api/generated/migrations/).
 
 ## Repo layout
 

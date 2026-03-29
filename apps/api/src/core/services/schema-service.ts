@@ -12,7 +12,11 @@ import { logger } from "../lib/logger";
 import { HttpError } from "../lib/http";
 import { resolveGeneratedSchemaFile } from "../lib/generated-artifacts";
 import { readTextFile, writeTextFile } from "../lib/fs";
-import { applySqlMigration, writeGeneratedMigration } from "./migration-service";
+import {
+  applySqlMigration,
+  persistGeneratedSchemaMigration,
+  previewGeneratedSchemaMigration,
+} from "./migration-service";
 import { writeAuditLog } from "./audit-service";
 import { getTableDescriptor } from "./crud-service";
 import { dispatchWebhookEvent } from "./webhook-service";
@@ -133,7 +137,7 @@ function columnSql(tableName: string, field: FieldBlueprint, primaryKey: string)
   return pieces.filter(Boolean).join(" ");
 }
 
-function drizzleColumn(field: FieldBlueprint) {
+function drizzleColumn(field: FieldBlueprint, referenceAccessor: (table: string, column: string) => string = (table, column) => `${table}.${column}`) {
   const safe = ensureFieldDefaults(field);
 
   const typeMap: Record<string, string> = {
@@ -170,7 +174,7 @@ function drizzleColumn(field: FieldBlueprint) {
 
   if (safe.references) {
     chain.push(
-      `references(() => ${safe.references.table}.${safe.references.column}, { onDelete: "${safe.references.onDelete}", onUpdate: "${safe.references.onUpdate}" })`,
+      `references(() => ${referenceAccessor(safe.references.table, safe.references.column)}, { onDelete: "${safe.references.onDelete}", onUpdate: "${safe.references.onUpdate}" })`,
     );
   }
 
@@ -181,7 +185,11 @@ function enumVariableName(tableName: string, fieldName: string) {
   return `${tableName}_${fieldName}_enum`;
 }
 
-function drizzleColumnForTable(tableName: string, field: FieldBlueprint) {
+function drizzleColumnForTable(
+  tableName: string,
+  field: FieldBlueprint,
+  referenceAccessor: (table: string, column: string) => string = (table, column) => `${table}.${column}`,
+) {
   const safe = ensureFieldDefaults(field);
 
   if (safe.type === "enum") {
@@ -202,7 +210,7 @@ function drizzleColumnForTable(tableName: string, field: FieldBlueprint) {
     return chain.join(".");
   }
 
-  return drizzleColumn(field);
+  return drizzleColumn(field, referenceAccessor);
 }
 
 function renderTableIndexes(table: TableBlueprint) {
@@ -280,16 +288,28 @@ function renderSchemaModule(draft: SchemaDraft) {
 
   const authImports = Array.from(referencedTables).filter((t) => coreAuthTables.includes(t) && !tableNames.has(t));
   const systemImports = Array.from(referencedTables).filter((t) => coreSystemTables.includes(t) && !tableNames.has(t));
+  const authImportSet = new Set(authImports);
+  const systemImportSet = new Set(systemImports);
 
   let imports = `import { bigint, boolean, date, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";`;
 
   if (authImports.length > 0) {
-    imports += `\nimport { ${authImports.join(", ")} } from "../../src/core/db/schema/auth";`;
+    imports += `\nimport coreAuthSchema from "../../src/core/db/schema/auth.ts";`;
   }
   if (systemImports.length > 0) {
-    imports += `\nimport { ${systemImports.join(", ")} } from "../../src/core/db/schema/system";`;
+    imports += `\nimport coreSystemSchema from "../../src/core/db/schema/system.ts";`;
   }
+
+  const referenceAccessor = (table: string, column: string) => {
+    if (authImportSet.has(table)) {
+      return `coreAuthSchema.${table}.${column}`;
+    }
+    if (systemImportSet.has(table)) {
+      return `coreSystemSchema.${table}.${column}`;
+    }
+    return `${table}.${column}`;
+  };
 
   const enums = draft.tables
     .map(withDefaultId)
@@ -304,7 +324,7 @@ import { sql } from "drizzle-orm";`;
     const withId = withDefaultId(table);
     return `export const ${withId.name} = pgTable("${withId.name}", {
 ${withId.fields
-  .map((field) => `  ${field.name}: ${drizzleColumnForTable(withId.name, field)},`)
+  .map((field) => `  ${field.name}: ${drizzleColumnForTable(withId.name, field, referenceAccessor)},`)
   .join("\n")}
 }${renderTableIndexes(withId)});`;
   });
@@ -995,7 +1015,13 @@ export async function getSchemaDraft(options: { includeExtensions?: boolean } = 
 
 export async function previewDraft(rawDraft: SchemaDraft) {
   const draft = mergeDraftWithExtensions(validateDraft(rawDraft));
-  const current = await getSchemaDraft({ includeExtensions: false });
+  const preview = await buildSchemaApplyPreview(draft);
+
+  return { sql: preview.sql, warnings: preview.warnings };
+}
+
+async function buildSchemaApplyPreview(draft: SchemaDraft, currentOverride?: SchemaDraft) {
+  const current = currentOverride ?? (await getSchemaDraft({ includeExtensions: false }));
   const tableNames = draft.tables.map((t) => t.name);
   const { columns, indexes, foreignKeys } = await readLiveSchemaState(tableNames);
   const { statements, warnings } = buildPreviewStatements({
@@ -1006,7 +1032,28 @@ export async function previewDraft(rawDraft: SchemaDraft) {
     foreignKeys,
   });
 
-  return { sql: statements, warnings };
+  if (statements.length === 0) {
+    return {
+      sql: [] as string[],
+      warnings,
+      migrationKey: migrationSqlKey("schema_apply"),
+      schemaModuleText: renderSchemaModule(draft),
+    };
+  }
+
+  const schemaModuleText = renderSchemaModule(draft);
+  const migrationKey = migrationSqlKey("schema_apply", statements.join("\n\n"));
+  const drizzlePreview = await previewGeneratedSchemaMigration({
+    key: migrationKey,
+    schemaText: schemaModuleText,
+  });
+
+  return {
+    sql: [drizzlePreview.sql],
+    warnings,
+    migrationKey: drizzlePreview.key,
+    schemaModuleText,
+  };
 }
 
 async function replaceMetadata(draft: SchemaDraft) {
@@ -1070,22 +1117,26 @@ export async function applyDraft(rawDraft: SchemaDraft, actorUserId?: string | n
     }
   }
 
-  const preview = await previewDraft(draft);
+  const preview = await buildSchemaApplyPreview(draft, current);
   const sqlText = preview.sql.join("\n\n");
-  const migrationKey = migrationSqlKey("schema_apply", sqlText);
+  const migrationKey = preview.migrationKey;
 
   if (sqlText.trim()) {
-    await writeGeneratedMigration(migrationKey, sqlText);
-    await applySqlMigration({
+    const persistedMigration = await persistGeneratedSchemaMigration({
       key: migrationKey,
+      schemaText: preview.schemaModuleText,
+    });
+
+    await applySqlMigration({
+      key: persistedMigration.key,
       title: "Schema draft apply",
-      sqlText,
+      sqlText: persistedMigration.sql,
       actorUserId,
     });
   }
 
   await replaceMetadata(draft);
-  await writeTextFile(generatedSchemaFile, renderSchemaModule(draft));
+  await writeTextFile(generatedSchemaFile, preview.schemaModuleText);
   await writeAuditLog({
     action: "schema.applied",
     actorUserId,

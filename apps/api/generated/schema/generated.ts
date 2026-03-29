@@ -1,13 +1,13 @@
 import { bigint, boolean, date, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { user } from "../../src/core/db/schema/auth";
+import coreAuthSchema from "../../src/core/db/schema/auth.ts";
 
 
 
 export const project = pgTable("project", {
   id: text("id").notNull().unique(),
   name: text("name").notNull(),
-  owner_user_id: text("owner_user_id").notNull().references(() => user.id, { onDelete: "cascade", onUpdate: "no action" }),
+  owner_user_id: text("owner_user_id").notNull().references(() => coreAuthSchema.user.id, { onDelete: "cascade", onUpdate: "no action" }),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
 },
   (table) => [

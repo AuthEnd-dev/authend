@@ -1,9 +1,7 @@
 import type { PluginConfigUpdate, PluginId } from "@authend/shared";
 import { HttpError } from "../lib/http";
-import { writeGeneratedMigration, applySqlMigration, rollbackSqlMigration } from "./migration-service";
 import { invalidateAuth } from "./auth-service";
 import { writeAuditLog } from "./audit-service";
-import { getPluginDefinition } from "../plugins/registry";
 import { dispatchWebhookEvent } from "./webhook-service";
 import {
   getPluginManifest,
@@ -31,106 +29,36 @@ export async function readPluginCapabilityManifest(pluginId: PluginId) {
   return getPluginManifest(pluginId);
 }
 
+function statelessProvisioningState() {
+  return {
+    status: "not-required" as const,
+    appliedMigrationKeys: [] as string[],
+    rollbackMigrationKeys: [] as string[],
+    details: [] as string[],
+  };
+}
+
 async function syncDerivedState(pluginId: PluginId) {
+  await persistPluginInstallState(pluginId, {
+    provisioningState: statelessProvisioningState(),
+  });
   const manifest = await getPluginManifest(pluginId);
   await persistPluginInstallState(pluginId, {
     dependencyState: manifest.installState.dependencyState,
     health: manifest.installState.health,
+    provisioningState: statelessProvisioningState(),
   });
-  return manifest;
-}
-
-async function provisionPlugin(pluginId: PluginId, actorUserId?: string | null) {
-  const manifest = await getPluginManifest(pluginId);
-  const plan = getPluginDefinition(pluginId)?.getProvisionPlan?.(manifest.installState) ?? null;
-
-  if (!plan) {
-    await persistPluginInstallState(pluginId, {
-      provisioningState: {
-        status: "not-required",
-        appliedMigrationKeys: [],
-        rollbackMigrationKeys: manifest.installState.provisioningState.rollbackMigrationKeys,
-        details: [],
-      },
-    });
-    return false;
-  }
-
-  await writeGeneratedMigration(plan.key, plan.sql);
-  const didApply = await applySqlMigration({
-    key: plan.key,
-    title: plan.title,
-    sqlText: plan.sql,
-    actorUserId,
-  });
-
-  await persistPluginInstallState(pluginId, {
-    provisioningState: {
-      status: "provisioned",
-      appliedMigrationKeys: Array.from(new Set([...manifest.installState.provisioningState.appliedMigrationKeys, plan.key])),
-      rollbackMigrationKeys: manifest.installState.provisioningState.rollbackMigrationKeys,
-      details: didApply ? [`Applied ${plan.key}`] : [`${plan.key} already applied`],
-    },
-  });
-
-  return didApply;
-}
-
-async function rollbackPlugin(
-  pluginId: PluginId,
-  actorUserId?: string | null,
-  manifestOverride?: Awaited<ReturnType<typeof getPluginManifest>>,
-) {
-  const manifest = manifestOverride ?? (await getPluginManifest(pluginId));
-  const plan = getPluginDefinition(pluginId)?.getRollbackPlan?.(manifest.installState) ?? null;
-
-  if (!plan) {
-    await persistPluginInstallState(pluginId, {
-      provisioningState: {
-        status: "rolled_back",
-        appliedMigrationKeys: manifest.installState.provisioningState.appliedMigrationKeys,
-        rollbackMigrationKeys: manifest.installState.provisioningState.rollbackMigrationKeys,
-        details: [],
-      },
-    });
-    return false;
-  }
-
-  const didRollback = await rollbackSqlMigration({
-    key: plan.key,
-    title: plan.title,
-    sqlText: plan.sql,
-    actorUserId,
-  });
-
-  await persistPluginInstallState(pluginId, {
-    provisioningState: {
-      status: "rolled_back",
-      appliedMigrationKeys: manifest.installState.provisioningState.appliedMigrationKeys,
-      rollbackMigrationKeys: Array.from(new Set([...manifest.installState.provisioningState.rollbackMigrationKeys, plan.key])),
-      details: didRollback ? [`Rolled back ${plan.key}`] : [`${plan.key} already rolled back`],
-    },
-  });
-
-  return didRollback;
+  return getPluginManifest(pluginId);
 }
 
 export async function ensureEnabledPluginsProvisioned(actorUserId?: string | null) {
   const manifests = await listPluginManifests();
-  const applied: string[] = [];
 
   for (const manifest of manifests) {
-    if (!manifest.installState.enabled) {
-      continue;
-    }
-    const didApply = await provisionPlugin(manifest.id, actorUserId);
-    if (didApply) {
-      applied.push(manifest.id);
-    }
     await syncDerivedState(manifest.id);
   }
 
-  return applied;
+  return [];
 }
 
 export async function savePluginConfig(pluginId: PluginId, update: PluginConfigUpdate, actorUserId?: string | null) {
@@ -144,14 +72,8 @@ export async function savePluginConfig(pluginId: PluginId, update: PluginConfigU
     config: validated.config,
     capabilityState: validated.capabilityState,
     extensionBindings: validated.extensionBindings,
+    provisioningState: statelessProvisioningState(),
   });
-
-  if (current.installState.enabled) {
-    if (capabilitiesChanged) {
-      await rollbackPlugin(pluginId, actorUserId, current);
-    }
-    await provisionPlugin(pluginId, actorUserId);
-  }
 
   const manifest = await syncDerivedState(pluginId);
   await writeGeneratedPluginDefaultsSnapshot();
@@ -164,6 +86,7 @@ export async function savePluginConfig(pluginId: PluginId, update: PluginConfigU
       config: validated.config,
       capabilityState: validated.capabilityState,
       extensionBindings: validated.extensionBindings,
+      capabilitiesChanged,
     },
   });
 
@@ -190,9 +113,9 @@ export async function enablePlugin(pluginId: PluginId, actorUserId?: string | nu
   await persistPluginInstallState(pluginId, {
     enabled: true,
     version: current.version,
+    provisioningState: statelessProvisioningState(),
   });
 
-  await provisionPlugin(pluginId, actorUserId);
   const manifest = await syncDerivedState(pluginId);
   await writeGeneratedPluginDefaultsSnapshot();
 
@@ -222,9 +145,9 @@ export async function disablePlugin(pluginId: PluginId, actorUserId?: string | n
     return current;
   }
 
-  await rollbackPlugin(pluginId, actorUserId);
   await persistPluginInstallState(pluginId, {
     enabled: false,
+    provisioningState: statelessProvisioningState(),
   });
   const manifest = await syncDerivedState(pluginId);
   await writeGeneratedPluginDefaultsSnapshot();

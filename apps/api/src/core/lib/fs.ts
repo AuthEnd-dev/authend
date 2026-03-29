@@ -3,6 +3,14 @@ import { dirname, resolve } from "node:path";
 
 export async function writeTextFile(path: string, contents: string) {
   await mkdir(dirname(path), { recursive: true });
+  try {
+    const existing = await readFile(path, "utf8");
+    if (existing === contents) {
+      return;
+    }
+  } catch {
+    // Fall through to first-write behavior when the file does not exist yet.
+  }
   await writeFile(path, contents, "utf8");
 }
 

@@ -206,3 +206,22 @@ export const apikey = pgTable(
 );
 
 export const apiKey = apikey;
+
+const authSchema = {
+  user,
+  session,
+  account,
+  verification,
+  twoFactor,
+  jwks,
+  organization,
+  member,
+  invitation,
+  team,
+  teamMember,
+  organizationRole,
+  apikey,
+  apiKey,
+};
+
+export default authSchema;

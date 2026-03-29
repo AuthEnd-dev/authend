@@ -231,3 +231,25 @@ export const webhookDeliveries = pgTable("_webhook_deliveries", {
   deliveredAt: timestamp("delivered_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+const systemSchema = {
+  systemAdmins,
+  pluginConfigs,
+  schemaTables,
+  schemaFields,
+  schemaRelations,
+  migrationRuns,
+  auditLogs,
+  systemSettings,
+  backupRuns,
+  cronJobs,
+  cronRuns,
+  aiThreads,
+  aiMessages,
+  aiRuns,
+  storageFiles,
+  webhooks,
+  webhookDeliveries,
+};
+
+export default systemSchema;

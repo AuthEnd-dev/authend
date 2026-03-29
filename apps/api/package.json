@@ -7,6 +7,8 @@
     "dev": "bun --hot src/index.ts",
     "start": "NODE_ENV=production bun src/index.ts",
     "bootstrap": "bun src/core/scripts/bootstrap.ts",
+    "generate:schema": "bun src/core/scripts/generate-schema.ts",
+    "generate:migration": "bun src/core/scripts/generate-migration.ts",
     "validate-env": "bun src/core/scripts/validate-env.ts"
   },
   "dependencies": {
@@ -14,6 +16,7 @@
     "@better-auth/api-key": "^1.3.7",
     "better-auth": "^1.3.7",
     "dotenv": "^16.4.7",
+    "drizzle-kit": "^0.30.4",
     "drizzle-orm": "^0.41.0",
     "hono": "^4.7.2",
     "nanoid": "^3.3.11",
@@ -21,8 +24,5 @@
     "openai": "^6.1.0",
     "postgres": "^3.4.5",
     "zod": "^3.24.2"
-  },
-  "devDependencies": {
-    "drizzle-kit": "^0.30.4"
   }
 }

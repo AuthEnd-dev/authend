@@ -4,7 +4,6 @@ import { systemAdmins } from "../db/schema/system";
 import { logger } from "../lib/logger";
 import { getAuth } from "./auth-service";
 import { ensureCoreSchema, applyPendingMigrations, previewPendingMigrations } from "./migration-service";
-import { ensureExtensionSchemaProvisioned } from "./schema-service";
 import { ensureEnabledPluginsProvisioned, seedPluginConfigs } from "./plugin-service";
 import { writeAuditLog } from "./audit-service";
 import { runExtensionBootstrapTasks } from "./lifecycle-service";
@@ -76,7 +75,6 @@ export async function bootstrapSystem() {
   await seedPluginConfigs();
   await ensureEnabledPluginsProvisioned();
   await applyPendingMigrations();
-  await ensureExtensionSchemaProvisioned();
   await seedSuperAdmin();
   await runExtensionBootstrapTasks();
   startWebhookScheduler();

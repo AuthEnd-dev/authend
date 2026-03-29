@@ -7,7 +7,7 @@ export const jwtPluginDefinition: PluginDefinition = {
   description: "Issue JWTs for stateless API access with configurable JWKS management and payload signing hooks.",
   category: "api",
   documentationUrl: "https://www.better-auth.com/docs/plugins/jwt",
-  migrationStrategy: "sql",
+  migrationStrategy: "none",
   dependencies: [],
   requiredEnv: [],
   configSchema: [

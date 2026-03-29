@@ -7,7 +7,7 @@ export const apiKeyPluginDefinition: PluginDefinition = {
   description: "Issue personal or organization API keys with configurable prefixes, expiration, validation, and rate limiting.",
   category: "api",
   documentationUrl: "https://www.better-auth.com/docs/plugins/api-key",
-  migrationStrategy: "sql",
+  migrationStrategy: "none",
   dependencies: [],
   requiredEnv: [],
   configSchema: [

@@ -15,8 +15,11 @@
 **Generated artifacts**
 
 - [`generated/schema/generated.ts`](../generated/schema/generated.ts) — generated Drizzle schema module.
-- [`generated/migrations/`](../generated/migrations/) — generated SQL migrations that should be reviewable and commit-friendly.
+- [`generated/migrations/`](../generated/migrations/) — Drizzle Kit-managed SQL migrations that should be reviewable and commit-friendly.
 - [`extensions/generated/plugin-defaults.generated.ts`](./extensions/generated/plugin-defaults.generated.ts) — admin-driven plugin install/config snapshot written after plugin enable/disable/config changes so those changes can be committed to git through the extension layer.
+- From [`apps/api/package.json`](../package.json):
+  - `bun run generate:schema` regenerates [`generated/schema/generated.ts`](../generated/schema/generated.ts) from saved schema metadata plus extension schema.
+  - `bun run generate:migration <name>` regenerates the schema module first, then asks Drizzle Kit to write a migration under [`generated/migrations/`](../generated/migrations/).
 
 **Upstream / platform implementation**
 
