@@ -8,6 +8,29 @@ import { writeAuditLog } from "./audit-service";
 
 const coreMigrationDir = resolve(import.meta.dir, "../db/migrations/core");
 const generatedMigrationDir = resolveGeneratedMigrationsDir();
+const requiredCoreTables = [
+  "user",
+  "session",
+  "account",
+  "verification",
+  "_system_admins",
+  "_plugin_configs",
+  "_schema_tables",
+  "_schema_fields",
+  "_schema_relations",
+  "_migration_runs",
+  "_audit_logs",
+  "_system_settings",
+  "_backup_runs",
+  "_cron_jobs",
+  "_cron_runs",
+  "_ai_threads",
+  "_ai_messages",
+  "_ai_runs",
+  "_storage_files",
+  "_webhooks",
+  "_webhook_deliveries",
+] as const;
 
 export type MigrationFile = {
   key: string;
@@ -24,15 +47,16 @@ function shouldLoadMigrationFile(file: string) {
 }
 
 export async function ensureCoreSchema() {
-  const [migrationTable] = await sql<{ exists: boolean }[]>`
-    SELECT EXISTS (
-      SELECT FROM information_schema.tables 
-      WHERE table_schema = 'public' 
-      AND table_name = '_migration_runs'
-    )
+  const existingCoreTables = await sql<{ table_name: string }[]>`
+    select table_name
+    from information_schema.tables
+    where table_schema = current_schema()
+      and table_name = any(${requiredCoreTables}::text[])
   `;
+  const existingCoreTableNames = new Set(existingCoreTables.map((row) => row.table_name));
+  const hasRequiredCoreTables = requiredCoreTables.every((tableName) => existingCoreTableNames.has(tableName));
 
-  if (migrationTable?.exists) {
+  if (existingCoreTableNames.has("_migration_runs") && hasRequiredCoreTables) {
     const alreadyRecorded = await db.query.migrationRuns.findFirst({
       where: (table, operators) => operators.eq(table.migrationKey, "0000_core"),
     });
