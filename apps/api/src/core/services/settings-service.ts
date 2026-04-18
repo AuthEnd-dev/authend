@@ -621,46 +621,134 @@ async function genericDiagnostics(section: Exclude<SettingsSectionId, "storage" 
     }
     case "email": {
       const state = await readSettingsSection("email");
+      const provider = state.config.emailProvider === "resend" ? "resend" : "smtp";
+      const resendApiKey = (state.config.resendApiKey || env.RESEND_API_KEY || "").trim();
       const smtpHost = state.config.smtpHost || env.SMTP_HOST || "";
       const smtpUsername = state.config.smtpUsername || env.SMTP_USER || "";
       const smtpPassword = state.config.smtpPassword || env.SMTP_PASS || "";
       const smtpPort = Number(state.config.smtpPort);
-      const checks: DiagnosticCheck[] = [
-        {
-          label: "SMTP host",
-          status: smtpHost ? "healthy" : "error",
-          value: smtpHost || null,
-          detail: smtpHost ? "SMTP host is configured." : "Set an SMTP host before sending auth emails.",
-        },
-        {
-          label: "SMTP credentials",
-          status: smtpUsername && smtpPassword ? "healthy" : "error",
-          value: smtpUsername ? "configured" : "missing",
-          detail: smtpUsername && smtpPassword ? "SMTP username and password are configured." : "Add SMTP username and password.",
-        },
-        {
-          label: "SMTP port",
-          status: Number.isFinite(smtpPort) && smtpPort > 0 ? "healthy" : "warning",
-          value: Number.isFinite(smtpPort) ? smtpPort : null,
-          detail: Number.isFinite(smtpPort) && smtpPort > 0 ? "Port looks valid." : "Review the SMTP port. Common values are 465 for secure SMTP or 587 for STARTTLS.",
-        },
-        {
-          label: "Sender address",
-          status: state.config.senderEmail ? "healthy" : "error",
-          value: state.config.senderEmail || null,
-          detail: state.config.senderEmail ? "Auth emails will use this sender." : "Set the sender email shown in password reset and verification emails.",
-        },
-        {
-          label: "Test recipient",
-          status: state.config.testRecipient ? "healthy" : "warning",
-          value: state.config.testRecipient || null,
-          detail: state.config.testRecipient
-            ? "A test recipient is configured for verification emails."
-            : "Add a test recipient so you can verify delivery without editing settings again.",
-        },
-      ];
+
+      const senderCheck: DiagnosticCheck = {
+        label: "Sender address",
+        status: state.config.senderEmail ? "healthy" : "error",
+        value: state.config.senderEmail || null,
+        detail: state.config.senderEmail ? "Auth emails will use this sender." : "Set the sender email shown in password reset and verification emails.",
+      };
+      const testRecipientCheck: DiagnosticCheck = {
+        label: "Test recipient",
+        status: state.config.testRecipient ? "healthy" : "warning",
+        value: state.config.testRecipient || null,
+        detail: state.config.testRecipient
+          ? "A test recipient is configured for verification emails."
+          : "Add a test recipient so you can verify delivery without editing settings again.",
+      };
+
       const nextSteps: string[] = [];
       const issues: DiagnosticIssue[] = [];
+      const checks: DiagnosticCheck[] = [];
+
+      if (provider === "resend") {
+        checks.push({
+          label: "Email provider",
+          status: "healthy",
+          value: "Resend",
+          detail: "Transactional email is sent through the Resend HTTP API.",
+        });
+        checks.push({
+          label: "Resend API key",
+          status: resendApiKey ? "healthy" : "error",
+          value: resendApiKey ? "configured" : "missing",
+          detail: resendApiKey
+            ? "API key is set in settings or RESEND_API_KEY."
+            : "Add a Resend API key in Email settings or set RESEND_API_KEY in the environment.",
+        });
+        checks.push(senderCheck);
+        checks.push(testRecipientCheck);
+
+        if (!resendApiKey) {
+          nextSteps.push("Add a Resend API key in Email settings or environment variables.");
+          issues.push({
+            severity: "error",
+            title: "Auth emails cannot send because the Resend API key is missing",
+            reason: "Resend delivery requires an API key.",
+            fix: "Paste your Resend API key in Email settings or set RESEND_API_KEY for the API process.",
+          });
+        }
+        if (!state.config.senderEmail) {
+          nextSteps.push("Set the sender email before using password reset or verification flows.");
+          issues.push({
+            severity: "error",
+            title: "Auth emails are not ready because the sender email is missing",
+            reason: "Password reset and verification emails need a sender address verified for your Resend domain.",
+            fix: "Set the sender email in Email settings (must be an address Resend allows for your domain).",
+          });
+        }
+        if (!state.config.testRecipient) {
+          nextSteps.push("Add a test recipient and send a verification email to confirm delivery.");
+          issues.push({
+            severity: "warning",
+            title: "Email delivery is still unverified",
+            reason: "There is no test recipient configured, so operators have no quick way to validate delivery after saving changes.",
+            fix: "Set a test recipient and send a verification or reset email to confirm Resend works.",
+          });
+        }
+        if (resendApiKey) {
+          const probe = await verifyEmailTransport();
+          checks.push({
+            label: "Resend probe",
+            status: probe.ok ? "healthy" : "error",
+            value: probe.ok ? "reachable" : "failed",
+            detail: probe.detail,
+          });
+          if (!probe.ok) {
+            nextSteps.push("Fix the Resend API key or network access, then reload diagnostics.");
+            issues.push({
+              severity: "error",
+              title: "Resend is configured, but AuthEnd could not validate the API key",
+              reason: probe.detail,
+              fix: "Confirm the API key in the Resend dashboard and that outbound HTTPS to api.resend.com is allowed.",
+            });
+          }
+        }
+
+        return buildActionableDiagnostics({
+          title: "Email readiness",
+          healthyDescription: "Resend is configured for auth email flows.",
+          warningDescription: "Email is partly configured, but operator validation is still missing.",
+          errorDescription: "Email is not ready for password reset and verification flows.",
+          checks,
+          issues,
+          nextSteps,
+        });
+      }
+
+      checks.push({
+        label: "Email provider",
+        status: "healthy",
+        value: "SMTP",
+        detail: "Email is sent through a classic SMTP relay.",
+      });
+      checks.push({
+        label: "SMTP host",
+        status: smtpHost ? "healthy" : "error",
+        value: smtpHost || null,
+        detail: smtpHost ? "SMTP host is configured." : "Set an SMTP host before sending auth emails.",
+      });
+      checks.push({
+        label: "SMTP credentials",
+        status: smtpUsername && smtpPassword ? "healthy" : "error",
+        value: smtpUsername ? "configured" : "missing",
+        detail: smtpUsername && smtpPassword ? "SMTP username and password are configured." : "Add SMTP username and password.",
+      });
+      checks.push({
+        label: "SMTP port",
+        status: Number.isFinite(smtpPort) && smtpPort > 0 ? "healthy" : "warning",
+        value: Number.isFinite(smtpPort) ? smtpPort : null,
+        detail: Number.isFinite(smtpPort) && smtpPort > 0 ? "Port looks valid." : "Review the SMTP port. Common values are 465 for secure SMTP or 587 for STARTTLS.",
+      });
+      checks.push(senderCheck);
+      checks.push(testRecipientCheck);
+
       if (!smtpHost) {
         nextSteps.push("Set the SMTP host.");
         issues.push({

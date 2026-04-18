@@ -6,7 +6,7 @@ export const magicLinkExtensionHandlers: ExtensionHandlerDefinition[] = [
   {
     id: "authend.sendMagicLinkEmail",
     label: "Send magic link email",
-    description: "Uses the configured SMTP transport to send magic-link sign-in emails.",
+    description: "Uses the configured email transport (SMTP or Resend) to send magic-link sign-in emails.",
     slotKeys: ["sendMagicLink"],
     build: () => ({
       id: "authend.sendMagicLinkEmail",

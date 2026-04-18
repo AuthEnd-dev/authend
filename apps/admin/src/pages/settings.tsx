@@ -709,6 +709,17 @@ const sessionsFields: SettingsField[] = [
 ];
 
 const emailFields: SettingsField[] = [
+  {
+    key: "emailProvider",
+    label: "Provider",
+    kind: "select",
+    options: [
+      { value: "smtp", label: "SMTP" },
+      { value: "resend", label: "Resend" },
+    ],
+    helpText: "Resend uses the HTTP API and a Resend API key; SMTP uses host, port, and relay credentials.",
+  },
+  { key: "resendApiKey", label: "Resend API key", kind: "password", helpText: "Optional if RESEND_API_KEY is set in the API environment. Required for Resend when not using env." },
   { key: "smtpHost", label: "SMTP host", kind: "text" },
   { key: "smtpPort", label: "SMTP port", kind: "number" },
   { key: "smtpUsername", label: "SMTP username", kind: "text" },
@@ -818,7 +829,7 @@ export const SessionsSecuritySettingsPage = createSettingsSectionPage(
 export const EmailSettingsPage = createSettingsSectionPage(
   "email",
   "Email",
-  "SMTP transport and auth email copy used by password reset, verification, and plugin mail flows.",
+  "SMTP or Resend delivery and auth email copy used by password reset, verification, and plugin mail flows.",
   emailFields,
 );
 

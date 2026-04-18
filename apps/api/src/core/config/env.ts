@@ -24,6 +24,7 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().default("AuthEnd <no-reply@example.com>"),
+  RESEND_API_KEY: z.string().optional(),
   CORS_ORIGIN: z
     .string()
     .optional()

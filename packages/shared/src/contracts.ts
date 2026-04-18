@@ -1090,12 +1090,18 @@ export const sessionsSecuritySettingsSchema = z.object({
 
 export type SessionsSecuritySettings = z.infer<typeof sessionsSecuritySettingsSchema>;
 
+export const emailProviderSchema = z.enum(["smtp", "resend"]);
+
+export type EmailProvider = z.infer<typeof emailProviderSchema>;
+
 export const emailSettingsSchema = z.object({
+  emailProvider: emailProviderSchema.default("smtp"),
   smtpHost: z.string().default(""),
   smtpPort: z.number().int().positive().max(65535).default(587),
   smtpUsername: z.string().default(""),
   smtpPassword: z.string().default(""),
   smtpSecure: z.boolean().default(false),
+  resendApiKey: z.string().default(""),
   senderName: z.string().default("AuthEnd"),
   senderEmail: z.string().email().default("no-reply@example.com"),
   replyToEmail: z.string().email().nullish(),
@@ -1209,7 +1215,7 @@ export type AdminAccessSettings = z.infer<typeof adminAccessSettingsSchema>;
 
 export const environmentsSecretsSettingsSchema = z.object({
   additionalRequiredEnvKeys: z.array(z.string().min(1)).default([]),
-  sensitivePrefixes: z.array(z.string().min(1)).default(["BETTER_AUTH_", "SMTP_", "DATABASE_", "SUPERADMIN_"]),
+  sensitivePrefixes: z.array(z.string().min(1)).default(["BETTER_AUTH_", "SMTP_", "RESEND_", "DATABASE_", "SUPERADMIN_"]),
   showMissingSecretsOnDashboard: z.boolean().default(true),
 });
 
